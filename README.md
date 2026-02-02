@@ -132,6 +132,37 @@ docker-compose up -d
 # 访问 http://localhost
 ```
 
+#### 🌐 Docker 镜像加速配置（国内用户推荐）
+
+如果在拉取镜像时遇到超时问题，请配置 Docker 镜像加速器：
+
+```bash
+# 1. 创建或编辑 Docker 配置文件
+sudo mkdir -p /etc/docker
+sudo nano /etc/docker/daemon.json
+
+# 2. 添加以下内容
+```
+
+```json
+{
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://docker.xuanyuan.me",
+    "https://docker.m.daocloud.io"
+  ]
+}
+```
+
+```bash
+# 3. 重启 Docker 服务
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+# 4. 验证配置
+docker info | grep -A 5 "Registry Mirrors"
+```
+
 ### 方式二：本地开发
 
 #### 后端
