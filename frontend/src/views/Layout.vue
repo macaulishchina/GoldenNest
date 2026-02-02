@@ -70,7 +70,13 @@ import {
   TrendingUpOutline,
   CardOutline,
   ListOutline,
-  PeopleOutline
+  PeopleOutline,
+  TrophyOutline,
+  GiftOutline,
+  CheckboxOutline,
+  PawOutline,
+  MegaphoneOutline,
+  StatsChartOutline
 } from '@vicons/ionicons5'
 
 const router = useRouter()
@@ -137,6 +143,36 @@ const menuOptions: MenuOption[] = [
     label: '家庭管理',
     key: 'family',
     icon: renderIcon(PeopleOutline)
+  },
+  {
+    label: '成就殿堂',
+    key: 'achievement',
+    icon: renderIcon(TrophyOutline)
+  },
+  {
+    label: '股权赠与',
+    key: 'gift',
+    icon: renderIcon(GiftOutline)
+  },
+  {
+    label: '股东大会',
+    key: 'vote',
+    icon: renderIcon(CheckboxOutline)
+  },
+  {
+    label: '家庭宠物',
+    key: 'pet',
+    icon: renderIcon(PawOutline)
+  },
+  {
+    label: '家庭公告',
+    key: 'announcement',
+    icon: renderIcon(MegaphoneOutline)
+  },
+  {
+    label: '年度报告',
+    key: 'report',
+    icon: renderIcon(StatsChartOutline)
   }
 ]
 
@@ -157,7 +193,7 @@ function handleLogout() {
 async function loadFamily() {
   try {
     if (userStore.user?.family_id) {
-      const response = await familyApi.get()
+      const response = await familyApi.getMy()
       family.value = response.data
     }
   } catch {

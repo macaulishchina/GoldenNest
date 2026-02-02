@@ -25,8 +25,11 @@
             <n-form-item path="username" label="用户名">
               <n-input v-model:value="registerForm.username" placeholder="用于登录的账号" />
             </n-form-item>
+            <n-form-item path="email" label="邮箱">
+              <n-input v-model:value="registerForm.email" placeholder="用于找回密码" />
+            </n-form-item>
             <n-form-item path="nickname" label="昵称">
-              <n-input v-model:value="registerForm.nickname" placeholder="展示给家人看的名字" />
+              <n-input v-model:value="registerForm.nickname" placeholder="展示给家人看的名字（可选）" />
             </n-form-item>
             <n-form-item path="password" label="密码">
               <n-input v-model:value="registerForm.password" type="password" placeholder="至少6位密码" show-password-on="click" />
@@ -56,7 +59,7 @@ const loginFormRef = ref<FormInst | null>(null)
 const registerFormRef = ref<FormInst | null>(null)
 
 const loginForm = ref({ username: '', password: '' })
-const registerForm = ref({ username: '', nickname: '', password: '' })
+const registerForm = ref({ username: '', email: '', nickname: '', password: '' })
 
 const loginRules = {
   username: { required: true, message: '请输入用户名', trigger: 'blur' },
@@ -65,7 +68,7 @@ const loginRules = {
 
 const registerRules = {
   username: { required: true, message: '请输入用户名', trigger: 'blur' },
-  nickname: { required: true, message: '请输入昵称', trigger: 'blur' },
+  email: { required: true, type: 'email', message: '请输入有效的邮箱地址', trigger: 'blur' },
   password: { required: true, min: 6, message: '密码至少6位', trigger: 'blur' }
 }
 

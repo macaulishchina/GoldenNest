@@ -59,6 +59,7 @@ class User(Base):
     deposits: Mapped[List["Deposit"]] = relationship(back_populates="user")
     expense_requests: Mapped[List["ExpenseRequest"]] = relationship(back_populates="requester", foreign_keys="ExpenseRequest.requester_id")
     expense_approvals: Mapped[List["ExpenseApproval"]] = relationship(back_populates="approver")
+    achievements: Mapped[List["UserAchievement"]] = relationship(back_populates="user")
 
 
 # ==================== 家庭模型 ====================
@@ -214,3 +215,227 @@ class Transaction(Base):
     
     # 关联关系
     family: Mapped["Family"] = relationship(back_populates="transactions")
+
+
+# ==================== 成就系统模型 ====================
+
+class AchievementCategory(str, enum.Enum):
+    """成就分类"""
+    DEPOSIT = "deposit"           # 存款类
+    STREAK = "streak"             # 坚持类
+    FAMILY = "family"             # 家庭类
+    EQUITY = "equity"             # 股权类
+    INVESTMENT = "investment"     # 理财类
+    EXPENSE = "expense"           # 支出类
+    VOTE = "vote"                 # 投票类
+    HIDDEN = "hidden"             # 隐藏彩蛋
+    SPECIAL = "special"           # 特殊成就
+
+
+class AchievementRarity(str, enum.Enum):
+    """成就稀有度"""
+    COMMON = "common"             # 普通 (N)
+    RARE = "rare"                 # 稀有 (R)
+    EPIC = "epic"                 # 史诗 (SR)
+    LEGENDARY = "legendary"       # 传说 (SSR)
+    MYTHIC = "mythic"             # 神话 (UR)
+
+
+class Achievement(Base):
+    """成就定义表"""
+    __tablename__ = "achievements"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(50), unique=True, index=True)  # 成就代码
+    name: Mapped[str] = mapped_column(String(100))  # 成就名称
+    description: Mapped[str] = mapped_column(String(500))  # 成就描述
+    category: Mapped[str] = mapped_column(String(30))  # 成就分类
+    icon: Mapped[str] = mapped_column(String(50))  # 图标(emoji)
+    rarity: Mapped[str] = mapped_column(String(20))  # 稀有度
+    points: Mapped[int] = mapped_column(default=10)  # 成就点数
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否隐藏成就
+    trigger_type: Mapped[str] = mapped_column(String(50))  # 触发类型
+    trigger_value: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # 触发值(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    # 关联关系
+    user_achievements: Mapped[List["UserAchievement"]] = relationship(back_populates="achievement")
+
+
+class UserAchievement(Base):
+    """用户成就解锁记录表"""
+    __tablename__ = "user_achievements"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    achievement_id: Mapped[int] = mapped_column(ForeignKey("achievements.id"))
+    unlocked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    # 关联关系
+    user: Mapped["User"] = relationship(back_populates="achievements")
+    achievement: Mapped["Achievement"] = relationship(back_populates="user_achievements")
+
+
+# ==================== 股权赠与模型 ====================
+
+class EquityGiftStatus(str, enum.Enum):
+    """股权赠与状态"""
+    PENDING = "pending"           # 待接收
+    ACCEPTED = "accepted"         # 已接收
+    REJECTED = "rejected"         # 已拒绝
+    EXPIRED = "expired"           # 已过期
+
+
+class EquityGift(Base):
+    """股权赠与记录表"""
+    __tablename__ = "equity_gifts"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    from_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    to_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    amount: Mapped[float] = mapped_column(Float)  # 赠与股权比例(0-1)
+    message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # 祝福语
+    status: Mapped[EquityGiftStatus] = mapped_column(SQLEnum(EquityGiftStatus), default=EquityGiftStatus.PENDING)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+# ==================== 股东大会投票模型 ====================
+
+class ProposalStatus(str, enum.Enum):
+    """提案状态"""
+    VOTING = "voting"             # 投票中
+    PASSED = "passed"             # 已通过
+    REJECTED = "rejected"         # 未通过
+    EXPIRED = "expired"           # 已过期
+
+
+class Proposal(Base):
+    """提案表"""
+    __tablename__ = "proposals"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    creator_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    title: Mapped[str] = mapped_column(String(200))  # 提案标题
+    description: Mapped[str] = mapped_column(Text)  # 提案描述
+    options: Mapped[str] = mapped_column(Text)  # 选项(JSON数组)
+    status: Mapped[ProposalStatus] = mapped_column(SQLEnum(ProposalStatus), default=ProposalStatus.VOTING)
+    deadline: Mapped[datetime] = mapped_column(DateTime)  # 截止时间
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    
+    # 关联关系
+    votes: Mapped[List["Vote"]] = relationship(back_populates="proposal")
+
+
+class Vote(Base):
+    """投票记录表"""
+    __tablename__ = "votes"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    proposal_id: Mapped[int] = mapped_column(ForeignKey("proposals.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    option_index: Mapped[int] = mapped_column()  # 选择的选项索引
+    weight: Mapped[float] = mapped_column(Float)  # 投票权重(股权比例)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    # 关联关系
+    proposal: Mapped["Proposal"] = relationship(back_populates="votes")
+
+
+# ==================== 家庭公告板模型 ====================
+
+class Announcement(Base):
+    """家庭公告表"""
+    __tablename__ = "announcements"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    content: Mapped[str] = mapped_column(Text)  # 公告内容
+    images: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 图片URL(JSON数组)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否置顶
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    # 关联关系
+    likes: Mapped[List["AnnouncementLike"]] = relationship(back_populates="announcement")
+    comments: Mapped[List["AnnouncementComment"]] = relationship(back_populates="announcement")
+
+
+class AnnouncementLike(Base):
+    """公告点赞表"""
+    __tablename__ = "announcement_likes"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    announcement_id: Mapped[int] = mapped_column(ForeignKey("announcements.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    # 关联关系
+    announcement: Mapped["Announcement"] = relationship(back_populates="likes")
+
+
+class AnnouncementComment(Base):
+    """公告评论表"""
+    __tablename__ = "announcement_comments"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    announcement_id: Mapped[int] = mapped_column(ForeignKey("announcements.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    content: Mapped[str] = mapped_column(String(500))  # 评论内容
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    # 关联关系
+    announcement: Mapped["Announcement"] = relationship(back_populates="comments")
+
+
+# ==================== 宠物养成模型 ====================
+
+class PetType(str, enum.Enum):
+    """宠物类型 - 可进化"""
+    GOLDEN_EGG = "golden_egg"         # Lv.1-9: 金色蛋
+    GOLDEN_CHICK = "golden_chick"     # Lv.10-29: 金色小鸡
+    GOLDEN_BIRD = "golden_bird"       # Lv.30-59: 金色小鸟
+    GOLDEN_PHOENIX = "golden_phoenix" # Lv.60-99: 金色凤凰
+    GOLDEN_DRAGON = "golden_dragon"   # Lv.100+: 金色神龙
+
+
+class FamilyPet(Base):
+    """家庭宠物表"""
+    __tablename__ = "family_pets"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), unique=True)
+    name: Mapped[str] = mapped_column(String(50))  # 宠物昵称
+    pet_type: Mapped[str] = mapped_column(String(30), default="golden_egg")  # 宠物类型
+    level: Mapped[int] = mapped_column(default=1)  # 等级
+    exp: Mapped[int] = mapped_column(default=0)  # 经验值
+    happiness: Mapped[int] = mapped_column(default=100)  # 心情值(0-100)
+    total_exp: Mapped[int] = mapped_column(default=0)  # 累计总经验值
+    last_fed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)  # 上次喂食时间
+    last_checkin_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 上次签到时间
+    checkin_streak: Mapped[int] = mapped_column(default=0)  # 连续签到天数
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# ==================== 年度报告模型 ====================
+
+class AnnualReport(Base):
+    """年度财务报告表"""
+    __tablename__ = "annual_reports"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    year: Mapped[int] = mapped_column()  # 报告年份
+    total_deposits: Mapped[float] = mapped_column(Float, default=0)  # 年度总存款
+    total_withdrawals: Mapped[float] = mapped_column(Float, default=0)  # 年度总支出
+    total_income: Mapped[float] = mapped_column(Float, default=0)  # 年度理财收益
+    net_change: Mapped[float] = mapped_column(Float, default=0)  # 净资产变化
+    start_balance: Mapped[float] = mapped_column(Float, default=0)  # 年初余额
+    end_balance: Mapped[float] = mapped_column(Float, default=0)  # 年末余额
+    equity_changes: Mapped[str] = mapped_column(Text)  # 各成员股权变化(JSON)
+    monthly_data: Mapped[str] = mapped_column(Text)  # 月度数据(JSON)
+    highlights: Mapped[str] = mapped_column(Text)  # 年度亮点(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

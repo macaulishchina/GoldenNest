@@ -11,6 +11,7 @@ from app.models.models import Deposit, FamilyMember, User, Transaction, Transact
 from app.schemas.deposit import DepositCreate, DepositResponse
 from app.api.auth import get_current_user
 from app.services.equity import calculate_weighted_amount
+from app.services.achievement import AchievementService
 
 router = APIRouter()
 
@@ -70,6 +71,20 @@ async def create_deposit(
     db.add(transaction)
     await db.flush()
     await db.refresh(deposit)
+    
+    # 检查成就解锁（失败不影响主业务）
+    try:
+        achievement_service = AchievementService(db)
+        new_unlocks = await achievement_service.check_and_unlock(
+            user_id=current_user.id,
+            context={"deposit_amount": deposit_data.amount, "action": "deposit"}
+        )
+    except Exception as e:
+        # 记录日志但不抛出异常
+        import logging
+        logging.warning(f"Achievement check failed: {e}")
+    
+    await db.commit()
     
     return DepositResponse(
         id=deposit.id,

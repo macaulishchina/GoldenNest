@@ -3,22 +3,43 @@
     <h1 class="page-title"><span class="icon">💸</span> 支出申请</h1>
     
     <n-card class="card-hover" style="margin-bottom: 24px">
-      <n-form inline :model="formData">
-        <n-form-item label="支出金额">
-          <n-input-number v-model:value="formData.amount" :min="1" style="width: 120px">
-            <template #prefix>¥</template>
-          </n-input-number>
+      <n-form :model="formData" label-placement="left" label-width="100px">
+        <n-grid :cols="2" :x-gap="16">
+          <n-gi>
+            <n-form-item label="支出标题">
+              <n-input v-model:value="formData.title" placeholder="如：购买家电" />
+            </n-form-item>
+          </n-gi>
+          <n-gi>
+            <n-form-item label="支出金额">
+              <n-input-number v-model:value="formData.amount" :min="1" style="width: 100%">
+                <template #prefix>¥</template>
+              </n-input-number>
+            </n-form-item>
+          </n-gi>
+        </n-grid>
+        <n-form-item label="支出原因">
+          <n-input v-model:value="formData.reason" type="textarea" placeholder="请详细说明支出原因" :rows="2" />
         </n-form-item>
-        <n-form-item label="用途说明">
-          <n-input v-model:value="formData.purpose" placeholder="请说明用途" style="width: 200px" />
-        </n-form-item>
-        <n-form-item label="股权扣减比例">
-          <n-input-number v-model:value="formData.equity_deduction_ratio" :min="0" :max="100" style="width: 100px">
-            <template #suffix>%</template>
-          </n-input-number>
+        <n-form-item label="股权扣减分配">
+          <div style="width: 100%">
+            <n-alert type="info" style="margin-bottom: 12px">
+              设置各成员承担的比例（总和必须为100%）
+            </n-alert>
+            <n-space vertical>
+              <div v-for="ratio in formData.deduction_ratios" :key="ratio.user_id" style="display: flex; align-items: center; gap: 12px">
+                <span style="min-width: 80px">{{ getMemberNickname(ratio.user_id) }}</span>
+                <n-slider v-model:value="ratio.ratio" :min="0" :max="100" :step="1" style="flex: 1" />
+                <span style="min-width: 50px">{{ ratio.ratio }}%</span>
+              </div>
+            </n-space>
+            <n-text :type="totalRatio === 100 ? 'success' : 'error'" style="display: block; margin-top: 8px">
+              当前总比例：{{ totalRatio }}% {{ totalRatio === 100 ? '✓' : '(需等于100%)' }}
+            </n-text>
+          </div>
         </n-form-item>
         <n-form-item>
-          <n-button type="primary" :loading="submitting" @click="handleSubmit">提交申请</n-button>
+          <n-button type="primary" :loading="submitting" :disabled="totalRatio !== 100" @click="handleSubmit">提交申请</n-button>
         </n-form-item>
       </n-form>
     </n-card>
@@ -30,9 +51,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, h } from 'vue'
+import { ref, computed, onMounted, h, watch } from 'vue'
 import { useMessage, NButton, NTag, NSpace } from 'naive-ui'
-import { expenseApi } from '@/api'
+import { expenseApi, familyApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import dayjs from 'dayjs'
 
@@ -41,7 +62,23 @@ const userStore = useUserStore()
 const loading = ref(false)
 const submitting = ref(false)
 const expenses = ref<any[]>([])
-const formData = ref({ amount: null as number | null, purpose: '', equity_deduction_ratio: 100 })
+const familyMembers = ref<any[]>([])
+
+const formData = ref({
+  title: '',
+  amount: null as number | null,
+  reason: '',
+  deduction_ratios: [] as Array<{ user_id: number; ratio: number }>
+})
+
+const totalRatio = computed(() => {
+  return formData.value.deduction_ratios.reduce((sum, r) => sum + r.ratio, 0)
+})
+
+function getMemberNickname(userId: number): string {
+  const member = familyMembers.value.find(m => m.user_id === userId)
+  return member?.nickname || `用户${userId}`
+}
 
 const statusMap: Record<string, { type: 'success' | 'warning' | 'error' | 'default', label: string }> = {
   pending: { type: 'warning', label: '审批中' },
@@ -51,10 +88,10 @@ const statusMap: Record<string, { type: 'success' | 'warning' | 'error' | 'defau
 
 const columns = [
   { title: '申请人', key: 'requester_nickname' },
+  { title: '标题', key: 'title' },
   { title: '金额', key: 'amount', render: (row: any) => `¥${row.amount.toLocaleString()}` },
-  { title: '用途', key: 'purpose' },
-  { title: '股权扣减', key: 'equity_deduction_ratio', render: (row: any) => `${(row.equity_deduction_ratio * 100).toFixed(0)}%` },
-  { title: '状态', key: 'status', render: (row: any) => h(NTag, { type: statusMap[row.status].type, size: 'small' }, { default: () => statusMap[row.status].label }) },
+  { title: '原因', key: 'reason', ellipsis: { tooltip: true } },
+  { title: '状态', key: 'status', render: (row: any) => h(NTag, { type: statusMap[row.status]?.type || 'default', size: 'small' }, { default: () => statusMap[row.status]?.label || row.status }) },
   { title: '申请时间', key: 'created_at', render: (row: any) => dayjs(row.created_at).format('YYYY-MM-DD HH:mm') },
   { 
     title: '操作', 
@@ -71,6 +108,24 @@ const columns = [
   }
 ]
 
+async function loadFamilyMembers() {
+  try {
+    const res = await familyApi.getMy()
+    familyMembers.value = res.data.members || []
+    // 初始化扣减比例 - 平均分配
+    if (familyMembers.value.length > 0) {
+      const avgRatio = Math.floor(100 / familyMembers.value.length)
+      const remainder = 100 - avgRatio * familyMembers.value.length
+      formData.value.deduction_ratios = familyMembers.value.map((m, index) => ({
+        user_id: m.user_id,
+        ratio: avgRatio + (index === 0 ? remainder : 0) // 余数给第一个人
+      }))
+    }
+  } catch (e) {
+    console.error(e)
+  }
+}
+
 async function loadData() {
   loading.value = true
   try {
@@ -82,16 +137,30 @@ async function loadData() {
 }
 
 async function handleSubmit() {
-  if (!formData.value.amount || !formData.value.purpose) { message.warning('请填写完整信息'); return }
+  if (!formData.value.title || !formData.value.amount || !formData.value.reason) { 
+    message.warning('请填写完整信息')
+    return 
+  }
+  if (totalRatio.value !== 100) {
+    message.warning('股权扣减比例总和必须为100%')
+    return
+  }
   submitting.value = true
   try {
     await expenseApi.create({
+      title: formData.value.title,
       amount: formData.value.amount,
-      purpose: formData.value.purpose,
-      equity_deduction_ratio: formData.value.equity_deduction_ratio / 100
+      reason: formData.value.reason,
+      deduction_ratios: formData.value.deduction_ratios.map(r => ({
+        user_id: r.user_id,
+        ratio: r.ratio / 100 // 转换为0-1的小数
+      }))
     })
     message.success('申请已提交！')
-    formData.value = { amount: null, purpose: '', equity_deduction_ratio: 100 }
+    formData.value.title = ''
+    formData.value.amount = null
+    formData.value.reason = ''
+    await loadFamilyMembers() // 重新初始化比例
     loadData()
   } catch (e: any) {
     message.error(e.response?.data?.detail || '操作失败')
@@ -110,5 +179,8 @@ async function handleApprove(id: number, approved: boolean) {
   }
 }
 
-onMounted(loadData)
+onMounted(async () => {
+  await loadFamilyMembers()
+  loadData()
+})
 </script>

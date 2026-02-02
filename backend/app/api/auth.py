@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.core.config import settings
 from app.core.security import verify_password, get_password_hash, create_access_token, decode_access_token
-from app.models.models import User
+from app.models.models import User, FamilyMember
 from app.schemas.auth import UserCreate, UserResponse, Token, UserLogin
 
 router = APIRouter()
@@ -32,8 +32,13 @@ async def get_current_user(
     if payload is None:
         raise credentials_exception
     
-    user_id: int = payload.get("sub")
-    if user_id is None:
+    user_id_str = payload.get("sub")
+    if user_id_str is None:
+        raise credentials_exception
+    
+    try:
+        user_id = int(user_id_str)
+    except (ValueError, TypeError):
         raise credentials_exception
     
     result = await db.execute(select(User).where(User.id == user_id))
@@ -86,9 +91,9 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # 创建访问令牌
+    # 创建访问令牌 - sub 必须是字符串
     access_token = create_access_token(
-        data={"sub": user.id},
+        data={"sub": str(user.id)},
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     
@@ -96,6 +101,24 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
+async def get_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
     """获取当前用户信息"""
-    return current_user
+    # 查询用户的家庭成员关系
+    result = await db.execute(
+        select(FamilyMember).where(FamilyMember.user_id == current_user.id)
+    )
+    membership = result.scalar_one_or_none()
+    
+    return UserResponse(
+        id=current_user.id,
+        username=current_user.username,
+        email=current_user.email,
+        nickname=current_user.nickname,
+        avatar=current_user.avatar,
+        is_active=current_user.is_active,
+        created_at=current_user.created_at,
+        family_id=membership.family_id if membership else None
+    )

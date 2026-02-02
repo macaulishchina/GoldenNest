@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.api import auth, family, deposit, equity, investment, expense, transaction
+from app.api import auth, family, deposit, equity, investment, expense, transaction, achievement, gift, vote, pet, announcement, report
 
 
 @asynccontextmanager
@@ -49,6 +49,12 @@ app.include_router(equity.router, prefix="/api/equity", tags=["股权"])
 app.include_router(investment.router, prefix="/api/investment", tags=["理财管理"])
 app.include_router(expense.router, prefix="/api/expense", tags=["支出申请"])
 app.include_router(transaction.router, prefix="/api/transaction", tags=["资金流水"])
+app.include_router(achievement.router)  # 成就系统（路由已内置prefix）
+app.include_router(gift.router)  # 股权赠与（路由已内置prefix）
+app.include_router(vote.router, prefix="/api", tags=["股东大会投票"])  # 投票系统
+app.include_router(pet.router, prefix="/api", tags=["宠物养成"])  # 宠物系统
+app.include_router(announcement.router, prefix="/api", tags=["家庭公告"])  # 公告板
+app.include_router(report.router, prefix="/api", tags=["年度报告"])  # 年度报告
 
 
 @app.get("/api/health")

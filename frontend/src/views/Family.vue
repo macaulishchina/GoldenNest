@@ -10,7 +10,7 @@
               <n-input v-model:value="createForm.name" placeholder="如：温馨之家" />
             </n-form-item>
             <n-form-item label="储蓄目标">
-              <n-input-number v-model:value="createForm.target_amount" :min="1" style="width: 100%">
+              <n-input-number v-model:value="createForm.savings_target" :min="1" style="width: 100%">
                 <template #prefix>¥</template>
               </n-input-number>
             </n-form-item>
@@ -70,18 +70,16 @@ const members = ref<any[]>([])
 
 const hasFamily = computed(() => !!userStore.user?.family_id)
 
-const createForm = ref({ name: '', target_amount: 2000000 })
+const createForm = ref({ name: '', savings_target: 2000000 })
 const joinForm = ref({ invite_code: '' })
 
 async function loadData() {
   if (!hasFamily.value) return
   try {
-    const [familyRes, membersRes] = await Promise.all([
-      familyApi.get(),
-      familyApi.getMembers()
-    ])
-    family.value = familyRes.data
-    members.value = membersRes.data
+    const res = await familyApi.getMy()
+    family.value = res.data
+    // members 是嵌套在 family 响应中的
+    members.value = res.data.members || []
   } catch (e) {
     console.error(e)
   }
@@ -91,7 +89,10 @@ async function handleCreate() {
   if (!createForm.value.name) { message.warning('请输入家庭名称'); return }
   loading.value = true
   try {
-    await familyApi.create(createForm.value)
+    await familyApi.create({
+      name: createForm.value.name,
+      savings_target: createForm.value.savings_target
+    })
     message.success('家庭创建成功！🏠')
     await userStore.fetchUser()
     loadData()

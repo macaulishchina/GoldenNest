@@ -29,6 +29,7 @@ class UserResponse(BaseModel):
     avatar: Optional[str] = None
     is_active: bool
     created_at: datetime
+    family_id: Optional[int] = None  # 用户所属家庭ID
     
     class Config:
         from_attributes = True

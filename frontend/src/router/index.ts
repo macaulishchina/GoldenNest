@@ -49,6 +49,36 @@ const router = createRouter({
           path: 'family',
           name: 'Family',
           component: () => import('@/views/Family.vue')
+        },
+        {
+          path: 'achievement',
+          name: 'Achievement',
+          component: () => import('@/views/Achievement.vue')
+        },
+        {
+          path: 'gift',
+          name: 'Gift',
+          component: () => import('@/views/Gift.vue')
+        },
+        {
+          path: 'vote',
+          name: 'Vote',
+          component: () => import('@/views/Vote.vue')
+        },
+        {
+          path: 'pet',
+          name: 'Pet',
+          component: () => import('@/views/Pet.vue')
+        },
+        {
+          path: 'announcement',
+          name: 'Announcement',
+          component: () => import('@/views/Announcement.vue')
+        },
+        {
+          path: 'report',
+          name: 'Report',
+          component: () => import('@/views/Report.vue')
         }
       ]
     }
