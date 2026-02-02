@@ -115,52 +115,21 @@
 
 ### 方式一：Docker 部署（推荐）
 
-#### Windows 用户
-```cmd
-# 克隆项目
-git clone https://github.com/macaulishchina/GoldenNest.git
-cd golden-nest
-
-# 配置Docker镜像源（解决连接问题）
-# 1. 打开 Docker Desktop -> Settings -> Docker Engine
-# 2. 复制项目根目录中的 daemon.json 内容到配置框
-# 3. 点击 Apply & Restart
-
-# 复制环境变量配置（可选）
-copy .env.example .env
-
-# 一键构建并启动
-build-cn.bat
-
-# 访问 http://localhost:8088
-```
-
-#### Linux 用户
 ```bash
 # 克隆项目
 git clone https://github.com/macaulishchina/GoldenNest.git
 cd golden-nest
 
-# 自动配置Docker镜像源
-sudo ./setup-docker-mirrors.sh
-
-# 复制环境变量配置（可选）
+# 复制环境变量配置
 cp .env.example .env
 
-# 一键构建并启动
-chmod +x build.sh
-./build.sh
+# 编辑 .env 文件，修改 SECRET_KEY
+nano .env
 
-# 访问 http://localhost:8088
-```
-
-#### 手动方式
-```bash
-# 如果遇到网络问题，项目已针对国内环境优化
-docker-compose build --no-cache
+# 启动服务
 docker-compose up -d
 
-# 访问 http://localhost:8088
+# 访问 http://localhost
 ```
 
 ### 方式二：本地开发

@@ -1,93 +1,40 @@
-# Golden Nest 项目 Docker Compose 配置
-# 已针对国内网络环境优化，包含镜像源加速配置
-
 version: '3.8'
 
 services:
   # 后端服务
   backend:
-    build: 
-      context: ./backend
-      dockerfile: Dockerfile
-      args:
-        # 支持代理配置（如果需要）
-        - HTTP_PROXY=${HTTP_PROXY:-}
-        - HTTPS_PROXY=${HTTPS_PROXY:-}
-        - NO_PROXY=${NO_PROXY:-}
-    image: golden-nest-backend:latest
+    build: ./backend
     container_name: golden-nest-backend
     restart: unless-stopped
     environment:
       - DATABASE_URL=sqlite+aiosqlite:////data/golden_nest.db
       - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-change-me}
       - ACCESS_TOKEN_EXPIRE_MINUTES=10080
-      - PYTHONUNBUFFERED=1
     volumes:
       - ./data:/data
-      - backend-logs:/app/logs
     networks:
       - golden-nest-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   # 前端服务
   frontend:
-    build: 
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        # 支持代理配置（如果需要）
-        - HTTP_PROXY=${HTTP_PROXY:-}
-        - HTTPS_PROXY=${HTTPS_PROXY:-}
-        - NO_PROXY=${NO_PROXY:-}
-        # 构建时的后端API地址
-        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:8000}
-    image: golden-nest-frontend:latest
+    build: ./frontend
     container_name: golden-nest-frontend
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-8088}:80"
+      - "8088:80"
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     networks:
       - golden-nest-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
 networks:
   golden-nest-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
 
 volumes:
   golden-nest-data:
-    driver: local
-  backend-logs:
-    driver: local
-
-# 环境变量配置说明：
-# - SECRET_KEY: JWT密钥，生产环境请使用强密钥
-# - FRONTEND_PORT: 前端服务端口，默认8088
-# - VITE_API_BASE_URL: 前端API基础地址，默认http://localhost:8000
-# - HTTP_PROXY/HTTPS_PROXY: 代理配置（可选）
-# 
-# 使用方法：
-# 1. 确保已配置Docker镜像加速器（Windows: daemon.json, Linux: sudo ./setup-docker-mirrors.sh）
-# 2. 构建并启动: docker-compose up -d --build
-# 3. 查看日志: docker-compose logs -f
-# 4. 停止服务: docker-compose down
