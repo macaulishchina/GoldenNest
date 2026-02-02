@@ -235,7 +235,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { giftApi, familyApi, equityApi } from '@/api'
 import { useUserStore } from '@/stores/user'
-import dayjs from 'dayjs'
+import { formatShortDateTime } from '@/utils/date'
+import { checkAndShowAchievements } from '@/utils/achievement'
 
 const message = useMessage()
 const userStore = useUserStore()
@@ -282,7 +283,7 @@ const canSend = computed(() => {
 
 // 方法
 function formatTime(dateStr: string): string {
-  return dayjs(dateStr).format('YYYY-MM-DD HH:mm')
+  return formatShortDateTime(dateStr)
 }
 
 function getStatusType(status: string): 'success' | 'warning' | 'error' | 'default' {
@@ -360,6 +361,9 @@ async function handleSend() {
     
     // 重新加载数据
     await loadData()
+    
+    // 检查成就
+    setTimeout(() => checkAndShowAchievements(), 500)
   } catch (error: any) {
     message.error(error.response?.data?.detail || '发送失败')
   } finally {
@@ -372,6 +376,11 @@ async function handleRespond(giftId: number, accept: boolean) {
     await giftApi.respond(giftId, accept)
     message.success(accept ? '已接受赠与！股权已转入' : '已拒绝赠与')
     await loadData()
+    
+    // 接受赠与后检查成就
+    if (accept) {
+      setTimeout(() => checkAndShowAchievements(), 500)
+    }
   } catch (error: any) {
     message.error(error.response?.data?.detail || '操作失败')
   }

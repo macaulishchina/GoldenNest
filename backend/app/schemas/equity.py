@@ -26,7 +26,7 @@ class EquitySummary(BaseModel):
     total_savings: float  # 当前总储蓄
     total_weighted: float  # 时间加权后总额
     target_progress: float  # 目标完成进度 (0-1)
-    equity_rate: float  # 时间加权年化利率
+    time_value_rate: float  # 时间价值系数
     members: List[MemberEquity]  # 各成员股权信息
     calculated_at: datetime  # 计算时间
 

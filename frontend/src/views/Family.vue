@@ -46,20 +46,62 @@
               <template #avatar>
                 <n-avatar round>{{ member.nickname[0] }}</n-avatar>
               </template>
-              <template #header>{{ member.nickname }}</template>
+              <template #header>
+                <div class="member-header">
+                  <span>{{ member.nickname }}</span>
+                  <n-tag :type="member.role === 'admin' ? 'warning' : 'default'" size="small">
+                    {{ member.role === 'admin' ? '管理员' : '成员' }}
+                  </n-tag>
+                </div>
+              </template>
               <template #description>{{ member.username }}</template>
+              <template #header-extra>
+                <!-- 非管理员可以被剔除，且当前用户是管理员才能发起 -->
+                <n-button 
+                  v-if="isCurrentUserAdmin && member.role !== 'admin' && member.user_id !== currentUserId"
+                  size="small"
+                  type="error"
+                  quaternary
+                  @click="handleRemoveMember(member)"
+                >
+                  剔除
+                </n-button>
+              </template>
             </n-thing>
           </n-list-item>
         </n-list>
       </n-card>
     </template>
+    
+    <!-- 剔除确认弹窗 -->
+    <n-modal v-model:show="showRemoveModal" preset="dialog" title="确认剔除成员">
+      <template #default>
+        <div style="padding: 16px 0;">
+          <p>您确定要发起剔除「<strong>{{ removingMember?.nickname }}</strong>」的申请吗？</p>
+          <p style="color: #666; font-size: 14px; margin-top: 12px;">
+            ⚠️ 该申请需要管理员审批后才会生效
+          </p>
+          <n-form-item label="剔除原因（可选）" style="margin-top: 16px;">
+            <n-input v-model:value="removeReason" type="textarea" placeholder="请说明剔除原因" />
+          </n-form-item>
+        </div>
+      </template>
+      <template #action>
+        <n-space>
+          <n-button @click="showRemoveModal = false">取消</n-button>
+          <n-button type="error" :loading="removingLoading" @click="confirmRemoveMember">
+            确认剔除
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
-import { familyApi } from '@/api'
+import { familyApi, approvalApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 
 const message = useMessage()
@@ -69,6 +111,19 @@ const family = ref<any>(null)
 const members = ref<any[]>([])
 
 const hasFamily = computed(() => !!userStore.user?.family_id)
+const currentUserId = computed(() => userStore.user?.id)
+
+// 判断当前用户是否是管理员
+const isCurrentUserAdmin = computed(() => {
+  const currentMember = members.value.find(m => m.user_id === currentUserId.value)
+  return currentMember?.role === 'admin'
+})
+
+// 剔除相关状态
+const showRemoveModal = ref(false)
+const removingMember = ref<any>(null)
+const removeReason = ref('')
+const removingLoading = ref(false)
 
 const createForm = ref({ name: '', savings_target: 2000000 })
 const joinForm = ref({ invite_code: '' })
@@ -107,10 +162,18 @@ async function handleJoin() {
   if (!joinForm.value.invite_code) { message.warning('请输入邀请码'); return }
   loading.value = true
   try {
-    await familyApi.join(joinForm.value.invite_code)
-    message.success('加入成功！欢迎加入家庭！🎉')
-    await userStore.fetchUser()
-    loadData()
+    const res = await familyApi.join(joinForm.value.invite_code)
+    
+    // 检查返回状态：直接加入还是待审批
+    if (res.data.status === 'joined') {
+      message.success('加入成功！欢迎加入家庭！🎉')
+      await userStore.fetchUser()
+      loadData()
+    } else if (res.data.status === 'pending') {
+      message.info(res.data.message || '已提交加入申请，等待家庭成员审批')
+    } else {
+      message.success('操作成功')
+    }
   } catch (e: any) {
     message.error(e.response?.data?.detail || '加入失败')
   } finally {
@@ -123,5 +186,40 @@ function copyInviteCode() {
   message.success('邀请码已复制')
 }
 
+// 发起剔除成员
+function handleRemoveMember(member: any) {
+  removingMember.value = member
+  removeReason.value = ''
+  showRemoveModal.value = true
+}
+
+async function confirmRemoveMember() {
+  if (!removingMember.value) return
+  
+  removingLoading.value = true
+  try {
+    await approvalApi.createMemberRemove({
+      target_user_id: removingMember.value.user_id,
+      reason: removeReason.value || undefined
+    })
+    message.success('剔除申请已提交，等待管理员审批')
+    showRemoveModal.value = false
+    removingMember.value = null
+    removeReason.value = ''
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '提交申请失败')
+  } finally {
+    removingLoading.value = false
+  }
+}
+
 onMounted(loadData)
 </script>
+
+<style scoped>
+.member-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+</style>

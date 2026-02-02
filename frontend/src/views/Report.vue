@@ -172,6 +172,39 @@
         </div>
       </div>
 
+      <!-- 建议分红 -->
+      <div class="dividend-section" v-if="report.dividend_suggestion?.has_dividend">
+        <h2>💰 建议分红</h2>
+        <div class="dividend-card">
+          <div class="dividend-header">
+            <div class="dividend-total">
+              <span class="dividend-label">可分配投资收益</span>
+              <span class="dividend-amount">¥{{ formatMoney(report.dividend_suggestion.total_investment_income) }}</span>
+            </div>
+            <div class="dividend-note">按年末持股比例分配</div>
+          </div>
+          <div class="dividend-list">
+            <div 
+              class="dividend-item" 
+              v-for="item in report.dividend_suggestion.distribution" 
+              :key="item.member_id"
+            >
+              <div class="member-info">
+                <span class="member-avatar">👤</span>
+                <span class="member-name">{{ item.name }}</span>
+                <span class="member-equity">持股 {{ item.equity_percentage.toFixed(1) }}%</span>
+              </div>
+              <div class="member-dividend">
+                <span class="dividend-value">¥{{ formatMoney(item.dividend_amount) }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="dividend-footer">
+            <span class="dividend-tip">💡 此为建议分红方案，仅供参考</span>
+          </div>
+        </div>
+      </div>
+
       <!-- 年度总结 -->
       <div class="summary-section">
         <h2>📝 年度总结</h2>
@@ -643,6 +676,114 @@ onMounted(() => {
 
 .highlight-detail {
   font-size: 12px;
+  color: #999;
+}
+
+/* 建议分红 */
+.dividend-section {
+  margin-bottom: 32px;
+}
+
+.dividend-section h2 {
+  font-size: 20px;
+  margin-bottom: 16px;
+}
+
+.dividend-card {
+  background: white;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+.dividend-header {
+  background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
+  padding: 20px 24px;
+  color: #333;
+}
+
+.dividend-total {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.dividend-label {
+  font-size: 14px;
+  color: #555;
+}
+
+.dividend-amount {
+  font-size: 28px;
+  font-weight: bold;
+  color: #333;
+}
+
+.dividend-note {
+  font-size: 13px;
+  color: #666;
+}
+
+.dividend-list {
+  padding: 16px 24px;
+}
+
+.dividend-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.dividend-item:last-child {
+  border-bottom: none;
+}
+
+.member-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.member-avatar {
+  font-size: 24px;
+}
+
+.dividend-section .member-name {
+  font-size: 16px;
+  font-weight: 500;
+  color: #333;
+  width: auto;
+}
+
+.member-equity {
+  font-size: 13px;
+  color: #888;
+  background: #f5f5f5;
+  padding: 4px 8px;
+  border-radius: 12px;
+}
+
+.member-dividend {
+  text-align: right;
+}
+
+.dividend-value {
+  font-size: 20px;
+  font-weight: bold;
+  color: #f5a623;
+}
+
+.dividend-footer {
+  background: #fafafa;
+  padding: 12px 24px;
+  text-align: center;
+}
+
+.dividend-tip {
+  font-size: 13px;
   color: #999;
 }
 

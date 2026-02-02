@@ -12,7 +12,7 @@
 import { ref, onMounted, h } from 'vue'
 import { NTag } from 'naive-ui'
 import { transactionApi } from '@/api'
-import dayjs from 'dayjs'
+import { formatShortDateTime } from '@/utils/date'
 
 const loading = ref(false)
 const transactions = ref<any[]>([])
@@ -25,7 +25,7 @@ const typeMap: Record<string, { color: string, label: string }> = {
 }
 
 const columns = [
-  { title: '日期', key: 'created_at', render: (row: any) => dayjs(row.created_at).format('YYYY-MM-DD HH:mm') },
+  { title: '日期', key: 'created_at', render: (row: any) => formatShortDateTime(row.created_at) },
   { title: '类型', key: 'transaction_type', render: (row: any) => h(NTag, { size: 'small', bordered: false, style: { backgroundColor: typeMap[row.transaction_type]?.color + '20', color: typeMap[row.transaction_type]?.color } }, { default: () => typeMap[row.transaction_type]?.label || row.transaction_type }) },
   { title: '金额', key: 'amount', render: (row: any) => {
     const isPositive = row.amount > 0

@@ -79,7 +79,8 @@ import {
   StatsChartOutline,
   CashOutline,
   BusinessOutline,
-  SparklesOutline
+  SparklesOutline,
+  DocumentTextOutline
 } from '@vicons/ionicons5'
 
 const router = useRouter()
@@ -126,6 +127,11 @@ const menuOptions: MenuOption[] = [
     key: 'finance-group',
     icon: renderIcon(CashOutline),
     children: [
+      {
+        label: '审批中心',
+        key: 'approval',
+        icon: renderIcon(DocumentTextOutline)
+      },
       {
         label: '资金注入',
         key: 'deposit',

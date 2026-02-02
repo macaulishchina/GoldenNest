@@ -221,7 +221,9 @@ function getRarityName(rarity: string): string {
 }
 
 function formatTime(timeStr: string): string {
-  const date = new Date(timeStr)
+  // 后端返回的是 UTC 时间，需要添加 'Z' 后缀确保正确解析
+  const utcTimeStr = timeStr.endsWith('Z') ? timeStr : timeStr + 'Z'
+  const date = new Date(utcTimeStr)
   const now = new Date()
   const diff = now.getTime() - date.getTime()
   

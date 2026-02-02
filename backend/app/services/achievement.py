@@ -351,9 +351,9 @@ ACHIEVEMENT_DEFINITIONS = [
     {"code": "new_year_eve", "name": "跨年夜", "description": "12月31日 23:00 后操作", "category": "hidden", "icon": "🎆", "rarity": "epic", "points": 80, "is_hidden": True, "trigger_type": "date_time", "trigger_value": "12-31-23"},
     
     # 中国传统节日（农历日期用范围覆盖，因每年公历日期不同）
-    {"code": "spring_festival", "name": "新春大吉", "description": "春节期间（1月21日-2月20日）存款", "category": "hidden", "icon": "🧧", "rarity": "epic", "points": 100, "is_hidden": True, "trigger_type": "date_range", "trigger_value": "01-21/02-20"},
-    {"code": "spring_eve", "name": "除夕守岁", "description": "农历除夕夜存款（大年三十前后）", "category": "hidden", "icon": "🏮", "rarity": "legendary", "points": 150, "is_hidden": True, "trigger_type": "date_range", "trigger_value": "01-20/02-20"},
-    {"code": "lantern_festival", "name": "元宵佳节", "description": "元宵节存款（正月十五前后）", "category": "hidden", "icon": "🏮", "rarity": "epic", "points": 88, "is_hidden": True, "trigger_type": "date_range", "trigger_value": "02-01/03-05"},
+    {"code": "spring_festival", "name": "新春大吉", "description": "春节期间（正月初一至初七）存款", "category": "hidden", "icon": "🧧", "rarity": "epic", "points": 100, "is_hidden": True, "trigger_type": "lunar_date_range", "trigger_value": "1-1/1-7"},
+    {"code": "spring_eve", "name": "除夕守岁", "description": "除夕夜（腊月三十或二十九）存款", "category": "hidden", "icon": "🏮", "rarity": "legendary", "points": 150, "is_hidden": True, "trigger_type": "lunar_new_year_eve", "trigger_value": "true"},
+    {"code": "lantern_festival", "name": "元宵佳节", "description": "元宵节（正月十五）存款", "category": "hidden", "icon": "🏮", "rarity": "epic", "points": 88, "is_hidden": True, "trigger_type": "lunar_date", "trigger_value": "1-15"},
     {"code": "qingming", "name": "清明时节", "description": "清明节期间（4月4日-4月6日）存款", "category": "hidden", "icon": "🌿", "rarity": "rare", "points": 50, "is_hidden": True, "trigger_type": "date_range", "trigger_value": "04-04/04-06"},
     {"code": "dragon_boat", "name": "端午安康", "description": "端午节期间（5月25日-6月25日）存款", "category": "hidden", "icon": "🐉", "rarity": "epic", "points": 88, "is_hidden": True, "trigger_type": "date_range", "trigger_value": "05-25/06-25"},
     {"code": "qixi", "name": "七夕之约", "description": "七夕情人节存款（8月前后）", "category": "hidden", "icon": "💑", "rarity": "epic", "points": 77, "is_hidden": True, "trigger_type": "date_range", "trigger_value": "08-01/08-31"},
@@ -361,7 +361,7 @@ ACHIEVEMENT_DEFINITIONS = [
     {"code": "chongyang", "name": "重阳敬老", "description": "重阳节（九月九日前后）存款", "category": "hidden", "icon": "🌼", "rarity": "rare", "points": 60, "is_hidden": True, "trigger_type": "date_range", "trigger_value": "10-01/10-31"},
     {"code": "national_day", "name": "国庆献礼", "description": "国庆节（10月1日-7日）存款", "category": "hidden", "icon": "🇨🇳", "rarity": "epic", "points": 100, "is_hidden": True, "trigger_type": "date_range", "trigger_value": "10-01/10-07"},
     {"code": "laba", "name": "腊八粥香", "description": "腊八节（12月下旬-1月初）存款", "category": "hidden", "icon": "🥣", "rarity": "rare", "points": 50, "is_hidden": True, "trigger_type": "date_range", "trigger_value": "12-20/01-15"},
-    {"code": "xiaonian", "name": "小年福至", "description": "小年（腊月二十三四）存款", "category": "hidden", "icon": "🎋", "rarity": "rare", "points": 60, "is_hidden": True, "trigger_type": "date_range", "trigger_value": "01-15/02-10"},
+    {"code": "xiaonian", "name": "小年福至", "description": "小年（腊月二十三、二十四）存款", "category": "hidden", "icon": "🎋", "rarity": "rare", "points": 60, "is_hidden": True, "trigger_type": "lunar_date_range", "trigger_value": "12-23/12-24"},
     
     # 生日与纪念日
     {"code": "birthday_deposit", "name": "生日快乐", "description": "在自己生日当天存款", "category": "hidden", "icon": "🎂", "rarity": "epic", "points": 100, "is_hidden": True, "trigger_type": "birthday", "trigger_value": "true"},
@@ -571,6 +571,9 @@ class AchievementService:
         new_unlocks = []
         context = context or {}
         
+        # 确保成就定义已初始化
+        await self.init_achievements()
+        
         # 获取所有成就定义
         all_achievements = await self.db.execute(select(Achievement))
         achievements = all_achievements.scalars().all()
@@ -754,6 +757,257 @@ class AchievementService:
                 select(func.count(EquityGift.id)).where(
                     EquityGift.to_user_id == user_id,
                     EquityGift.status == EquityGiftStatus.ACCEPTED
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        # ==================== 单笔存款金额检测 ====================
+        elif trigger_type == "single_deposit":
+            if "deposit_amount" in context:
+                return context["deposit_amount"] >= float(trigger_value)
+            return False
+        
+        # ==================== 理财收益检测 ====================
+        elif trigger_type == "income_count":
+            from app.models.models import InvestmentIncome
+            result = await self.db.execute(
+                select(func.count(InvestmentIncome.id))
+                .join(Investment, InvestmentIncome.investment_id == Investment.id)
+                .join(FamilyMember, FamilyMember.family_id == Investment.family_id)
+                .where(FamilyMember.user_id == user_id)
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        elif trigger_type == "total_income":
+            from app.models.models import InvestmentIncome
+            result = await self.db.execute(
+                select(func.sum(InvestmentIncome.amount))
+                .join(Investment, InvestmentIncome.investment_id == Investment.id)
+                .join(FamilyMember, FamilyMember.family_id == Investment.family_id)
+                .where(FamilyMember.user_id == user_id)
+            )
+            total = result.scalar() or 0
+            return total >= float(trigger_value)
+        
+        elif trigger_type == "monthly_income":
+            from app.models.models import InvestmentIncome
+            # 统计当月收益
+            now = datetime.now()
+            start_of_month = datetime(now.year, now.month, 1)
+            result = await self.db.execute(
+                select(func.sum(InvestmentIncome.amount))
+                .join(Investment, InvestmentIncome.investment_id == Investment.id)
+                .join(FamilyMember, FamilyMember.family_id == Investment.family_id)
+                .where(
+                    FamilyMember.user_id == user_id,
+                    InvestmentIncome.income_date >= start_of_month
+                )
+            )
+            monthly_total = result.scalar() or 0
+            return monthly_total >= float(trigger_value)
+        
+        elif trigger_type == "total_principal":
+            result = await self.db.execute(
+                select(func.sum(Investment.principal))
+                .join(FamilyMember, FamilyMember.family_id == Investment.family_id)
+                .where(
+                    FamilyMember.user_id == user_id,
+                    Investment.is_active == True
+                )
+            )
+            total = result.scalar() or 0
+            return total >= float(trigger_value)
+        
+        elif trigger_type == "investment_type_count":
+            result = await self.db.execute(
+                select(func.count(func.distinct(Investment.investment_type)))
+                .join(FamilyMember, FamilyMember.family_id == Investment.family_id)
+                .where(
+                    FamilyMember.user_id == user_id,
+                    Investment.is_active == True
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        # ==================== 支出类成就检测 ====================
+        elif trigger_type == "single_expense":
+            if "expense_amount" in context:
+                return context["expense_amount"] >= float(trigger_value)
+            return False
+        
+        elif trigger_type == "total_expense":
+            from app.models.models import ExpenseStatus
+            result = await self.db.execute(
+                select(func.sum(ExpenseRequest.amount)).where(
+                    ExpenseRequest.requester_id == user_id,
+                    ExpenseRequest.status == ExpenseStatus.APPROVED
+                )
+            )
+            total = result.scalar() or 0
+            return total >= float(trigger_value)
+        
+        elif trigger_type == "review_count":
+            from app.models.models import ExpenseApproval
+            result = await self.db.execute(
+                select(func.count(ExpenseApproval.id)).where(
+                    ExpenseApproval.approver_id == user_id
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        elif trigger_type == "reject_count":
+            from app.models.models import ExpenseApproval
+            result = await self.db.execute(
+                select(func.count(ExpenseApproval.id)).where(
+                    ExpenseApproval.approver_id == user_id,
+                    ExpenseApproval.is_approved == False
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        elif trigger_type == "approved_streak":
+            from app.models.models import ExpenseStatus
+            # 获取用户最近N次支出申请（按ID降序）
+            result = await self.db.execute(
+                select(ExpenseRequest.status)
+                .where(ExpenseRequest.requester_id == user_id)
+                .order_by(ExpenseRequest.id.desc())
+                .limit(int(trigger_value))
+            )
+            statuses = result.scalars().all()
+            if len(statuses) < int(trigger_value):
+                return False
+            return all(s == ExpenseStatus.APPROVED for s in statuses)
+        
+        # ==================== 日期范围检测（彩蛋）====================
+        elif trigger_type == "date_range":
+            now = datetime.now()
+            parts = trigger_value.split("/")
+            if len(parts) == 2:
+                start_month, start_day = map(int, parts[0].split("-"))
+                end_month, end_day = map(int, parts[1].split("-"))
+                # 处理跨年情况
+                current_date = (now.month, now.day)
+                start_date = (start_month, start_day)
+                end_date = (end_month, end_day)
+                if start_date <= end_date:
+                    return start_date <= current_date <= end_date
+                else:
+                    # 跨年情况，如 12-20 到 01-15
+                    return current_date >= start_date or current_date <= end_date
+            return False
+        
+        # ==================== 农历日期检测（精确匹配）====================
+        elif trigger_type == "lunar_date":
+            try:
+                from zhdate import ZhDate
+                now = datetime.now()
+                lunar = ZhDate.from_datetime(now)
+                target_month, target_day = map(int, trigger_value.split("-"))
+                return lunar.lunar_month == target_month and lunar.lunar_day == target_day
+            except Exception:
+                return False
+        
+        # ==================== 农历日期范围检测 ====================
+        elif trigger_type == "lunar_date_range":
+            try:
+                from zhdate import ZhDate
+                now = datetime.now()
+                lunar = ZhDate.from_datetime(now)
+                parts = trigger_value.split("/")
+                if len(parts) == 2:
+                    start_month, start_day = map(int, parts[0].split("-"))
+                    end_month, end_day = map(int, parts[1].split("-"))
+                    current = (lunar.lunar_month, lunar.lunar_day)
+                    start = (start_month, start_day)
+                    end = (end_month, end_day)
+                    if start <= end:
+                        return start <= current <= end
+                    else:
+                        # 跨农历年情况，如 12-23 到 1-7
+                        return current >= start or current <= end
+                return False
+            except Exception:
+                return False
+        
+        # ==================== 除夕检测（特殊处理） ====================
+        elif trigger_type == "lunar_new_year_eve":
+            try:
+                from zhdate import ZhDate
+                now = datetime.now()
+                lunar = ZhDate.from_datetime(now)
+                # 除夕是腊月最后一天（可能是二十九或三十）
+                # 方法：检查明天是否是正月初一
+                tomorrow = now + timedelta(days=1)
+                lunar_tomorrow = ZhDate.from_datetime(tomorrow)
+                return lunar_tomorrow.lunar_month == 1 and lunar_tomorrow.lunar_day == 1
+            except Exception:
+                return False
+        
+        # ==================== 家庭类成就检测 ====================
+        elif trigger_type == "create_family":
+            # 通过 context 判断是否刚刚创建了家庭
+            if context.get("action") == "create_family":
+                return True
+            # 或者检查用户是否是某个家庭的 admin（创建者）
+            result = await self.db.execute(
+                select(FamilyMember).where(
+                    FamilyMember.user_id == user_id,
+                    FamilyMember.role == "admin"
+                )
+            )
+            return result.scalar_one_or_none() is not None
+        
+        elif trigger_type == "join_family":
+            # 通过 context 判断是否刚刚加入了家庭
+            if context.get("action") == "join_family":
+                return True
+            # 或者检查用户是否是某个家庭的成员（非创建者）
+            result = await self.db.execute(
+                select(FamilyMember).where(
+                    FamilyMember.user_id == user_id,
+                    FamilyMember.role == "member"
+                )
+            )
+            return result.scalar_one_or_none() is not None
+        
+        elif trigger_type == "family_members":
+            # 检查用户所在家庭的成员数量
+            result = await self.db.execute(
+                select(func.count(FamilyMember.id))
+                .where(FamilyMember.family_id.in_(
+                    select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+                ))
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        elif trigger_type == "invite_count":
+            # 用户邀请的成员数量（通过审批记录来判断）
+            from app.models.models import ApprovalRequest, ApprovalRequestType, ApprovalRequestStatus, ApprovalRecord
+            # 获取用户所在的家庭
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            
+            # 统计该家庭中被批准加入的成员申请（用户审批通过的）
+            result = await self.db.execute(
+                select(func.count(ApprovalRecord.id))
+                .join(ApprovalRequest, ApprovalRecord.request_id == ApprovalRequest.id)
+                .where(
+                    ApprovalRequest.family_id == family_id,
+                    ApprovalRequest.request_type == ApprovalRequestType.MEMBER_JOIN,
+                    ApprovalRequest.status == ApprovalRequestStatus.APPROVED,
+                    ApprovalRecord.approver_id == user_id,
+                    ApprovalRecord.is_approved == True
                 )
             )
             count = result.scalar() or 0

@@ -14,7 +14,7 @@
           </div>
           <div class="summary-item">
             <span class="label">时间加权利率</span>
-            <span class="value">{{ (equity.equity_rate * 100).toFixed(1) }}%</span>
+            <span class="value">{{ ((equity.time_value_rate || 0) * 100).toFixed(1) }}%</span>
           </div>
         </div>
       </n-card>

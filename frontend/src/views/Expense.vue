@@ -55,7 +55,7 @@ import { ref, computed, onMounted, h, watch } from 'vue'
 import { useMessage, NButton, NTag, NSpace } from 'naive-ui'
 import { expenseApi, familyApi } from '@/api'
 import { useUserStore } from '@/stores/user'
-import dayjs from 'dayjs'
+import { formatShortDateTime } from '@/utils/date'
 
 const message = useMessage()
 const userStore = useUserStore()
@@ -92,7 +92,7 @@ const columns = [
   { title: '金额', key: 'amount', render: (row: any) => `¥${row.amount.toLocaleString()}` },
   { title: '原因', key: 'reason', ellipsis: { tooltip: true } },
   { title: '状态', key: 'status', render: (row: any) => h(NTag, { type: statusMap[row.status]?.type || 'default', size: 'small' }, { default: () => statusMap[row.status]?.label || row.status }) },
-  { title: '申请时间', key: 'created_at', render: (row: any) => dayjs(row.created_at).format('YYYY-MM-DD HH:mm') },
+  { title: '申请时间', key: 'created_at', render: (row: any) => formatShortDateTime(row.created_at) },
   { 
     title: '操作', 
     key: 'actions',

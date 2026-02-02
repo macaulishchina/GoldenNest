@@ -28,43 +28,21 @@ async def get_user_family_id(user_id: int, db: AsyncSession) -> int:
     return membership.family_id
 
 
-@router.post("/create", response_model=InvestmentResponse)
+@router.post("/create")
 async def create_investment(
     investment_data: InvestmentCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """创建理财配置"""
-    family_id = await get_user_family_id(current_user.id, db)
+    """
+    [已废弃] 创建理财配置
     
-    investment = Investment(
-        family_id=family_id,
-        name=investment_data.name,
-        investment_type=investment_data.investment_type,
-        principal=investment_data.principal,
-        expected_rate=investment_data.expected_rate,
-        start_date=investment_data.start_date,
-        end_date=investment_data.end_date,
-        note=investment_data.note
-    )
-    db.add(investment)
-    await db.flush()
-    await db.refresh(investment)
-    
-    return InvestmentResponse(
-        id=investment.id,
-        family_id=investment.family_id,
-        name=investment.name,
-        investment_type=investment.investment_type,
-        principal=investment.principal,
-        expected_rate=investment.expected_rate,
-        start_date=investment.start_date,
-        end_date=investment.end_date,
-        is_active=investment.is_active,
-        note=investment.note,
-        created_at=investment.created_at,
-        total_income=0,
-        income_records=[]
+    此接口已废弃，请使用审批接口 POST /api/approval/investment/create
+    所有理财配置创建需要经过家庭成员审批后才能执行。
+    """
+    raise HTTPException(
+        status_code=400,
+        detail="此接口已废弃。创建理财需要家庭成员审批，请使用 POST /api/approval/investment/create 接口"
     )
 
 
@@ -74,7 +52,9 @@ async def list_investments(
     db: AsyncSession = Depends(get_db)
 ):
     """获取理财列表"""
+    import logging
     family_id = await get_user_family_id(current_user.id, db)
+    logging.info(f"Listing investments for user_id={current_user.id}, family_id={family_id}")
     
     result = await db.execute(
         select(Investment)
@@ -82,6 +62,7 @@ async def list_investments(
         .order_by(Investment.created_at.desc())
     )
     investments = result.scalars().all()
+    logging.info(f"Found {len(investments)} investments for family_id={family_id}")
     
     response = []
     for inv in investments:
@@ -128,123 +109,41 @@ async def list_investments(
     return response
 
 
-@router.put("/{investment_id}", response_model=InvestmentResponse)
+@router.put("/{investment_id}")
 async def update_investment(
     investment_id: int,
     investment_data: InvestmentUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """更新理财配置"""
-    family_id = await get_user_family_id(current_user.id, db)
+    """
+    [已废弃] 更新理财配置
     
-    result = await db.execute(
-        select(Investment)
-        .where(Investment.id == investment_id, Investment.family_id == family_id)
-    )
-    investment = result.scalar_one_or_none()
-    if not investment:
-        raise HTTPException(status_code=404, detail="理财产品不存在")
-    
-    if investment_data.name is not None:
-        investment.name = investment_data.name
-    if investment_data.principal is not None:
-        investment.principal = investment_data.principal
-    if investment_data.expected_rate is not None:
-        investment.expected_rate = investment_data.expected_rate
-    if investment_data.end_date is not None:
-        investment.end_date = investment_data.end_date
-    if investment_data.is_active is not None:
-        investment.is_active = investment_data.is_active
-    if investment_data.note is not None:
-        investment.note = investment_data.note
-    
-    await db.flush()
-    
-    # 计算累计收益
-    result = await db.execute(
-        select(func.sum(InvestmentIncome.amount))
-        .where(InvestmentIncome.investment_id == investment.id)
-    )
-    total_income = result.scalar() or 0
-    
-    return InvestmentResponse(
-        id=investment.id,
-        family_id=investment.family_id,
-        name=investment.name,
-        investment_type=investment.investment_type,
-        principal=investment.principal,
-        expected_rate=investment.expected_rate,
-        start_date=investment.start_date,
-        end_date=investment.end_date,
-        is_active=investment.is_active,
-        note=investment.note,
-        created_at=investment.created_at,
-        total_income=total_income,
-        income_records=[]
+    此接口已废弃，请使用审批接口 POST /api/approval/investment/update
+    所有理财配置更新需要经过家庭成员审批后才能执行。
+    """
+    raise HTTPException(
+        status_code=400,
+        detail="此接口已废弃。更新理财需要家庭成员审批，请使用 POST /api/approval/investment/update 接口"
     )
 
 
-@router.post("/{investment_id}/income", response_model=InvestmentIncomeResponse)
+@router.post("/{investment_id}/income")
 async def add_investment_income(
     investment_id: int,
     income_data: InvestmentIncomeCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """登记理财收益"""
-    family_id = await get_user_family_id(current_user.id, db)
+    """
+    [已废弃] 登记理财收益
     
-    result = await db.execute(
-        select(Investment)
-        .where(Investment.id == investment_id, Investment.family_id == family_id)
-    )
-    investment = result.scalar_one_or_none()
-    if not investment:
-        raise HTTPException(status_code=404, detail="理财产品不存在")
-    
-    # 创建收益记录
-    income = InvestmentIncome(
-        investment_id=investment_id,
-        amount=income_data.amount,
-        income_date=income_data.income_date,
-        note=income_data.note
-    )
-    db.add(income)
-    await db.flush()
-    
-    # 获取当前余额
-    result = await db.execute(
-        select(Transaction)
-        .where(Transaction.family_id == family_id)
-        .order_by(Transaction.created_at.desc())
-        .limit(1)
-    )
-    last_transaction = result.scalar_one_or_none()
-    current_balance = last_transaction.balance_after if last_transaction else 0
-    
-    # 创建交易流水
-    transaction = Transaction(
-        family_id=family_id,
-        user_id=None,
-        transaction_type=TransactionType.INCOME,
-        amount=income_data.amount,
-        balance_after=current_balance + income_data.amount,
-        description=f"理财收益: {investment.name} +{income_data.amount}元",
-        reference_id=income.id,
-        reference_type="investment_income"
-    )
-    db.add(transaction)
-    await db.flush()
-    await db.refresh(income)
-    
-    return InvestmentIncomeResponse(
-        id=income.id,
-        investment_id=income.investment_id,
-        amount=income.amount,
-        income_date=income.income_date,
-        note=income.note,
-        created_at=income.created_at
+    此接口已废弃，请使用审批接口 POST /api/approval/investment/income
+    所有理财收益登记需要经过家庭成员审批后才能执行。
+    """
+    raise HTTPException(
+        status_code=400,
+        detail="此接口已废弃。登记理财收益需要家庭成员审批，请使用 POST /api/approval/investment/income 接口"
     )
 
 

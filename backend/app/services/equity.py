@@ -20,7 +20,7 @@ def calculate_weighted_amount(amount: float, deposit_date: datetime, rate: float
     Args:
         amount: 原始金额
         deposit_date: 存入日期
-        rate: 年化利率 (如 0.03 表示 3%)
+        rate: 时间价值系数 (如 0.03 表示 3%)，体现存的越久权重越高
         calculate_date: 计算基准日期，默认为当前时间
     
     Returns:
@@ -99,7 +99,7 @@ async def calculate_family_equity(family_id: int, db: AsyncSession) -> EquitySum
                 weighted = calculate_weighted_amount(
                     deposit.amount,
                     deposit.deposit_date,
-                    family.equity_rate,
+                    family.time_value_rate,
                     now
                 )
                 user_weighted += weighted
@@ -140,7 +140,7 @@ async def calculate_family_equity(family_id: int, db: AsyncSession) -> EquitySum
         total_savings=total_original,
         total_weighted=total_weighted,
         target_progress=round(target_progress, 4),
-        equity_rate=family.equity_rate,
+        time_value_rate=family.time_value_rate,
         members=member_equity_list,
         calculated_at=now
     )

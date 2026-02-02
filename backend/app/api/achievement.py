@@ -207,6 +207,69 @@ async def check_achievements(
     )
 
 
+@router.get("/unshown", response_model=AchievementCheckResponse)
+async def get_unshown_achievements(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    获取未展示过的成就并标记为已展示
+    
+    用于轮询/路由切换时检查新解锁的成就
+    返回后自动将这些成就标记为已展示
+    """
+    # 查询未展示的成就
+    result = await db.execute(
+        select(UserAchievement)
+        .where(
+            UserAchievement.user_id == current_user.id,
+            UserAchievement.shown == False
+        )
+        .order_by(UserAchievement.unlocked_at.desc())
+    )
+    unshown_achievements = result.scalars().all()
+    
+    # 构建响应
+    unlocks_response = []
+    for ua in unshown_achievements:
+        # 获取成就详情
+        ach_result = await db.execute(
+            select(Achievement).where(Achievement.id == ua.achievement_id)
+        )
+        ach = ach_result.scalar_one_or_none()
+        if ach:
+            unlocks_response.append(NewUnlock(
+                achievement=AchievementDefinition(
+                    id=ach.id,
+                    code=ach.code,
+                    name=ach.name,
+                    description=ach.description,
+                    category=ach.category,
+                    icon=ach.icon,
+                    rarity=ach.rarity,
+                    points=ach.points,
+                    is_hidden=ach.is_hidden
+                ),
+                unlocked_at=ua.unlocked_at
+            ))
+        
+        # 标记为已展示
+        ua.shown = True
+    
+    # 提交更新
+    await db.commit()
+    
+    # 获取总统计
+    service = AchievementService(db)
+    progress = await service.get_progress(current_user.id)
+    
+    return AchievementCheckResponse(
+        new_unlocks=unlocks_response,
+        total_unlocked=progress["unlocked_achievements"],
+        total_points=progress["earned_points"]
+    )
+
+
 @router.get("/recent", response_model=List[RecentFamilyUnlock])
 async def get_recent_family_unlocks(
     limit: int = 10,

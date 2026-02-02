@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { fetchUnshownAchievements } from '@/utils/achievement'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -79,6 +80,11 @@ const router = createRouter({
           path: 'report',
           name: 'Report',
           component: () => import('@/views/Report.vue')
+        },
+        {
+          path: 'approval',
+          name: 'Approval',
+          component: () => import('@/views/Approval.vue')
         }
       ]
     }
@@ -95,6 +101,19 @@ router.beforeEach((to, _from, next) => {
     next('/')
   } else {
     next()
+  }
+})
+
+// 路由切换后检查未展示的成就
+router.afterEach((to) => {
+  const userStore = useUserStore()
+  
+  // 只在用户已登录且不是登录页时检查成就
+  if (userStore.isLoggedIn && to.name !== 'Login') {
+    // 延迟执行，确保页面已加载
+    setTimeout(() => {
+      fetchUnshownAchievements()
+    }, 300)
   }
 })
 

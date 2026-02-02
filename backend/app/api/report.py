@@ -256,17 +256,115 @@ async def generate_annual_report_data(db: AsyncSession, family_id: int, year: in
             "description": f"全年资产增长 {growth_rate:.1f}%"
         })
     
+    # 转换 equity_changes 为前端期望的数组格式
+    equity_start_list = []
+    equity_end_list = []
+    for user_id, data in equity_changes.items():
+        equity_start_list.append({
+            "member_id": int(user_id),
+            "name": data["name"],
+            "percentage": data["start_ratio"]
+        })
+        equity_end_list.append({
+            "member_id": int(user_id),
+            "name": data["name"],
+            "percentage": data["end_ratio"]
+        })
+    
+    # 转换 monthly_data 为前端期望的格式
+    monthly_data_formatted = []
+    for m in monthly_data:
+        monthly_data_formatted.append({
+            "month": m["month"],
+            "income": m["deposits"] + m["income"],  # 收入 = 存款 + 理财收益
+            "expense": m["withdrawals"],
+            "net": m["net"]
+        })
+    
+    # 转换 highlights 为前端期望的对象格式
+    highlights_obj = {}
+    for h in highlights:
+        if h["type"] == "max_deposit":
+            highlights_obj["biggest_deposit"] = {
+                "amount": h["value"],
+                "member": h["description"].split(" 在 ")[0] if " 在 " in h["description"] else "",
+                "date": None  # 日期需要从描述解析或添加到原数据
+            }
+        elif h["type"] == "best_income_month":
+            highlights_obj["best_month"] = {
+                "month": int(h["description"].split("月")[0]) if "月" in h["description"] else 1,
+                "net": h["value"]
+            }
+        elif h["type"] == "savings_rate":
+            highlights_obj["savings_rate"] = h["value"]
+        elif h["type"] == "growth_rate":
+            highlights_obj["growth_rate"] = h["value"]
+    
+    # 添加理财收益到亮点
+    if total_income > 0:
+        highlights_obj["investment_return"] = total_income
+    
+    # 查找最佳存款人
+    if max_deposit:
+        # 获取各成员的总存款
+        member_deposits = await db.execute(
+            select(User.nickname, func.sum(Deposit.amount).label('total'))
+            .join(Deposit, User.id == Deposit.user_id)
+            .where(
+                Deposit.family_id == family_id,
+                Deposit.deposit_date >= start_of_year,
+                Deposit.deposit_date <= end_of_year
+            )
+            .group_by(User.id, User.nickname)
+            .order_by(func.sum(Deposit.amount).desc())
+            .limit(1)
+        )
+        top_depositor = member_deposits.first()
+        if top_depositor:
+            highlights_obj["most_deposits_member"] = {
+                "name": top_depositor[0],
+                "total": top_depositor[1]
+            }
+    
+    # 10. 计算建议分红（基于年末持股比例分配投资收益）
+    dividend_suggestion = {
+        "total_investment_income": total_income,  # 可分配的投资收益总额
+        "distribution": [],  # 各成员的分红明细
+        "has_dividend": total_income > 0  # 是否有可分配收益
+    }
+    
+    if total_income > 0:
+        for eq in equity_end_list:
+            # 按年末持股比例计算每人应得分红
+            member_dividend = round(total_income * eq["percentage"] / 100, 2)
+            dividend_suggestion["distribution"].append({
+                "member_id": eq["member_id"],
+                "name": eq["name"],
+                "equity_percentage": eq["percentage"],
+                "dividend_amount": member_dividend
+            })
+    
     return {
         "year": year,
-        "total_deposits": total_deposits,
-        "total_withdrawals": total_withdrawals,
-        "total_income": total_income,
-        "net_change": net_change,
-        "start_balance": start_balance,
-        "end_balance": end_balance,
-        "equity_changes": equity_changes,
-        "monthly_data": monthly_data,
-        "highlights": highlights
+        "summary": {
+            "total_income": total_deposits + total_income,  # 总收入 = 存款 + 理财收益
+            "total_expense": total_withdrawals,
+            "net_change": net_change,
+            "start_balance": start_balance,
+            "end_balance": end_balance
+        },
+        "monthly_data": monthly_data_formatted,
+        "equity_start": equity_start_list,
+        "equity_end": equity_end_list,
+        "highlights": highlights_obj,
+        "dividend_suggestion": dividend_suggestion,  # 建议分红
+        # 也保留原始数据，方便以后使用
+        "raw": {
+            "total_deposits": total_deposits,
+            "total_withdrawals": total_withdrawals,
+            "total_income": total_income,
+            "equity_changes": equity_changes
+        }
     }
 
 
@@ -287,66 +385,8 @@ async def get_annual_report(
     if year < 2020:
         raise HTTPException(status_code=400, detail="年份不能早于2020年")
     
-    # 检查是否已有缓存的报告
-    result = await db.execute(
-        select(AnnualReport).where(
-            AnnualReport.family_id == family_id,
-            AnnualReport.year == year
-        )
-    )
-    cached_report = result.scalar_one_or_none()
-    
-    # 如果是当前年份，总是重新生成；如果是历史年份且有缓存，使用缓存
-    if cached_report and year < current_year:
-        return {
-            "year": cached_report.year,
-            "total_deposits": cached_report.total_deposits,
-            "total_withdrawals": cached_report.total_withdrawals,
-            "total_income": cached_report.total_income,
-            "net_change": cached_report.net_change,
-            "start_balance": cached_report.start_balance,
-            "end_balance": cached_report.end_balance,
-            "equity_changes": json.loads(cached_report.equity_changes),
-            "monthly_data": json.loads(cached_report.monthly_data),
-            "highlights": json.loads(cached_report.highlights),
-            "is_cached": True,
-            "generated_at": cached_report.created_at.isoformat()
-        }
-    
-    # 生成新报告
+    # 生成新报告（暂时禁用缓存，因为数据格式已更改）
     report_data = await generate_annual_report_data(db, family_id, year)
-    
-    # 如果是历史年份，缓存报告
-    if year < current_year:
-        if cached_report:
-            # 更新现有缓存
-            cached_report.total_deposits = report_data["total_deposits"]
-            cached_report.total_withdrawals = report_data["total_withdrawals"]
-            cached_report.total_income = report_data["total_income"]
-            cached_report.net_change = report_data["net_change"]
-            cached_report.start_balance = report_data["start_balance"]
-            cached_report.end_balance = report_data["end_balance"]
-            cached_report.equity_changes = json.dumps(report_data["equity_changes"], ensure_ascii=False)
-            cached_report.monthly_data = json.dumps(report_data["monthly_data"], ensure_ascii=False)
-            cached_report.highlights = json.dumps(report_data["highlights"], ensure_ascii=False)
-        else:
-            # 创建新缓存
-            new_report = AnnualReport(
-                family_id=family_id,
-                year=year,
-                total_deposits=report_data["total_deposits"],
-                total_withdrawals=report_data["total_withdrawals"],
-                total_income=report_data["total_income"],
-                net_change=report_data["net_change"],
-                start_balance=report_data["start_balance"],
-                end_balance=report_data["end_balance"],
-                equity_changes=json.dumps(report_data["equity_changes"], ensure_ascii=False),
-                monthly_data=json.dumps(report_data["monthly_data"], ensure_ascii=False),
-                highlights=json.dumps(report_data["highlights"], ensure_ascii=False)
-            )
-            db.add(new_report)
-        
-        await db.commit()
     
     report_data["is_cached"] = False
     report_data["generated_at"] = datetime.now().isoformat()
@@ -508,34 +548,40 @@ async def compare_years(
             return 100 if new > 0 else 0
         return round(((new - old) / abs(old)) * 100, 1)
     
+    # 从 raw 字段获取原始数据
+    raw1 = report1.get("raw", {})
+    raw2 = report2.get("raw", {})
+    summary1 = report1.get("summary", {})
+    summary2 = report2.get("summary", {})
+    
     return {
         "year1": year1,
         "year2": year2,
         "comparison": {
             "deposits": {
-                "year1": report1["total_deposits"],
-                "year2": report2["total_deposits"],
-                "change": calc_change(report2["total_deposits"], report1["total_deposits"])
+                "year1": raw1.get("total_deposits", 0),
+                "year2": raw2.get("total_deposits", 0),
+                "change": calc_change(raw2.get("total_deposits", 0), raw1.get("total_deposits", 0))
             },
             "withdrawals": {
-                "year1": report1["total_withdrawals"],
-                "year2": report2["total_withdrawals"],
-                "change": calc_change(report2["total_withdrawals"], report1["total_withdrawals"])
+                "year1": raw1.get("total_withdrawals", 0),
+                "year2": raw2.get("total_withdrawals", 0),
+                "change": calc_change(raw2.get("total_withdrawals", 0), raw1.get("total_withdrawals", 0))
             },
             "income": {
-                "year1": report1["total_income"],
-                "year2": report2["total_income"],
-                "change": calc_change(report2["total_income"], report1["total_income"])
+                "year1": raw1.get("total_income", 0),
+                "year2": raw2.get("total_income", 0),
+                "change": calc_change(raw2.get("total_income", 0), raw1.get("total_income", 0))
             },
             "net_change": {
-                "year1": report1["net_change"],
-                "year2": report2["net_change"],
-                "change": calc_change(report2["net_change"], report1["net_change"])
+                "year1": summary1.get("net_change", 0),
+                "year2": summary2.get("net_change", 0),
+                "change": calc_change(summary2.get("net_change", 0), summary1.get("net_change", 0))
             },
             "end_balance": {
-                "year1": report1["end_balance"],
-                "year2": report2["end_balance"],
-                "change": calc_change(report2["end_balance"], report1["end_balance"])
+                "year1": summary1.get("end_balance", 0),
+                "year2": summary2.get("end_balance", 0),
+                "change": calc_change(summary2.get("end_balance", 0), summary1.get("end_balance", 0))
             }
         }
     }

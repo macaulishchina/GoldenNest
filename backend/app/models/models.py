@@ -71,7 +71,7 @@ class Family(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100))  # 家庭名称
     savings_target: Mapped[float] = mapped_column(Float, default=2000000.0)  # 储蓄目标
-    equity_rate: Mapped[float] = mapped_column(Float, default=0.03)  # 时间加权年化利率
+    time_value_rate: Mapped[float] = mapped_column(Float, default=0.03)  # 时间价值系数（用于计算加权股权）
     invite_code: Mapped[str] = mapped_column(String(20), unique=True, index=True)  # 邀请码
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -270,6 +270,7 @@ class UserAchievement(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     achievement_id: Mapped[int] = mapped_column(ForeignKey("achievements.id"))
     unlocked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    shown: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否已在客户端展示过
     
     # 关联关系
     user: Mapped["User"] = relationship(back_populates="achievements")
@@ -421,6 +422,63 @@ class FamilyPet(Base):
 
 
 # ==================== 年度报告模型 ====================
+
+# ==================== 通用申请审批模型 ====================
+
+class ApprovalRequestType(str, enum.Enum):
+    """申请类型"""
+    DEPOSIT = "deposit"              # 资金注入
+    INVESTMENT_CREATE = "investment_create"  # 创建理财产品
+    INVESTMENT_UPDATE = "investment_update"  # 更新理财产品
+    INVESTMENT_INCOME = "investment_income"  # 登记理财收益
+    EXPENSE = "expense"              # 大额支出
+    MEMBER_JOIN = "member_join"      # 成员加入（任一成员同意即可）
+    MEMBER_REMOVE = "member_remove"  # 成员剔除（需要管理员同意）
+
+
+class ApprovalRequestStatus(str, enum.Enum):
+    """申请状态"""
+    PENDING = "pending"          # 待审批
+    APPROVED = "approved"        # 已通过
+    REJECTED = "rejected"        # 已拒绝
+    CANCELLED = "cancelled"      # 已取消
+
+
+class ApprovalRequest(Base):
+    """通用申请表"""
+    __tablename__ = "approval_requests"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    requester_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    request_type: Mapped[ApprovalRequestType] = mapped_column(SQLEnum(ApprovalRequestType))
+    title: Mapped[str] = mapped_column(String(200))  # 申请标题
+    description: Mapped[str] = mapped_column(Text)  # 申请描述
+    amount: Mapped[float] = mapped_column(Float)  # 涉及金额
+    request_data: Mapped[str] = mapped_column(Text)  # 申请数据（JSON格式存储具体参数）
+    status: Mapped[ApprovalRequestStatus] = mapped_column(SQLEnum(ApprovalRequestStatus), default=ApprovalRequestStatus.PENDING)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    executed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 执行时间
+    
+    # 关联关系
+    approval_records: Mapped[List["ApprovalRecord"]] = relationship(back_populates="approval_request")
+
+
+class ApprovalRecord(Base):
+    """审批记录表"""
+    __tablename__ = "approval_records"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    request_id: Mapped[int] = mapped_column(ForeignKey("approval_requests.id"))
+    approver_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    is_approved: Mapped[bool] = mapped_column(Boolean)
+    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    # 关联关系
+    approval_request: Mapped["ApprovalRequest"] = relationship(back_populates="approval_records")
+
 
 class AnnualReport(Base):
     """年度财务报告表"""

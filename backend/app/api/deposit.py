@@ -27,74 +27,21 @@ async def get_user_family_id(user_id: int, db: AsyncSession) -> int:
     return membership.family_id
 
 
-@router.post("/create", response_model=DepositResponse)
+@router.post("/create")
 async def create_deposit(
     deposit_data: DepositCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """创建资金注入记录"""
-    family_id = await get_user_family_id(current_user.id, db)
+    """
+    [已废弃] 创建资金注入记录
     
-    # 创建存款记录
-    deposit = Deposit(
-        user_id=current_user.id,
-        family_id=family_id,
-        amount=deposit_data.amount,
-        deposit_date=deposit_data.deposit_date,
-        note=deposit_data.note
-    )
-    db.add(deposit)
-    await db.flush()
-    
-    # 获取当前余额
-    result = await db.execute(
-        select(Transaction)
-        .where(Transaction.family_id == family_id)
-        .order_by(Transaction.created_at.desc())
-        .limit(1)
-    )
-    last_transaction = result.scalar_one_or_none()
-    current_balance = last_transaction.balance_after if last_transaction else 0
-    
-    # 创建交易流水
-    transaction = Transaction(
-        family_id=family_id,
-        user_id=current_user.id,
-        transaction_type=TransactionType.DEPOSIT,
-        amount=deposit_data.amount,
-        balance_after=current_balance + deposit_data.amount,
-        description=f"{current_user.nickname}存入{deposit_data.amount}元",
-        reference_id=deposit.id,
-        reference_type="deposit"
-    )
-    db.add(transaction)
-    await db.flush()
-    await db.refresh(deposit)
-    
-    # 检查成就解锁（失败不影响主业务）
-    try:
-        achievement_service = AchievementService(db)
-        new_unlocks = await achievement_service.check_and_unlock(
-            user_id=current_user.id,
-            context={"deposit_amount": deposit_data.amount, "action": "deposit"}
-        )
-    except Exception as e:
-        # 记录日志但不抛出异常
-        import logging
-        logging.warning(f"Achievement check failed: {e}")
-    
-    await db.commit()
-    
-    return DepositResponse(
-        id=deposit.id,
-        user_id=deposit.user_id,
-        family_id=deposit.family_id,
-        amount=deposit.amount,
-        deposit_date=deposit.deposit_date,
-        note=deposit.note,
-        created_at=deposit.created_at,
-        user_nickname=current_user.nickname
+    此接口已废弃，请使用审批接口 POST /api/approval/deposit
+    所有资金注入现在需要经过家庭成员审批后才能执行。
+    """
+    raise HTTPException(
+        status_code=400,
+        detail="此接口已废弃。资金注入需要家庭成员审批，请使用 POST /api/approval/deposit 接口"
     )
 
 

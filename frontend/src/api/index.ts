@@ -123,7 +123,9 @@ export const achievementApi = {
   // 手动触发成就检查
   check: () => api.post('/achievement/check'),
   // 获取家庭成员最近解锁
-  getRecent: (limit = 10) => api.get(`/achievement/recent?limit=${limit}`)
+  getRecent: (limit = 10) => api.get(`/achievement/recent?limit=${limit}`),
+  // 获取未展示的成就（用于轮询/路由切换时检查）
+  getUnshown: () => api.get('/achievement/unshown')
 }
 
 // 股权赠与 API
@@ -142,4 +144,69 @@ export const giftApi = {
   getStats: () => api.get('/gift/stats'),
   // 获取待处理数量
   getPendingCount: () => api.get('/gift/pending-count')
+}
+
+// 通用审批 API
+export const approvalApi = {
+  // 资金注入申请
+  createDeposit: (data: { amount: number; deposit_date: string; note?: string }) =>
+    api.post('/approval/deposit', data),
+  
+  // 理财产品创建申请
+  createInvestment: (data: {
+    name: string
+    investment_type: string
+    principal: number
+    expected_rate: number
+    start_date: string
+    end_date?: string
+    note?: string
+  }) => api.post('/approval/investment/create', data),
+  
+  // 理财产品更新申请
+  updateInvestment: (data: {
+    investment_id: number
+    name?: string
+    principal?: number
+    expected_rate?: number
+    end_date?: string
+    is_active?: boolean
+    note?: string
+  }) => api.post('/approval/investment/update', data),
+  
+  // 理财收益登记申请
+  createInvestmentIncome: (data: {
+    investment_id: number
+    amount: number
+    income_date: string
+    note?: string
+  }) => api.post('/approval/investment/income', data),
+  
+  // 成员加入申请（通常由 join_family 接口自动创建）
+  createMemberJoin: (data: { family_id: number }) =>
+    api.post('/approval/member/join', data),
+  
+  // 成员剔除申请
+  createMemberRemove: (data: { target_user_id: number; reason?: string }) =>
+    api.post('/approval/member/remove', data),
+  
+  // 获取申请列表
+  list: (params?: { request_type?: string; status?: string }) =>
+    api.get('/approval/list', { params }),
+  
+  // 获取待我审批的申请
+  getPending: () => api.get('/approval/pending'),
+  
+  // 获取申请详情
+  get: (id: number) => api.get(`/approval/${id}`),
+  
+  // 同意申请
+  approve: (id: number) => api.post(`/approval/${id}/approve`),
+  
+  // 拒绝申请
+  reject: (id: number, reason?: string) => 
+    api.post(`/approval/${id}/reject`, { reason }),
+  
+  // 取消申请
+  cancel: (id: number) => api.post(`/approval/${id}/cancel`)
 }

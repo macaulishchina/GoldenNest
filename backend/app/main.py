@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.api import auth, family, deposit, equity, investment, expense, transaction, achievement, gift, vote, pet, announcement, report
+from app.api import auth, family, deposit, equity, investment, expense, transaction, achievement, gift, vote, pet, announcement, report, approval
 
 
 @asynccontextmanager
@@ -55,6 +55,7 @@ app.include_router(vote.router, prefix="/api", tags=["股东大会投票"])  # �
 app.include_router(pet.router, prefix="/api", tags=["宠物养成"])  # 宠物系统
 app.include_router(announcement.router, prefix="/api", tags=["家庭公告"])  # 公告板
 app.include_router(report.router, prefix="/api", tags=["年度报告"])  # 年度报告
+app.include_router(approval.router, prefix="/api/approval", tags=["通用审批"])  # 通用审批系统
 
 
 @app.get("/api/health")

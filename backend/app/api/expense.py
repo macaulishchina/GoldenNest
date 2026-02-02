@@ -2,6 +2,7 @@
 小金库 (Golden Nest) - 支出申请路由
 """
 import json
+import logging
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,13 +65,102 @@ async def create_expense_request(
     await db.flush()
     await db.refresh(expense)
     
-    # 获取待审批的成员列表（除了申请人）
+    # 获取家庭所有成员
     result = await db.execute(
-        select(FamilyMember)
-        .where(FamilyMember.family_id == family_id, FamilyMember.user_id != current_user.id)
+        select(FamilyMember).where(FamilyMember.family_id == family_id)
     )
-    other_members = result.scalars().all()
+    all_members = result.scalars().all()
+    
+    # 获取待审批的成员列表（除了申请人）
+    other_members = [m for m in all_members if m.user_id != current_user.id]
     pending_approvers = [m.user_id for m in other_members]
+    
+    approvals = []
+    
+    # 单人家庭：自动通过并执行支出
+    if len(all_members) == 1:
+        # 创建自我审批记录
+        auto_approval = ExpenseApproval(
+            expense_request_id=expense.id,
+            approver_id=current_user.id,
+            is_approved=True,
+            comment="单人家庭，自动通过"
+        )
+        db.add(auto_approval)
+        await db.flush()
+        
+        # 更新状态为已通过
+        expense.status = ExpenseStatus.APPROVED
+        
+        # 执行支出逻辑
+        deduction_ratios = json.loads(expense.equity_deduction_ratio)
+        
+        for ratio_info in deduction_ratios:
+            user_id = ratio_info["user_id"]
+            ratio = ratio_info["ratio"]
+            deduction_amount = expense.amount * ratio
+            
+            # 创建负向存款（相当于撤资）
+            deposit = Deposit(
+                user_id=user_id,
+                family_id=family_id,
+                amount=-deduction_amount,
+                deposit_date=expense.updated_at,
+                note=f"支出扣减: {expense.title}"
+            )
+            db.add(deposit)
+        
+        # 获取当前余额
+        result = await db.execute(
+            select(Transaction)
+            .where(Transaction.family_id == family_id)
+            .order_by(Transaction.created_at.desc())
+            .limit(1)
+        )
+        last_transaction = result.scalar_one_or_none()
+        current_balance = last_transaction.balance_after if last_transaction else 0
+        
+        # 创建支出流水
+        transaction = Transaction(
+            family_id=family_id,
+            user_id=expense.requester_id,
+            transaction_type=TransactionType.WITHDRAW,
+            amount=-expense.amount,
+            balance_after=current_balance - expense.amount,
+            description=f"大额支出: {expense.title}",
+            reference_id=expense.id,
+            reference_type="expense"
+        )
+        db.add(transaction)
+        await db.flush()
+        
+        # 检查成就解锁（失败不影响主业务）
+        try:
+            from app.services.achievement import AchievementService
+            achievement_service = AchievementService(db)
+            await achievement_service.check_and_unlock(
+                current_user.id,
+                context={"action": "expense", "expense_amount": expense.amount}
+            )
+        except Exception as e:
+            logging.warning(f"Achievement check failed after expense: {e}")
+        
+        # 构建审批记录响应
+        approvals = [
+            ExpenseApprovalResponse(
+                id=auto_approval.id,
+                expense_request_id=auto_approval.expense_request_id,
+                approver_id=auto_approval.approver_id,
+                approver_nickname=current_user.nickname,
+                is_approved=auto_approval.is_approved,
+                comment=auto_approval.comment,
+                created_at=auto_approval.created_at
+            )
+        ]
+        pending_approvers = []
+    
+    await db.commit()
+    await db.refresh(expense)
     
     return ExpenseRequestResponse(
         id=expense.id,
@@ -84,7 +174,7 @@ async def create_expense_request(
         status=expense.status,
         created_at=expense.created_at,
         updated_at=expense.updated_at,
-        approvals=[],
+        approvals=approvals,
         pending_approvers=pending_approvers
     )
 
@@ -266,6 +356,23 @@ async def approve_expense(
                 reference_type="expense"
             )
             db.add(transaction)
+            
+            # 检查成就解锁（失败不影响主业务）
+            try:
+                from app.services.achievement import AchievementService
+                achievement_service = AchievementService(db)
+                # 申请人的支出成就
+                await achievement_service.check_and_unlock(
+                    expense.requester_id,
+                    context={"action": "expense", "expense_amount": expense.amount}
+                )
+                # 审批人的审批成就
+                await achievement_service.check_and_unlock(
+                    current_user.id,
+                    context={"action": "review", "is_approved": approval_data.is_approved}
+                )
+            except Exception as e:
+                logging.warning(f"Achievement check failed after expense approval: {e}")
     
     await db.flush()
     

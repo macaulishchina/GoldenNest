@@ -52,10 +52,10 @@
         </n-card>
         
         <n-card class="stat-card card-hover">
-          <div class="stat-icon">💵</div>
+          <div class="stat-icon">⏳</div>
           <div class="stat-content">
-            <div class="stat-value">{{ ((equity?.equity_rate || 0.03) * 100).toFixed(1) }}%</div>
-            <div class="stat-label">年化利率</div>
+            <div class="stat-value">{{ ((equity?.time_value_rate || 0.03) * 100).toFixed(1) }}%</div>
+            <div class="stat-label">时间价值系数</div>
           </div>
         </n-card>
         

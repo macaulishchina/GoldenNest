@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.models.models import Family, FamilyMember, User
 from app.schemas.family import FamilyCreate, FamilyUpdate, FamilyResponse, FamilyMemberResponse, JoinFamilyRequest
 from app.api.auth import get_current_user
+from app.services.achievement import AchievementService
 
 router = APIRouter()
 
@@ -38,7 +39,7 @@ async def create_family(
     family = Family(
         name=family_data.name,
         savings_target=family_data.savings_target,
-        equity_rate=family_data.equity_rate,
+        time_value_rate=family_data.time_value_rate,
         invite_code=generate_invite_code()
     )
     db.add(family)
@@ -53,17 +54,32 @@ async def create_family(
     db.add(member)
     await db.flush()
     
+    # 检查创建家庭的成就
+    achievement_service = AchievementService(db)
+    await achievement_service.check_and_unlock(
+        current_user.id,
+        context={"action": "create_family"}
+    )
+    
+    await db.commit()
+    
     # 返回带成员信息的家庭
     return await get_family_with_members(family.id, db)
 
 
-@router.post("/join", response_model=FamilyResponse)
+@router.post("/join")
 async def join_family(
     join_data: JoinFamilyRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """通过邀请码加入家庭"""
+    """
+    通过邀请码申请加入家庭
+    注意：现在需要家庭成员审批后才能加入，任一成员同意即可
+    """
+    from app.models.models import ApprovalRequest, ApprovalRequestType, ApprovalRequestStatus
+    from app.services.approval import ApprovalService
+    
     # 检查用户是否已经有家庭
     result = await db.execute(
         select(FamilyMember).where(FamilyMember.user_id == current_user.id)
@@ -79,16 +95,71 @@ async def join_family(
     if not family:
         raise HTTPException(status_code=404, detail="邀请码无效")
     
-    # 加入家庭
-    member = FamilyMember(
-        user_id=current_user.id,
-        family_id=family.id,
-        role="member"
+    # 检查家庭是否只有一个成员（单人家庭直接加入）
+    result = await db.execute(
+        select(FamilyMember).where(FamilyMember.family_id == family.id)
     )
-    db.add(member)
-    await db.flush()
+    members = result.scalars().all()
     
-    return await get_family_with_members(family.id, db)
+    if len(members) == 0:
+        # 空家庭，直接加入（理论上不应该发生，但做个保护）
+        member = FamilyMember(
+            user_id=current_user.id,
+            family_id=family.id,
+            role="member"
+        )
+        db.add(member)
+        await db.commit()
+        return {
+            "status": "joined",
+            "message": "已成功加入家庭",
+            "family": await get_family_with_members(family.id, db)
+        }
+    
+    # 检查是否有未处理的加入申请
+    result = await db.execute(
+        select(ApprovalRequest).where(
+            ApprovalRequest.family_id == family.id,
+            ApprovalRequest.requester_id == current_user.id,
+            ApprovalRequest.request_type == ApprovalRequestType.MEMBER_JOIN,
+            ApprovalRequest.status == ApprovalRequestStatus.PENDING
+        )
+    )
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="您已经有一个待处理的加入申请，请等待审批")
+    
+    # 创建加入申请
+    service = ApprovalService(db)
+    request = await service.create_request(
+        family_id=family.id,
+        requester_id=current_user.id,
+        request_type=ApprovalRequestType.MEMBER_JOIN,
+        title=f"申请加入家庭: {family.name}",
+        description=f"{current_user.nickname}申请加入家庭「{family.name}」",
+        amount=0,
+        request_data={
+            "user_id": current_user.id,
+            "username": current_user.username,
+            "nickname": current_user.nickname,
+            "family_name": family.name
+        }
+    )
+    
+    await db.commit()
+    
+    # 检查申请是否已经自动通过（单人家庭的情况）
+    if request.status == ApprovalRequestStatus.APPROVED:
+        return {
+            "status": "joined",
+            "message": "已成功加入家庭",
+            "family": await get_family_with_members(family.id, db)
+        }
+    
+    return {
+        "status": "pending",
+        "message": f"已提交加入申请，等待家庭「{family.name}」的成员审批",
+        "request_id": request.id
+    }
 
 
 @router.get("/my", response_model=FamilyResponse)
@@ -134,8 +205,8 @@ async def update_family(
         family.name = family_data.name
     if family_data.savings_target is not None:
         family.savings_target = family_data.savings_target
-    if family_data.equity_rate is not None:
-        family.equity_rate = family_data.equity_rate
+    if family_data.time_value_rate is not None:
+        family.time_value_rate = family_data.time_value_rate
     
     await db.flush()
     return await get_family_with_members(family.id, db)
@@ -196,7 +267,7 @@ async def get_family_with_members(family_id: int, db: AsyncSession) -> dict:
         id=family.id,
         name=family.name,
         savings_target=family.savings_target,
-        equity_rate=family.equity_rate,
+        time_value_rate=family.time_value_rate,
         invite_code=family.invite_code,
         created_at=family.created_at,
         members=members
