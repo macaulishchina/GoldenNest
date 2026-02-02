@@ -76,7 +76,10 @@ import {
   CheckboxOutline,
   PawOutline,
   MegaphoneOutline,
-  StatsChartOutline
+  StatsChartOutline,
+  CashOutline,
+  BusinessOutline,
+  SparklesOutline
 } from '@vicons/ionicons5'
 
 const router = useRouter()
@@ -115,64 +118,100 @@ const menuOptions: MenuOption[] = [
     icon: renderIcon(HomeOutline)
   },
   {
-    label: '股权结构',
-    key: 'equity',
-    icon: renderIcon(PieChartOutline)
+    type: 'divider',
+    key: 'd1'
   },
   {
-    label: '资金注入',
-    key: 'deposit',
-    icon: renderIcon(WalletOutline)
+    label: '资金管理',
+    key: 'finance-group',
+    icon: renderIcon(CashOutline),
+    children: [
+      {
+        label: '资金注入',
+        key: 'deposit',
+        icon: renderIcon(WalletOutline)
+      },
+      {
+        label: '支出申请',
+        key: 'expense',
+        icon: renderIcon(CardOutline)
+      },
+      {
+        label: '资金流水',
+        key: 'transaction',
+        icon: renderIcon(ListOutline)
+      }
+    ]
   },
   {
-    label: '理财管理',
-    key: 'investment',
-    icon: renderIcon(TrendingUpOutline)
+    label: '投资理财',
+    key: 'invest-group',
+    icon: renderIcon(TrendingUpOutline),
+    children: [
+      {
+        label: '理财产品',
+        key: 'investment',
+        icon: renderIcon(TrendingUpOutline)
+      },
+      {
+        label: '年度报告',
+        key: 'report',
+        icon: renderIcon(StatsChartOutline)
+      }
+    ]
   },
   {
-    label: '支出申请',
-    key: 'expense',
-    icon: renderIcon(CardOutline)
+    type: 'divider',
+    key: 'd2'
   },
   {
-    label: '资金流水',
-    key: 'transaction',
-    icon: renderIcon(ListOutline)
+    label: '家庭事务',
+    key: 'family-group',
+    icon: renderIcon(BusinessOutline),
+    children: [
+      {
+        label: '家庭管理',
+        key: 'family',
+        icon: renderIcon(PeopleOutline)
+      },
+      {
+        label: '股权结构',
+        key: 'equity',
+        icon: renderIcon(PieChartOutline)
+      },
+      {
+        label: '股权赠与',
+        key: 'gift',
+        icon: renderIcon(GiftOutline)
+      },
+      {
+        label: '股东大会',
+        key: 'vote',
+        icon: renderIcon(CheckboxOutline)
+      }
+    ]
   },
   {
-    label: '家庭管理',
-    key: 'family',
-    icon: renderIcon(PeopleOutline)
-  },
-  {
-    label: '成就殿堂',
-    key: 'achievement',
-    icon: renderIcon(TrophyOutline)
-  },
-  {
-    label: '股权赠与',
-    key: 'gift',
-    icon: renderIcon(GiftOutline)
-  },
-  {
-    label: '股东大会',
-    key: 'vote',
-    icon: renderIcon(CheckboxOutline)
-  },
-  {
-    label: '家庭宠物',
-    key: 'pet',
-    icon: renderIcon(PawOutline)
-  },
-  {
-    label: '家庭公告',
-    key: 'announcement',
-    icon: renderIcon(MegaphoneOutline)
-  },
-  {
-    label: '年度报告',
-    key: 'report',
-    icon: renderIcon(StatsChartOutline)
+    label: '趣味互动',
+    key: 'fun-group',
+    icon: renderIcon(SparklesOutline),
+    children: [
+      {
+        label: '家庭宠物',
+        key: 'pet',
+        icon: renderIcon(PawOutline)
+      },
+      {
+        label: '家庭公告',
+        key: 'announcement',
+        icon: renderIcon(MegaphoneOutline)
+      },
+      {
+        label: '成就殿堂',
+        key: 'achievement',
+        icon: renderIcon(TrophyOutline)
+      }
+    ]
   }
 ]
 
