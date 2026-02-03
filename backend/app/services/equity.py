@@ -112,6 +112,7 @@ async def calculate_family_equity(family_id: int, db: AsyncSession) -> EquitySum
             "username": user.username,
             "nickname": user.nickname,
             "avatar": user.avatar,
+            "role": membership.role,  # 成员角色
             "total_deposit": user_original,
             "weighted_deposit": user_weighted,
             "equity_ratio": 0,  # 稍后计算

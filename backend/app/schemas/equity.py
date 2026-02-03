@@ -12,6 +12,7 @@ class MemberEquity(BaseModel):
     username: str
     nickname: str
     avatar: Optional[str] = None
+    role: str = "member"  # 角色: admin/member
     total_deposit: float  # 原始存入总额
     weighted_deposit: float  # 时间加权后总额
     equity_ratio: float  # 股权占比 (0-1)

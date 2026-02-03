@@ -2,6 +2,27 @@
   <div class="page-container">
     <h1 class="page-title"><span class="icon">👨‍👩‍👧‍👦</span> 家庭管理</h1>
     
+    <!-- 个人信息区域 -->
+    <div v-if="hasFamily && currentMember" class="profile-section">
+      <n-avatar round :size="48" :style="{ backgroundColor: getAvatarColor(userStore.user?.nickname || '') }">
+        {{ userStore.user?.nickname?.[0] || '?' }}
+      </n-avatar>
+      <div class="profile-info">
+        <div class="profile-name">{{ userStore.user?.nickname }}</div>
+        <div class="profile-meta">
+          <n-tag 
+            round 
+            size="small" 
+            :type="currentMember.role === 'admin' ? 'warning' : 'default'"
+            :bordered="false"
+          >
+            {{ currentMember.role === 'admin' ? '👑 管理员' : '👤 成员' }}
+          </n-tag>
+          <span class="greeting">{{ getGreeting() }}</span>
+        </div>
+      </div>
+    </div>
+    
     <n-card v-if="!hasFamily" class="card-hover">
       <n-tabs type="segment">
         <n-tab-pane name="create" tab="创建家庭">
@@ -49,6 +70,9 @@
               <template #header>
                 <div class="member-header">
                   <span>{{ member.nickname }}</span>
+                  <n-tag v-if="member.user_id === currentUserId" type="info" size="small" round>
+                    我
+                  </n-tag>
                   <n-tag :type="member.role === 'admin' ? 'warning' : 'default'" size="small">
                     {{ member.role === 'admin' ? '管理员' : '成员' }}
                   </n-tag>
@@ -113,11 +137,38 @@ const members = ref<any[]>([])
 const hasFamily = computed(() => !!userStore.user?.family_id)
 const currentUserId = computed(() => userStore.user?.id)
 
+// 当前用户的成员信息
+const currentMember = computed(() => {
+  return members.value.find(m => m.user_id === currentUserId.value)
+})
+
 // 判断当前用户是否是管理员
 const isCurrentUserAdmin = computed(() => {
-  const currentMember = members.value.find(m => m.user_id === currentUserId.value)
-  return currentMember?.role === 'admin'
+  return currentMember.value?.role === 'admin'
 })
+
+// 头像背景色
+function getAvatarColor(name: string): string {
+  const colors = ['#f56a00', '#7265e6', '#ffbf00', '#00a2ae', '#87d068', '#1890ff', '#eb2f96']
+  let hash = 0
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return colors[Math.abs(hash) % colors.length]
+}
+
+// 时间问候语
+function getGreeting(): string {
+  const hour = new Date().getHours()
+  if (hour < 6) return '夜深了，注意休息 🌙'
+  if (hour < 9) return '早上好！新的一天 🌅'
+  if (hour < 12) return '上午好！加油 ☀️'
+  if (hour < 14) return '中午好！记得吃饭 🍚'
+  if (hour < 17) return '下午好！继续努力 🌤️'
+  if (hour < 19) return '傍晚好！快下班了 🌆'
+  if (hour < 22) return '晚上好！辛苦一天了 🌙'
+  return '夜深了，早点休息 💤'
+}
 
 // 剔除相关状态
 const showRemoveModal = ref(false)
@@ -247,6 +298,41 @@ onMounted(loadData)
 </script>
 
 <style scoped>
+/* 个人信息区域 */
+.profile-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 16px;
+  color: white;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.profile-info {
+  flex: 1;
+}
+
+.profile-name {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.profile-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.greeting {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
 .member-header {
   display: flex;
   align-items: center;

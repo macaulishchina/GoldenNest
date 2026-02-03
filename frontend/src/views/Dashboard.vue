@@ -152,6 +152,24 @@ const { privacyMode } = storeToRefs(privacyStore)
 const equity = ref<any>(null)
 const hasFamily = ref(false)
 
+// 当前用户的成员信息
+const currentMember = computed(() => {
+  if (!equity.value?.members || !userStore.user?.id) return null
+  return equity.value.members.find((m: any) => m.user_id === userStore.user?.id)
+})
+
+// 根据时间返回问候语
+function getGreeting() {
+  const hour = new Date().getHours()
+  if (hour < 6) return '夜深了，注意休息 🌙'
+  if (hour < 9) return '早上好！新的一天开始了 ☀️'
+  if (hour < 12) return '上午好！精神满满 💪'
+  if (hour < 14) return '中午好！记得吃午饭 🍚'
+  if (hour < 18) return '下午好！继续加油 ⭐'
+  if (hour < 22) return '晚上好！辛苦一天了 🌆'
+  return '夜深了，早点休息 🌙'
+}
+
 function togglePrivacy() {
   privacyStore.togglePrivacy()
 }
@@ -231,6 +249,50 @@ onMounted(() => {
 
 .privacy-toggle:hover .privacy-icon {
   color: #334155;
+}
+
+/* 个人信息区域 */
+.profile-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 16px;
+  margin-bottom: 24px;
+  border: 1px solid #e2e8f0;
+}
+
+.profile-avatar {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  font-weight: 600;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.profile-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 6px;
+}
+
+.profile-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.profile-greeting {
+  font-size: 14px;
+  color: #64748b;
 }
 
 .target-card {
@@ -392,6 +454,32 @@ onMounted(() => {
    移动端适配
    ============================================ */
 @media (max-width: 767px) {
+  /* 个人信息区域移动端 */
+  .profile-section {
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    gap: 12px;
+  }
+  
+  .profile-avatar {
+    width: 40px !important;
+    height: 40px !important;
+    font-size: 16px !important;
+  }
+  
+  .profile-name {
+    font-size: 16px;
+    margin-bottom: 4px;
+  }
+  
+  .profile-meta {
+    gap: 8px;
+  }
+  
+  .profile-greeting {
+    font-size: 13px;
+  }
+  
   .target-card {
     margin-bottom: 16px;
   }
