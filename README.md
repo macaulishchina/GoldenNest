@@ -128,6 +128,8 @@ nano .env
 
 # 启动服务
 docker-compose up -d
+# 重新构建并启动服务
+docker-compose up -d --build
 
 # 访问 http://localhost
 ```
