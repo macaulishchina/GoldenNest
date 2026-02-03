@@ -124,6 +124,22 @@ class MemberRemoveApprovalCreate(BaseModel):
     reason: Optional[str] = Field(None, max_length=500, description="剔除原因")
 
 
+# ============ 支出申请 ============
+
+class ExpenseDeductionRatio(BaseModel):
+    """股权扣减比例"""
+    user_id: int
+    ratio: float = Field(..., ge=0, le=1, description="扣减比例 (0-1)")
+
+
+class ExpenseApprovalCreate(BaseModel):
+    """创建支出申请"""
+    title: str = Field(..., min_length=1, max_length=200, description="支出标题")
+    amount: float = Field(..., gt=0, description="支出金额")
+    reason: str = Field(..., min_length=1, description="支出原因")
+    deduction_ratios: List[ExpenseDeductionRatio] = Field(..., description="各成员股权扣减比例")
+
+
 # ============ 申请列表响应 ============
 
 class ApprovalRequestListResponse(BaseModel):

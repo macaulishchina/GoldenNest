@@ -44,6 +44,7 @@
         <select v-model="filterType" @change="loadApprovals" class="filter-select">
           <option value="">全部类型</option>
           <option value="deposit">资金注入</option>
+          <option value="expense">大额支出</option>
           <option value="investment_create">创建理财</option>
           <option value="investment_update">更新理财</option>
           <option value="investment_income">理财收益</option>
@@ -90,11 +91,19 @@
             </div>
           </div>
           <div class="card-actions">
-            <button @click="handleApprove(item.id, true)" class="btn-approve">
-              ✅ 同意
+            <button 
+              @click="handleApprove(item.id, true)" 
+              class="btn-approve"
+              :disabled="processingApprovalId === item.id"
+            >
+              {{ processingApprovalId === item.id ? '⏳ 处理中...' : '✅ 同意' }}
             </button>
-            <button @click="handleApprove(item.id, false)" class="btn-reject">
-              ❌ 拒绝
+            <button 
+              @click="handleApprove(item.id, false)" 
+              class="btn-reject"
+              :disabled="processingApprovalId === item.id"
+            >
+              {{ processingApprovalId === item.id ? '⏳ 处理中...' : '❌ 拒绝' }}
             </button>
           </div>
         </div>
@@ -252,6 +261,44 @@
               <textarea v-model="createForm.note" placeholder="备注说明"></textarea>
             </div>
           </template>
+
+          <!-- 大额支出表单 -->
+          <template v-if="createForm.type === 'expense'">
+            <div class="form-group">
+              <label>支出标题</label>
+              <input v-model="createForm.expense_title" type="text" placeholder="请输入支出标题，如：购买设备">
+            </div>
+            <div class="form-group">
+              <label>支出金额 (元)</label>
+              <input v-model.number="createForm.amount" type="number" min="0" step="0.01" placeholder="请输入支出金额">
+            </div>
+            <div class="form-group">
+              <label>支出原因</label>
+              <textarea v-model="createForm.expense_reason" placeholder="请详细说明支出原因"></textarea>
+            </div>
+            <div class="form-group">
+              <label>各成员扣减比例 (%)</label>
+              <div class="ratio-list">
+                <div v-for="(item, index) in createForm.deduction_ratios" :key="item.user_id" class="ratio-item">
+                  <span class="member-name">{{ getMemberNickname(item.user_id) }}</span>
+                  <input 
+                    :value="item.ratio"
+                    @input="handleRatioChange(index, $event)"
+                    type="number" 
+                    min="0" 
+                    max="100" 
+                    step="1"
+                    class="ratio-input"
+                    :disabled="isSingleMember"
+                  >
+                  <span class="ratio-unit">%</span>
+                </div>
+              </div>
+              <div class="ratio-summary" :class="{ valid: expenseTotalRatio === 100 }">
+                合计: {{ expenseTotalRatio }}% ✓
+              </div>
+            </div>
+          </template>
         </div>
         <div class="modal-footer">
           <button @click="showCreateModal = false" class="btn-secondary">取消</button>
@@ -266,7 +313,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { approvalApi, investmentApi } from '@/api'
+import { approvalApi, investmentApi, familyApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { checkAndShowAchievements } from '@/utils/achievement'
 
@@ -278,6 +325,7 @@ const submitting = ref(false)
 const showCreateModal = ref(false)
 const filterType = ref('')
 const filterStatus = ref('')
+const processingApprovalId = ref<number | null>(null)  // 防重复点击：当前正在处理的审批ID
 
 interface ApprovalRecord {
   id: number
@@ -330,9 +378,17 @@ const investments = ref<Investment[]>([])
 
 const requestTypes = [
   { value: 'deposit', label: '资金注入', icon: '💰' },
+  { value: 'expense', label: '大额支出', icon: '💸' },
   { value: 'investment_create', label: '创建理财', icon: '📈' },
   { value: 'investment_income', label: '理财收益', icon: '💵' }
 ]
+
+interface FamilyMember {
+  user_id: number
+  nickname: string
+}
+
+const familyMembers = ref<FamilyMember[]>([])
 
 const createForm = ref({
   type: 'deposit',
@@ -346,8 +402,101 @@ const createForm = ref({
   start_date: new Date().toISOString().split('T')[0],
   end_date: '',
   investment_id: 0,
-  income_date: new Date().toISOString().split('T')[0]
+  income_date: new Date().toISOString().split('T')[0],
+  // 支出申请字段
+  expense_title: '',
+  expense_reason: '',
+  deduction_ratios: [] as Array<{ user_id: number; ratio: number }>
 })
+
+// 计算支出扣减比例总和
+const expenseTotalRatio = computed(() => {
+  return createForm.value.deduction_ratios.reduce((sum, r) => sum + r.ratio, 0)
+})
+
+// 判断是否只有单个成员
+const isSingleMember = computed(() => {
+  return createForm.value.deduction_ratios.length <= 1
+})
+
+// 处理比例变化 - 联动调整其他成员的比例
+const handleRatioChange = (changedIndex: number, event: Event) => {
+  const input = event.target as HTMLInputElement
+  let newValue = parseInt(input.value) || 0
+  
+  // 限制范围 0-100
+  newValue = Math.max(0, Math.min(100, newValue))
+  
+  const ratios = createForm.value.deduction_ratios
+  const memberCount = ratios.length
+  
+  // 单成员时固定100%
+  if (memberCount <= 1) {
+    ratios[0].ratio = 100
+    return
+  }
+  
+  // 计算当前成员之外的其他成员总比例
+  const otherIndices = ratios.map((_, i) => i).filter(i => i !== changedIndex)
+  const oldOtherTotal = otherIndices.reduce((sum, i) => sum + ratios[i].ratio, 0)
+  
+  // 计算剩余需要分配给其他成员的比例
+  const remainingForOthers = 100 - newValue
+  
+  // 设置当前成员的新值
+  ratios[changedIndex].ratio = newValue
+  
+  if (remainingForOthers <= 0) {
+    // 如果当前成员占了100%或更多，其他成员都设为0
+    otherIndices.forEach(i => {
+      ratios[i].ratio = 0
+    })
+  } else if (oldOtherTotal === 0) {
+    // 如果其他成员原来总和为0，平均分配剩余比例
+    const avgRatio = Math.floor(remainingForOthers / otherIndices.length)
+    const remainder = remainingForOthers - avgRatio * otherIndices.length
+    otherIndices.forEach((idx, i) => {
+      ratios[idx].ratio = avgRatio + (i === 0 ? remainder : 0)
+    })
+  } else {
+    // 按比例调整其他成员
+    let distributed = 0
+    otherIndices.forEach((idx, i) => {
+      if (i === otherIndices.length - 1) {
+        // 最后一个成员获得剩余的所有比例（避免四舍五入误差）
+        ratios[idx].ratio = remainingForOthers - distributed
+      } else {
+        const proportion = ratios[idx].ratio / oldOtherTotal
+        const newRatio = Math.round(remainingForOthers * proportion)
+        ratios[idx].ratio = Math.max(0, Math.min(100, newRatio))
+        distributed += ratios[idx].ratio
+      }
+    })
+  }
+  
+  // 确保每个比例都在有效范围内
+  ratios.forEach(r => {
+    r.ratio = Math.max(0, Math.min(100, r.ratio))
+  })
+}
+
+// 初始化支出扣减比例（平均分配）
+const initDeductionRatios = () => {
+  if (familyMembers.value.length > 0) {
+    const avgRatio = Math.floor(100 / familyMembers.value.length)
+    const remainder = 100 - avgRatio * familyMembers.value.length
+    createForm.value.deduction_ratios = familyMembers.value.map((m, index) => ({
+      user_id: m.user_id,
+      ratio: avgRatio + (index === 0 ? remainder : 0)
+    }))
+  }
+}
+
+// 获取成员昵称
+const getMemberNickname = (userId: number): string => {
+  const member = familyMembers.value.find(m => m.user_id === userId)
+  return member?.nickname || `用户${userId}`
+}
 
 const loadApprovals = async () => {
   loading.value = true
@@ -383,7 +532,27 @@ const loadInvestments = async () => {
   }
 }
 
+const loadFamilyMembers = async () => {
+  try {
+    const response = await familyApi.getMy()
+    // /family/my 返回的数据中包含 members 数组
+    familyMembers.value = response.data.members || []
+    // 初始化支出扣减比例
+    initDeductionRatios()
+  } catch (error) {
+    console.error('加载家庭成员失败:', error)
+  }
+}
+
 const handleApprove = async (id: number, isApproved: boolean) => {
+  // 防重复点击：如果正在处理则返回
+  if (processingApprovalId.value !== null) {
+    return
+  }
+  
+  // 设置当前处理中的审批ID
+  processingApprovalId.value = id
+  
   try {
     if (isApproved) {
       await approvalApi.approve(id)
@@ -402,6 +571,9 @@ const handleApprove = async (id: number, isApproved: boolean) => {
   } catch (error: unknown) {
     const errMsg = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '审批失败'
     alert(errMsg)
+  } finally {
+    // 无论成功失败都要重置状态
+    processingApprovalId.value = null
   }
 }
 
@@ -444,6 +616,37 @@ const submitCreate = async () => {
         income_date: createForm.value.income_date,
         note: createForm.value.note || undefined
       })
+    } else if (createForm.value.type === 'expense') {
+      // 验证扣减比例
+      if (expenseTotalRatio.value !== 100) {
+        alert('扣减比例合计必须等于100%')
+        return
+      }
+      if (!createForm.value.expense_title.trim()) {
+        alert('请输入支出标题')
+        return
+      }
+      if (createForm.value.amount <= 0) {
+        alert('请输入有效的支出金额')
+        return
+      }
+      if (!createForm.value.expense_reason.trim()) {
+        alert('请输入支出原因')
+        return
+      }
+      
+      // 转换 deduction_ratios 为数组格式 [{ user_id, ratio }]，比例转换为 0-1
+      const deductionRatios = createForm.value.deduction_ratios.map(r => ({
+        user_id: r.user_id,
+        ratio: r.ratio / 100  // 百分比转换为 0-1 小数
+      }))
+      
+      await approvalApi.createExpense({
+        title: createForm.value.expense_title,
+        amount: createForm.value.amount,
+        reason: createForm.value.expense_reason,
+        deduction_ratios: deductionRatios
+      })
     }
     
     alert('申请已提交，等待家庭成员审批')
@@ -472,8 +675,13 @@ const resetForm = () => {
     start_date: new Date().toISOString().split('T')[0],
     end_date: '',
     investment_id: 0,
-    income_date: new Date().toISOString().split('T')[0]
+    income_date: new Date().toISOString().split('T')[0],
+    expense_title: '',
+    expense_reason: '',
+    deduction_ratios: []
   }
+  // 重新初始化支出扣减比例
+  initDeductionRatios()
 }
 
 const formatAmount = (amount: number) => {
@@ -548,6 +756,7 @@ onMounted(() => {
   loadApprovals()
   loadPendingApprovals()
   loadInvestments()
+  loadFamilyMembers()
 })
 </script>
 
@@ -805,7 +1014,14 @@ onMounted(() => {
   transition: background 0.2s;
 }
 
-.btn-approve:hover { background: #059669; }
+.btn-approve:hover:not(:disabled) { background: #059669; }
+
+.btn-approve:disabled,
+.btn-reject:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
 
 .btn-reject {
   flex: 1;
@@ -974,6 +1190,57 @@ onMounted(() => {
 }
 
 .btn-secondary:hover { background: #e5e7eb; }
+
+/* 支出比例列表 */
+.ratio-list {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.ratio-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.ratio-item:last-child {
+  border-bottom: none;
+}
+
+.member-name {
+  flex: 1;
+  font-weight: 500;
+  color: #374151;
+}
+
+.ratio-input {
+  width: 80px !important;
+  padding: 8px 12px !important;
+  text-align: center;
+}
+
+.ratio-unit {
+  color: #666;
+  font-size: 14px;
+}
+
+.ratio-summary {
+  margin-top: 12px;
+  padding: 10px;
+  background: #dcfce7;
+  border-radius: 8px;
+  text-align: center;
+  font-weight: 600;
+  color: #16a34a;
+}
+
+.ratio-summary.error {
+  background: #fee2e2;
+  color: #dc2626;
+}
 
 /* 响应式 */
 @media (max-width: 640px) {

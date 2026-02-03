@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.api import auth, family, deposit, equity, investment, expense, transaction, achievement, gift, vote, pet, announcement, report, approval
+from app.api import auth, family, deposit, equity, investment, transaction, achievement, gift, vote, pet, announcement, report, approval
 
 
 @asynccontextmanager
@@ -47,7 +47,7 @@ app.include_router(family.router, prefix="/api/family", tags=["家庭管理"])
 app.include_router(deposit.router, prefix="/api/deposit", tags=["资金注入"])
 app.include_router(equity.router, prefix="/api/equity", tags=["股权"])
 app.include_router(investment.router, prefix="/api/investment", tags=["理财管理"])
-app.include_router(expense.router, prefix="/api/expense", tags=["支出申请"])
+# expense router 已迁移至 approval 通用审批系统
 app.include_router(transaction.router, prefix="/api/transaction", tags=["资金流水"])
 app.include_router(achievement.router)  # 成就系统（路由已内置prefix）
 app.include_router(gift.router)  # 股权赠与（路由已内置prefix）

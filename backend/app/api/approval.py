@@ -1,6 +1,7 @@
 """
 小金库 (Golden Nest) - 通用审批路由
 """
+import json
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -10,13 +11,13 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.models.models import (
     ApprovalRequest, ApprovalRecord, ApprovalRequestType, ApprovalRequestStatus,
-    FamilyMember, User, Investment, Family
+    FamilyMember, User, Investment, Family, ExpenseRequest, ExpenseStatus
 )
 from app.schemas.approval import (
     ApprovalRequestResponse, ApprovalRecordCreate, ApprovalRequestListResponse,
     DepositApprovalCreate, InvestmentCreateApprovalCreate,
     InvestmentUpdateApprovalCreate, InvestmentIncomeApprovalCreate,
-    MemberJoinApprovalCreate, MemberRemoveApprovalCreate
+    MemberJoinApprovalCreate, MemberRemoveApprovalCreate, ExpenseApprovalCreate
 )
 from app.api.auth import get_current_user
 from app.services.approval import ApprovalService
@@ -58,6 +59,72 @@ async def create_deposit_approval(
             "amount": data.amount,
             "deposit_date": data.deposit_date.isoformat(),
             "note": data.note
+        }
+    )
+    
+    await db.commit()
+    return await service.get_request_response(request, current_user.nickname)
+
+
+# ==================== 支出申请 ====================
+
+@router.post("/expense", response_model=ApprovalRequestResponse)
+async def create_expense_approval(
+    data: ExpenseApprovalCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    创建支出申请
+    所有成员必须同意后才能执行支出
+    """
+    family_id = await get_user_family_id(current_user.id, db)
+    
+    # 验证扣减比例总和为1
+    total_ratio = sum(r.ratio for r in data.deduction_ratios)
+    if abs(total_ratio - 1.0) > 0.001:
+        raise HTTPException(status_code=400, detail="扣减比例总和必须为1")
+    
+    # 验证所有用户都是家庭成员
+    for r in data.deduction_ratios:
+        result = await db.execute(
+            select(FamilyMember).where(
+                FamilyMember.family_id == family_id,
+                FamilyMember.user_id == r.user_id
+            )
+        )
+        if not result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail=f"用户ID {r.user_id} 不是家庭成员")
+    
+    # 创建 ExpenseRequest 记录
+    expense_request = ExpenseRequest(
+        family_id=family_id,
+        requester_id=current_user.id,
+        title=data.title,
+        amount=data.amount,
+        reason=data.reason,
+        equity_deduction_ratio=json.dumps({str(r.user_id): r.ratio for r in data.deduction_ratios}),
+        status=ExpenseStatus.PENDING
+    )
+    db.add(expense_request)
+    await db.flush()
+    await db.refresh(expense_request)
+    
+    # 创建审批请求
+    service = ApprovalService(db)
+    request = await service.create_request(
+        family_id=family_id,
+        requester_id=current_user.id,
+        request_type=ApprovalRequestType.EXPENSE,
+        title=f"支出申请: {data.title}",
+        description=f"{current_user.nickname}申请支出{data.amount}元，用于: {data.reason}",
+        amount=data.amount,
+        request_data={
+            "expense_id": expense_request.id,
+            "title": data.title,
+            "amount": data.amount,
+            "reason": data.reason,
+            "deduction_ratios": {str(r.user_id): r.ratio for r in data.deduction_ratios}
         }
     )
     

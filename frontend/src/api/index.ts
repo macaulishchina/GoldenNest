@@ -95,17 +95,7 @@ export const investmentApi = {
   getSummary: () => api.get('/investment/summary')
 }
 
-export const expenseApi = {
-  create: (data: {
-    title: string
-    amount: number
-    reason: string
-    deduction_ratios: Array<{ user_id: number; ratio: number }>
-  }) => api.post('/expense/create', data),
-  list: () => api.get('/expense/list'),
-  approve: (id: number, is_approved: boolean, comment?: string) => 
-    api.post(`/expense/${id}/approve`, { is_approved, comment })
-}
+// expenseApi 已废弃，支出申请请使用 approvalApi.createExpense()
 
 export const transactionApi = {
   list: () => api.get('/transaction/list')
@@ -181,6 +171,14 @@ export const approvalApi = {
     income_date: string
     note?: string
   }) => api.post('/approval/investment/income', data),
+  
+  // 支出申请
+  createExpense: (data: {
+    title: string
+    amount: number
+    reason: string
+    deduction_ratios: Array<{ user_id: number; ratio: number }>
+  }) => api.post('/approval/expense', data),
   
   // 成员加入申请（通常由 join_family 接口自动创建）
   createMemberJoin: (data: { family_id: number }) =>

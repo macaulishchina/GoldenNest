@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app.models.models import (
     ApprovalRequest, ApprovalRecord, ApprovalRequestType, ApprovalRequestStatus,
     FamilyMember, User, Deposit, Investment, InvestmentIncome, InvestmentType,
-    Transaction, TransactionType, Family
+    Transaction, TransactionType, Family, ExpenseRequest, ExpenseStatus
 )
 from app.schemas.approval import ApprovalRequestResponse, ApprovalRecordResponse
 
@@ -319,24 +319,46 @@ class ApprovalService:
             await self.db.flush()
     
     async def _execute_request(self, request: ApprovalRequest) -> None:
-        """执行已通过的申请"""
-        request_data = json.loads(request.request_data)
+        """执行已通过的申请（带幂等性保护）"""
+        # 【幂等性保护】使用行锁重新获取申请记录，防止并发执行
+        result = await self.db.execute(
+            select(ApprovalRequest)
+            .where(ApprovalRequest.id == request.id)
+            .with_for_update()  # 行锁，确保同一时间只有一个事务可以执行
+        )
+        locked_request = result.scalar_one_or_none()
         
-        if request.request_type == ApprovalRequestType.DEPOSIT:
-            await self._execute_deposit(request, request_data)
-        elif request.request_type == ApprovalRequestType.INVESTMENT_CREATE:
-            await self._execute_investment_create(request, request_data)
-        elif request.request_type == ApprovalRequestType.INVESTMENT_UPDATE:
-            await self._execute_investment_update(request, request_data)
-        elif request.request_type == ApprovalRequestType.INVESTMENT_INCOME:
-            await self._execute_investment_income(request, request_data)
-        elif request.request_type == ApprovalRequestType.MEMBER_JOIN:
-            await self._execute_member_join(request, request_data)
-        elif request.request_type == ApprovalRequestType.MEMBER_REMOVE:
-            await self._execute_member_remove(request, request_data)
+        if not locked_request:
+            logging.warning(f"Approval request {request.id} not found during execution")
+            return
         
-        request.executed_at = datetime.utcnow()
+        # 【幂等性保护】检查是否已经执行过
+        if locked_request.executed_at is not None:
+            logging.info(f"Approval request {request.id} already executed at {locked_request.executed_at}, skipping")
+            return
+        
+        request_data = json.loads(locked_request.request_data)
+        
+        if locked_request.request_type == ApprovalRequestType.DEPOSIT:
+            await self._execute_deposit(locked_request, request_data)
+        elif locked_request.request_type == ApprovalRequestType.INVESTMENT_CREATE:
+            await self._execute_investment_create(locked_request, request_data)
+        elif locked_request.request_type == ApprovalRequestType.INVESTMENT_UPDATE:
+            await self._execute_investment_update(locked_request, request_data)
+        elif locked_request.request_type == ApprovalRequestType.INVESTMENT_INCOME:
+            await self._execute_investment_income(locked_request, request_data)
+        elif locked_request.request_type == ApprovalRequestType.MEMBER_JOIN:
+            await self._execute_member_join(locked_request, request_data)
+        elif locked_request.request_type == ApprovalRequestType.MEMBER_REMOVE:
+            await self._execute_member_remove(locked_request, request_data)
+        elif locked_request.request_type == ApprovalRequestType.EXPENSE:
+            await self._execute_expense(locked_request, request_data)
+        
+        # 设置执行时间，标记为已执行（幂等性关键标志）
+        locked_request.executed_at = datetime.utcnow()
         await self.db.flush()
+        
+        logging.info(f"Approval request {locked_request.id} executed successfully")
     
     async def _execute_deposit(self, request: ApprovalRequest, data: Dict[str, Any]) -> None:
         """执行资金注入"""
@@ -589,3 +611,76 @@ class ApprovalService:
         
         # 删除成员记录
         await self.db.delete(member)
+
+    async def _execute_expense(self, request: ApprovalRequest, data: Dict[str, Any]) -> None:
+        """执行支出申请"""
+        expense_id = data.get("expense_id")
+        if not expense_id:
+            return
+
+        result = await self.db.execute(
+            select(ExpenseRequest).where(
+                ExpenseRequest.id == expense_id,
+                ExpenseRequest.family_id == request.family_id
+            )
+        )
+        expense = result.scalar_one_or_none()
+        if not expense:
+            return
+
+        if expense.status != ExpenseStatus.PENDING:
+            return
+
+        expense.status = ExpenseStatus.APPROVED
+        await self.db.flush()
+
+        # 执行支出逻辑：按扣减比例创建负向存款
+        # deduction_ratios 格式为 {"user_id": ratio, ...}
+        deduction_ratios = json.loads(expense.equity_deduction_ratio)
+
+        for user_id_str, ratio in deduction_ratios.items():
+            user_id = int(user_id_str)
+            deduction_amount = expense.amount * ratio
+
+            deposit = Deposit(
+                user_id=user_id,
+                family_id=request.family_id,
+                amount=-deduction_amount,
+                deposit_date=datetime.utcnow(),
+                note=f"支出扣减: {expense.title}"
+            )
+            self.db.add(deposit)
+
+        # 获取当前余额
+        result = await self.db.execute(
+            select(Transaction)
+            .where(Transaction.family_id == request.family_id)
+            .order_by(Transaction.created_at.desc())
+            .limit(1)
+        )
+        last_transaction = result.scalar_one_or_none()
+        current_balance = last_transaction.balance_after if last_transaction else 0
+
+        # 创建支出流水
+        transaction = Transaction(
+            family_id=request.family_id,
+            user_id=expense.requester_id,
+            transaction_type=TransactionType.WITHDRAW,
+            amount=-expense.amount,
+            balance_after=current_balance - expense.amount,
+            description=f"大额支出: {expense.title}",
+            reference_id=expense.id,
+            reference_type="expense"
+        )
+        self.db.add(transaction)
+
+        # 检查成就解锁
+        try:
+            from app.services.achievement import AchievementService
+            achievement_service = AchievementService(self.db)
+            await achievement_service.check_and_unlock(
+                expense.requester_id,
+                context={"action": "expense", "expense_amount": expense.amount}
+            )
+        except Exception as e:
+            logging.warning(f"Achievement check failed after expense approval: {e}")
