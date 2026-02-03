@@ -182,8 +182,38 @@ async function handleJoin() {
 }
 
 function copyInviteCode() {
-  navigator.clipboard.writeText(family.value?.invite_code || '')
-  message.success('邀请码已复制')
+  const text = family.value?.invite_code || ''
+  
+  // 优先使用现代 Clipboard API（需要 HTTPS）
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text)
+      .then(() => message.success('邀请码已复制'))
+      .catch(() => fallbackCopy(text))
+  } else {
+    // 回退到传统方法
+    fallbackCopy(text)
+  }
+}
+
+// 兼容性复制方法（适用于非 HTTPS 环境）
+function fallbackCopy(text: string) {
+  const textArea = document.createElement('textarea')
+  textArea.value = text
+  textArea.style.position = 'fixed'
+  textArea.style.left = '-9999px'
+  textArea.style.top = '-9999px'
+  document.body.appendChild(textArea)
+  textArea.focus()
+  textArea.select()
+  
+  try {
+    document.execCommand('copy')
+    message.success('邀请码已复制')
+  } catch (err) {
+    message.error('复制失败，请手动复制')
+  }
+  
+  document.body.removeChild(textArea)
 }
 
 // 发起剔除成员
