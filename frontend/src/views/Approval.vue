@@ -312,11 +312,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, h } from 'vue'
+import { useMessage, useDialog } from 'naive-ui'
 import { approvalApi, investmentApi, familyApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { checkAndShowAchievements } from '@/utils/achievement'
 
+const message = useMessage()
+const dialog = useDialog()
 const userStore = useUserStore()
 const currentUserId = computed(() => userStore.user?.id)
 
@@ -550,17 +553,39 @@ const handleApprove = async (id: number, isApproved: boolean) => {
     return
   }
   
-  // 设置当前处理中的审批ID
+  // 拒绝时需要输入原因
+  if (!isApproved) {
+    dialog.create({
+      title: '拒绝原因',
+      content: () => h('input', {
+        type: 'text',
+        placeholder: '请输入拒绝原因（可选）',
+        id: 'reject-reason-input',
+        style: { width: '100%', padding: '8px', border: '1px solid #e5e7eb', borderRadius: '4px' }
+      }),
+      positiveText: '确认拒绝',
+      negativeText: '取消',
+      onPositiveClick: async () => {
+        const reason = (document.getElementById('reject-reason-input') as HTMLInputElement)?.value || ''
+        await doApproval(id, false, reason)
+      }
+    })
+    return
+  }
+  
+  await doApproval(id, true, '')
+}
+
+const doApproval = async (id: number, isApproved: boolean, reason: string) => {
   processingApprovalId.value = id
   
   try {
     if (isApproved) {
       await approvalApi.approve(id)
     } else {
-      const reason = prompt('请输入拒绝原因（可选）:') || ''
       await approvalApi.reject(id, reason)
     }
-    alert(isApproved ? '已同意该申请' : '已拒绝该申请')
+    message.success(isApproved ? '已同意该申请' : '已拒绝该申请')
     loadApprovals()
     loadPendingApprovals()
     
@@ -570,24 +595,29 @@ const handleApprove = async (id: number, isApproved: boolean) => {
     }
   } catch (error: unknown) {
     const errMsg = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '审批失败'
-    alert(errMsg)
+    message.error(errMsg)
   } finally {
-    // 无论成功失败都要重置状态
     processingApprovalId.value = null
   }
 }
 
 const handleCancel = async (id: number) => {
-  if (!confirm('确定要取消这个申请吗？')) return
-  
-  try {
-    await approvalApi.cancel(id)
-    alert('申请已取消')
-    loadApprovals()
-  } catch (error: unknown) {
-    const errMsg = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '取消失败'
-    alert(errMsg)
-  }
+  dialog.warning({
+    title: '确认取消',
+    content: '确定要取消这个申请吗？',
+    positiveText: '确认取消',
+    negativeText: '返回',
+    onPositiveClick: async () => {
+      try {
+        await approvalApi.cancel(id)
+        message.success('申请已取消')
+        loadApprovals()
+      } catch (error: unknown) {
+        const errMsg = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '取消失败'
+        message.error(errMsg)
+      }
+    }
+  })
 }
 
 const submitCreate = async () => {
@@ -619,19 +649,23 @@ const submitCreate = async () => {
     } else if (createForm.value.type === 'expense') {
       // 验证扣减比例
       if (expenseTotalRatio.value !== 100) {
-        alert('扣减比例合计必须等于100%')
+        message.warning('扣减比例合计必须等于100%')
+        submitting.value = false
         return
       }
       if (!createForm.value.expense_title.trim()) {
-        alert('请输入支出标题')
+        message.warning('请输入支出标题')
+        submitting.value = false
         return
       }
       if (createForm.value.amount <= 0) {
-        alert('请输入有效的支出金额')
+        message.warning('请输入有效的支出金额')
+        submitting.value = false
         return
       }
       if (!createForm.value.expense_reason.trim()) {
-        alert('请输入支出原因')
+        message.warning('请输入支出原因')
+        submitting.value = false
         return
       }
       
@@ -649,14 +683,14 @@ const submitCreate = async () => {
       })
     }
     
-    alert('申请已提交，等待家庭成员审批')
+    message.success('申请已提交，等待家庭成员审批')
     showCreateModal.value = false
     resetForm()
     loadApprovals()
     loadPendingApprovals()
   } catch (error: unknown) {
     const errMsg = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '提交失败'
-    alert(errMsg)
+    message.error(errMsg)
   } finally {
     submitting.value = false
   }
@@ -1070,7 +1104,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 2000; /* 高于底部导航栏 */
 }
 
 .modal-content {
@@ -1243,22 +1277,230 @@ onMounted(() => {
 }
 
 /* 响应式 */
-@media (max-width: 640px) {
-  .stats-cards {
-    grid-template-columns: repeat(2, 1fr);
+@media (max-width: 767px) {
+  .approval-page {
+    padding: 16px;
   }
   
+  .page-header h1 {
+    font-size: 22px;
+  }
+  
+  .subtitle {
+    font-size: 13px;
+  }
+  
+  /* 统计卡片 2列 */
+  .stats-cards {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  
+  .stat-card {
+    padding: 14px;
+    gap: 12px;
+  }
+  
+  .stat-icon {
+    font-size: 24px;
+  }
+  
+  .stat-value {
+    font-size: 22px;
+  }
+  
+  .stat-label {
+    font-size: 12px;
+  }
+  
+  /* 操作栏 */
   .action-bar {
     flex-direction: column;
     align-items: stretch;
+    gap: 12px;
   }
   
   .filters {
-    flex-direction: column;
+    flex-direction: row;
+    gap: 8px;
+  }
+  
+  .filter-select {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  
+  .btn-primary {
+    width: 100%;
+    padding: 14px;
+    font-size: 15px;
+    min-height: 48px;
+  }
+  
+  /* 待审批区域 */
+  .pending-section {
+    padding: 16px;
+    margin-bottom: 20px;
+    border-radius: 12px;
+  }
+  
+  .pending-section h2 {
+    font-size: 18px;
+  }
+  
+  /* 卡片 */
+  .approval-card {
+    padding: 16px;
+    border-radius: 10px;
+  }
+  
+  .card-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .type-badge,
+  .status-badge {
+    font-size: 11px;
+    padding: 3px 10px;
+  }
+  
+  .card-body h3 {
+    font-size: 16px;
+  }
+  
+  .description {
+    font-size: 13px;
   }
   
   .meta {
     flex-wrap: wrap;
+    gap: 10px;
+    font-size: 12px;
+  }
+  
+  /* 按钮触控区域优化 */
+  .card-actions {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .btn-approve,
+  .btn-reject {
+    padding: 14px;
+    font-size: 15px;
+    min-height: 48px;
+  }
+  
+  .btn-cancel {
+    width: 100%;
+    padding: 12px;
+    min-height: 44px;
+  }
+  
+  /* 弹窗移动端适配 - Bottom Sheet 样式 */
+  .modal-overlay {
+    align-items: flex-end; /* 底部对齐 */
+  }
+  
+  .modal-content {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: 85vh; /* 最多占屏幕85%，露出底部导航 */
+    border-radius: 20px 20px 0 0; /* 只有顶部圆角 */
+    animation: slideUp 0.3s ease-out;
+  }
+  
+  @keyframes slideUp {
+    from {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  
+  .modal-header {
+    padding: 16px;
+    position: relative;
+  }
+  
+  /* 添加顶部拖拽指示条 */
+  .modal-header::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 4px;
+    background: #d1d5db;
+    border-radius: 2px;
+  }
+  
+  .modal-header h2 {
+    font-size: 18px;
+    margin-top: 8px;
+  }
+  
+  .modal-body {
+    padding: 16px;
+    max-height: calc(85vh - 140px); /* 预留 header 和 footer 空间 */
+    overflow-y: auto;
+  }
+  
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    padding: 14px 16px;
+    font-size: 16px; /* 防止 iOS 放大 */
+  }
+  
+  .type-selector {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  
+  .type-btn {
+    padding: 12px;
+    font-size: 13px;
+    text-align: center;
+  }
+  
+  .modal-footer {
+    padding: 16px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+  
+  .btn-secondary {
+    flex: 1;
+    padding: 14px;
+    min-height: 48px;
+  }
+  
+  /* 比例输入 */
+  .ratio-item {
+    flex-wrap: wrap;
+  }
+  
+  .ratio-input {
+    width: 70px !important;
+  }
+  
+  /* 区块标题 */
+  .all-approvals h2 {
+    font-size: 18px;
+    margin-bottom: 12px;
+  }
+  
+  .loading, .empty {
+    padding: 32px;
   }
 }
 </style>

@@ -1,9 +1,21 @@
 <template>
   <div class="page-container">
-    <h1 class="page-title">
-      <span class="icon">📊</span>
-      仪表盘
-    </h1>
+    <div class="page-header-row">
+      <h1 class="page-title">
+        <span class="icon">📊</span>
+        仪表盘
+      </h1>
+      <button class="privacy-toggle" @click="togglePrivacy" :title="privacyMode ? '显示金额' : '隐藏金额'">
+        <svg v-if="privacyMode" class="privacy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+        <svg v-else class="privacy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
     
     <template v-if="hasFamily">
       <!-- 储蓄目标进度 -->
@@ -46,8 +58,20 @@
         <n-card class="stat-card card-hover">
           <div class="stat-icon">📈</div>
           <div class="stat-content">
-            <div class="stat-value">¥{{ formatNumber(equity?.total_weighted || 0) }}</div>
-            <div class="stat-label">加权总额</div>
+            <div class="stat-value growth-value">+¥{{ formatNumber(equity?.daily_weighted_growth || 0) }}</div>
+            <div class="stat-label">
+              今日加权增长
+              <n-tooltip trigger="hover">
+                <template #trigger>
+                  <span class="help-icon">?</span>
+                </template>
+                <div style="max-width: 220px;">
+                  每日因时间流逝产生的股权加权增值。<br/>
+                  公式：加权总额 × 年化利率 ÷ 365<br/>
+                  存得越久，每日增长越多！
+                </div>
+              </n-tooltip>
+            </div>
           </div>
         </n-card>
         
@@ -113,19 +137,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import { equityApi, familyApi } from '@/api'
 import { useUserStore } from '@/stores/user'
+import { usePrivacyStore } from '@/stores/privacy'
 
 const router = useRouter()
 const userStore = useUserStore()
+const privacyStore = usePrivacyStore()
+const { privacyMode } = storeToRefs(privacyStore)
 
 const equity = ref<any>(null)
 const hasFamily = ref(false)
 
+function togglePrivacy() {
+  privacyStore.togglePrivacy()
+}
+
 function formatNumber(num: number) {
-  return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return privacyStore.formatMoney(num)
 }
 
 function getProgressColor(percentage: number) {
@@ -157,6 +189,50 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 页面头部行 */
+.page-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.page-header-row .page-title {
+  margin-bottom: 0;
+}
+
+.privacy-toggle {
+  background: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.privacy-toggle:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.privacy-toggle:active {
+  transform: scale(0.95);
+}
+
+.privacy-icon {
+  width: 20px;
+  height: 20px;
+  color: #64748b;
+}
+
+.privacy-toggle:hover .privacy-icon {
+  color: #334155;
+}
+
 .target-card {
   margin-bottom: 24px;
 }
@@ -230,6 +306,27 @@ onMounted(() => {
 .stat-label {
   font-size: 13px;
   color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.growth-value {
+  color: #10b981;
+}
+
+.help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 10px;
+  font-weight: 600;
+  background: #e2e8f0;
+  color: #64748b;
+  border-radius: 50%;
+  cursor: help;
 }
 
 .equity-list {
@@ -288,6 +385,107 @@ onMounted(() => {
 @media (max-width: 1024px) {
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ============================================
+   移动端适配
+   ============================================ */
+@media (max-width: 767px) {
+  .target-card {
+    margin-bottom: 16px;
+  }
+  
+  .target-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .target-title {
+    font-size: 16px;
+  }
+  
+  .target-amount {
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .amount-label {
+    display: inline;
+    font-size: 14px;
+  }
+  
+  .amount-value {
+    font-size: 24px;
+  }
+  
+  .target-tips {
+    margin-top: 12px;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  
+  /* 数据卡片 2列 */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  
+  .stat-card {
+    padding: 12px;
+  }
+  
+  .stat-icon {
+    font-size: 24px;
+  }
+  
+  .stat-value {
+    font-size: 16px;
+  }
+  
+  .stat-label {
+    font-size: 12px;
+  }
+  
+  /* 股权列表移动端 */
+  .equity-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 0;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  
+  .equity-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+  
+  .member-info {
+    min-width: unset;
+    justify-content: space-between;
+  }
+  
+  .member-deposit {
+    min-width: unset;
+    font-size: 14px;
+    color: #1e293b;
+  }
+  
+  .member-equity {
+    max-width: unset;
+    width: 100%;
+  }
+  
+  .equity-value {
+    min-width: 70px;
+  }
+  
+  .welcome-card {
+    padding: 24px;
   }
 }
 </style>

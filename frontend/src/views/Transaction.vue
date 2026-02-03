@@ -3,19 +3,58 @@
     <h1 class="page-title"><span class="icon">📝</span> 资金流水</h1>
     
     <n-card class="card-hover">
-      <n-data-table :columns="columns" :data="transactions" :loading="loading" :bordered="false" />
+      <!-- 桌面端：表格 -->
+      <n-data-table class="desktop-only" :columns="columns" :data="transactions" :loading="loading" :bordered="false" />
+      <!-- 移动端：卡片 -->
+      <div class="mobile-only">
+        <n-spin :show="loading">
+          <div class="record-cards" v-if="transactions.length > 0">
+            <div v-for="item in transactions" :key="item.id" class="record-card" :class="getCardClass(item.transaction_type)">
+              <div class="record-card-header">
+                <n-tag :type="getTagType(item.transaction_type)" size="small" :bordered="false">
+                  {{ typeMap[item.transaction_type]?.label || item.transaction_type }}
+                </n-tag>
+                <span class="record-time">{{ formatShortDateTime(item.created_at) }}</span>
+              </div>
+              <div class="record-card-body">
+                <div class="record-amount" :class="item.amount > 0 ? 'positive' : 'negative'">
+                  {{ formatAmount(item.amount) }}
+                </div>
+                <div class="record-desc">{{ item.description || '无描述' }}</div>
+              </div>
+              <div class="record-card-footer">
+                <span class="record-user">{{ item.user_nickname }}</span>
+              </div>
+            </div>
+          </div>
+          <n-empty v-else description="暂无交易记录" />
+        </n-spin>
+      </div>
     </n-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, h } from 'vue'
+import { ref, onMounted, h, computed } from 'vue'
 import { NTag } from 'naive-ui'
+import { storeToRefs } from 'pinia'
 import { transactionApi } from '@/api'
 import { formatShortDateTime } from '@/utils/date'
+import { usePrivacyStore } from '@/stores/privacy'
+
+const privacyStore = usePrivacyStore()
+const { privacyMode } = storeToRefs(privacyStore)
 
 const loading = ref(false)
 const transactions = ref<any[]>([])
+
+// 格式化金额，支持隐私模式
+const formatAmount = (amount: number) => {
+  if (privacyMode.value) {
+    return (amount > 0 ? '+' : '') + '¥****'
+  }
+  return (amount > 0 ? '+' : '') + '¥' + amount.toLocaleString()
+}
 
 const typeMap: Record<string, { color: string, label: string }> = {
   deposit: { color: '#10b981', label: '存入' },
@@ -24,16 +63,38 @@ const typeMap: Record<string, { color: string, label: string }> = {
   dividend: { color: '#8b5cf6', label: '分红' }
 }
 
-const columns = [
+const columns = computed(() => [
   { title: '日期', key: 'created_at', render: (row: any) => formatShortDateTime(row.created_at) },
   { title: '类型', key: 'transaction_type', render: (row: any) => h(NTag, { size: 'small', bordered: false, style: { backgroundColor: typeMap[row.transaction_type]?.color + '20', color: typeMap[row.transaction_type]?.color } }, { default: () => typeMap[row.transaction_type]?.label || row.transaction_type }) },
   { title: '金额', key: 'amount', render: (row: any) => {
     const isPositive = row.amount > 0
-    return h('span', { style: { color: isPositive ? '#10b981' : '#ef4444', fontWeight: 600 } }, `${isPositive ? '+' : ''}¥${row.amount.toLocaleString()}`)
+    return h('span', { style: { color: isPositive ? '#10b981' : '#ef4444', fontWeight: 600 } }, formatAmount(row.amount))
   }},
   { title: '操作人', key: 'user_nickname' },
   { title: '说明', key: 'description', render: (row: any) => row.description || '-' }
-]
+])
+
+// 获取卡片类名
+function getCardClass(type: string) {
+  const classMap: Record<string, string> = {
+    deposit: 'deposit-card',
+    withdraw: 'withdraw-card',
+    income: 'income-card',
+    dividend: 'dividend-card'
+  }
+  return classMap[type] || ''
+}
+
+// 获取标签类型
+function getTagType(type: string) {
+  const tagMap: Record<string, 'success' | 'error' | 'info' | 'warning'> = {
+    deposit: 'success',
+    withdraw: 'error',
+    income: 'info',
+    dividend: 'warning'
+  }
+  return tagMap[type] || 'default'
+}
 
 async function loadData() {
   loading.value = true
@@ -47,3 +108,121 @@ async function loadData() {
 
 onMounted(loadData)
 </script>
+
+<style scoped>
+/* 桌面/移动端显示控制 */
+.desktop-only {
+  display: block;
+}
+.mobile-only {
+  display: none;
+}
+
+/* ===== 移动端卡片样式 ===== */
+@media (max-width: 767px) {
+  .desktop-only {
+    display: none !important;
+  }
+  .mobile-only {
+    display: block !important;
+  }
+  
+  .page-container {
+    padding: 12px;
+  }
+  
+  :deep(.n-card-header) {
+    padding: 12px 14px !important;
+  }
+  
+  :deep(.n-card__content) {
+    padding: 12px 14px !important;
+  }
+}
+
+.record-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.record-card {
+  background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(250,250,250,0.9));
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  border: 1px solid rgba(0,0,0,0.04);
+}
+
+/* 各类型卡片颜色 */
+.record-card.deposit-card {
+  background: linear-gradient(135deg, rgba(240,253,244,0.95), rgba(220,252,231,0.7));
+  border-color: rgba(34,197,94,0.15);
+}
+
+.record-card.withdraw-card {
+  background: linear-gradient(135deg, rgba(254,242,242,0.95), rgba(254,226,226,0.7));
+  border-color: rgba(239,68,68,0.15);
+}
+
+.record-card.income-card {
+  background: linear-gradient(135deg, rgba(239,246,255,0.95), rgba(219,234,254,0.7));
+  border-color: rgba(59,130,246,0.15);
+}
+
+.record-card.dividend-card {
+  background: linear-gradient(135deg, rgba(245,243,255,0.95), rgba(237,233,254,0.7));
+  border-color: rgba(139,92,246,0.15);
+}
+
+.record-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.record-time {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.record-card-body {
+  margin-bottom: 8px;
+}
+
+.record-amount {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.record-amount.positive {
+  color: #059669;
+}
+
+.record-amount.negative {
+  color: #dc2626;
+}
+
+.record-desc {
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.record-card-footer {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0,0,0,0.05);
+}
+
+.record-user {
+  font-size: 12px;
+  color: #64748b;
+}
+</style>

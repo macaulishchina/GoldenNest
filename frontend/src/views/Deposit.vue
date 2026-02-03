@@ -9,41 +9,95 @@
           <n-tag type="info" size="small">需全员通过</n-tag>
         </n-space>
       </template>
-      <n-form inline :model="formData" @submit.prevent="handleSubmit">
-        <n-form-item label="存入金额">
-          <n-input-number v-model:value="formData.amount" :min="1" placeholder="金额" style="width: 150px">
-            <template #prefix>¥</template>
-          </n-input-number>
-        </n-form-item>
-        <n-form-item label="存入日期">
-          <n-date-picker v-model:value="formData.deposit_date" type="datetime" />
-        </n-form-item>
-        <n-form-item label="备注">
-          <n-input v-model:value="formData.note" placeholder="可选" style="width: 200px" />
-        </n-form-item>
-        <n-form-item>
-          <n-button type="primary" :loading="submitting" @click="handleSubmit">
-            <template #icon><n-icon><SendOutline /></n-icon></template>
-            发起申请
-          </n-button>
-        </n-form-item>
+      <n-form :model="formData" @submit.prevent="handleSubmit" class="deposit-form">
+        <!-- 第一行：金额 + 日期 -->
+        <div class="form-row">
+          <n-form-item label="存入金额" class="form-item-half">
+            <n-input-number v-model:value="formData.amount" :min="1" placeholder="金额">
+              <template #prefix>¥</template>
+            </n-input-number>
+          </n-form-item>
+          <n-form-item label="存入日期" class="form-item-half">
+            <n-date-picker v-model:value="formData.deposit_date" type="datetime" style="width: 100%" />
+          </n-form-item>
+        </div>
+        <!-- 第二行：备注 + 按钮 -->
+        <div class="form-row">
+          <n-form-item label="备注" class="form-item-flex">
+            <n-input v-model:value="formData.note" placeholder="可选" />
+          </n-form-item>
+          <n-form-item class="form-item-btn">
+            <n-button type="primary" :loading="submitting" @click="handleSubmit">
+              <template #icon><n-icon><SendOutline /></n-icon></template>
+              发起申请
+            </n-button>
+          </n-form-item>
+        </div>
       </n-form>
     </n-card>
     
     <!-- 待审批的资金注入申请 -->
     <n-card title="待审批申请" class="card-hover" style="margin-bottom: 24px" v-if="pendingApprovals.length > 0">
-      <n-data-table :columns="approvalColumns" :data="pendingApprovals" :bordered="false" />
+      <!-- 桌面端：表格 -->
+      <n-data-table class="desktop-only" :columns="approvalColumns" :data="pendingApprovals" :bordered="false" />
+      <!-- 移动端：卡片 -->
+      <div class="mobile-only">
+        <div class="record-cards">
+          <div v-for="item in pendingApprovals" :key="item.id" class="record-card pending-card">
+            <div class="record-card-header">
+              <span class="record-user">{{ item.requester_nickname }}</span>
+              <n-tag type="warning" size="small">{{ item.approved_count || 0 }}/{{ item.required_count || 0 }} 已审批</n-tag>
+            </div>
+            <div class="record-card-body">
+              <div class="record-amount">¥{{ parseRequestData(item).amount?.toLocaleString() }}</div>
+              <div class="record-note">{{ parseRequestData(item).note || '无备注' }}</div>
+            </div>
+            <div class="record-card-footer">
+              <span class="record-time">{{ formatShortDateTime(item.created_at) }}</span>
+              <div class="record-actions">
+                <template v-if="item.requester_id !== userStore.user?.id && !item.has_voted">
+                  <n-button size="tiny" type="success" @click="handleApprove(item.id, true)">同意</n-button>
+                  <n-button size="tiny" type="error" @click="handleApprove(item.id, false)">拒绝</n-button>
+                </template>
+                <span v-else class="record-status">{{ item.has_voted ? '已投票' : '等待他人' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </n-card>
     
     <n-card title="存款记录" class="card-hover">
-      <n-data-table :columns="columns" :data="deposits" :loading="loading" :bordered="false" />
+      <!-- 桌面端：表格 -->
+      <n-data-table class="desktop-only" :columns="columns" :data="deposits" :loading="loading" :bordered="false" />
+      <!-- 移动端：卡片 -->
+      <div class="mobile-only">
+        <n-spin :show="loading">
+          <div class="record-cards" v-if="deposits.length > 0">
+            <div v-for="item in deposits" :key="item.id" class="record-card deposit-card">
+              <div class="record-card-header">
+                <span class="record-user">{{ item.user_nickname }}</span>
+                <n-tag type="success" size="small">已入账</n-tag>
+              </div>
+              <div class="record-card-body">
+                <div class="record-amount">¥{{ item.amount?.toLocaleString() }}</div>
+                <div class="record-note">{{ item.note || '无备注' }}</div>
+              </div>
+              <div class="record-card-footer">
+                <span class="record-time">{{ formatShortDateTime(item.deposit_date) }}</span>
+              </div>
+            </div>
+          </div>
+          <n-empty v-else description="暂无存款记录" />
+        </n-spin>
+      </div>
     </n-card>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, h } from 'vue'
-import { useMessage, NButton, NTag, NSpace } from 'naive-ui'
+import { useMessage, useDialog, NButton, NTag, NSpace, NInput } from 'naive-ui'
 import { depositApi, approvalApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { SendOutline } from '@vicons/ionicons5'
@@ -51,6 +105,7 @@ import { formatShortDateTime } from '@/utils/date'
 import { checkAndShowAchievements } from '@/utils/achievement'
 
 const message = useMessage()
+const dialog = useDialog()
 const userStore = useUserStore()
 const loading = ref(false)
 const submitting = ref(false)
@@ -136,13 +191,11 @@ async function handleSubmit() {
   }
 }
 
-async function handleApprove(id: number, approved: boolean) {
+async function doApprove(id: number, approved: boolean, reason?: string) {
   try {
     if (approved) {
       await approvalApi.approve(id)
     } else {
-      const reason = window.prompt('请输入拒绝原因')
-      if (reason === null) return
       await approvalApi.reject(id, reason || '未说明原因')
     }
     message.success(approved ? '已同意' : '已拒绝')
@@ -157,5 +210,291 @@ async function handleApprove(id: number, approved: boolean) {
   }
 }
 
+function handleApprove(id: number, approved: boolean) {
+  if (approved) {
+    doApprove(id, true)
+  } else {
+    dialog.create({
+      title: '拒绝原因',
+      content: () => h(NInput, {
+        id: 'reject-reason-input',
+        placeholder: '请输入拒绝原因（可选）',
+        style: { width: '100%' }
+      }),
+      positiveText: '确认拒绝',
+      negativeText: '取消',
+      onPositiveClick: () => {
+        const reason = (document.getElementById('reject-reason-input') as HTMLInputElement)?.value || ''
+        doApprove(id, false, reason)
+      }
+    })
+  }
+}
+
+// 解析审批请求数据
+function parseRequestData(item: any) {
+  try {
+    return JSON.parse(item.request_data)
+  } catch {
+    return {}
+  }
+}
+
 onMounted(loadData)
 </script>
+
+<style scoped>
+/* 桌面/移动端显示控制 */
+.desktop-only {
+  display: block;
+}
+.mobile-only {
+  display: none;
+}
+
+/* 表单布局 */
+.deposit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.form-item-half {
+  flex: 1;
+  min-width: 0;
+}
+
+.form-item-flex {
+  flex: 1;
+  min-width: 0;
+}
+
+.form-item-btn {
+  flex-shrink: 0;
+}
+
+/* 表单项样式调整 */
+:deep(.n-form-item) {
+  margin-bottom: 0;
+}
+
+:deep(.n-form-item-label) {
+  font-size: 13px;
+  color: #6b7280;
+  padding-bottom: 4px;
+}
+
+/* 输入框100%宽度 */
+.form-item-half :deep(.n-input-number),
+.form-item-half :deep(.n-date-picker),
+.form-item-flex :deep(.n-input) {
+  width: 100% !important;
+}
+
+/* 按钮样式 */
+.form-item-btn :deep(.n-button) {
+  height: 34px;
+  font-size: 14px;
+}
+
+/* 移动端响应式 */
+@media (max-width: 767px) {
+  .page-container {
+    padding: 12px;
+  }
+  
+  /* 卡片更紧凑 */
+  :deep(.n-card) {
+    margin-bottom: 12px !important;
+  }
+  
+  :deep(.n-card-header) {
+    padding: 12px 14px !important;
+  }
+  
+  :deep(.n-card__content) {
+    padding: 12px 14px !important;
+  }
+  
+  /* 表单行布局 */
+  .form-row {
+    gap: 10px;
+  }
+  
+  /* 第一行：金额和日期各占一半 */
+  .form-item-half {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  /* 第二行：备注占剩余空间，按钮固定宽度 */
+  .form-item-flex {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .form-item-btn {
+    flex-shrink: 0;
+  }
+  
+  .form-item-btn :deep(.n-button) {
+    height: 34px;
+    padding: 0 16px;
+  }
+  
+  /* ===== 修复 n-input-number 按钮布局 ===== */
+  :deep(.n-input-number) {
+    display: flex !important;
+    flex-direction: row !important;
+    width: 100% !important;
+  }
+  
+  /* 让输入区域占满剩余空间 */
+  :deep(.n-input-number .n-input) {
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+  
+  /* 确保输入框内部布局正确 */
+  :deep(.n-input-number .n-input-wrapper) {
+    display: flex !important;
+    flex-direction: row !important;
+    width: 100% !important;
+  }
+  
+  /* 按钮组紧贴输入框 */
+  :deep(.n-input-number .n-input-number-button-group) {
+    flex-shrink: 0 !important;
+    display: flex !important;
+  }
+  
+  /* 防止 iOS 输入框自动放大 */
+  :deep(.n-input__input-el),
+  :deep(.n-date-picker input) {
+    font-size: 16px !important;
+  }
+  
+  /* 日期选择器全宽 */
+  :deep(.n-date-picker) {
+    width: 100% !important;
+  }
+  
+  /* 表格在移动端简化 */
+  :deep(.n-data-table) {
+    font-size: 13px;
+  }
+  
+  :deep(.n-data-table-th),
+  :deep(.n-data-table-td) {
+    padding: 10px 8px !important;
+  }
+}
+
+/* 更小屏幕：第一行改为垂直堆叠 */
+@media (max-width: 400px) {
+  .form-row:first-child {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .form-item-half {
+    width: 100%;
+  }
+}
+
+/* ===== 移动端卡片列表样式 ===== */
+@media (max-width: 767px) {
+  .desktop-only {
+    display: none !important;
+  }
+  .mobile-only {
+    display: block !important;
+  }
+}
+
+.record-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.record-card {
+  background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(250,250,250,0.9));
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  border: 1px solid rgba(0,0,0,0.04);
+}
+
+.record-card.pending-card {
+  background: linear-gradient(135deg, rgba(255,251,235,0.95), rgba(254,243,199,0.7));
+  border-color: rgba(245,158,11,0.15);
+}
+
+.record-card.deposit-card {
+  background: linear-gradient(135deg, rgba(240,253,244,0.95), rgba(220,252,231,0.7));
+  border-color: rgba(34,197,94,0.15);
+}
+
+.record-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.record-user {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.record-card-body {
+  margin-bottom: 8px;
+}
+
+.record-amount {
+  font-size: 20px;
+  font-weight: 700;
+  color: #059669;
+  margin-bottom: 2px;
+}
+
+.record-note {
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.record-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0,0,0,0.05);
+}
+
+.record-time {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.record-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.record-status {
+  font-size: 12px;
+  color: #94a3b8;
+}
+</style>

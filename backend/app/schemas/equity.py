@@ -25,6 +25,7 @@ class EquitySummary(BaseModel):
     savings_target: float  # 储蓄目标
     total_savings: float  # 当前总储蓄
     total_weighted: float  # 时间加权后总额
+    daily_weighted_growth: float = 0.0  # 今日加权增长额
     target_progress: float  # 目标完成进度 (0-1)
     time_value_rate: float  # 时间价值系数
     members: List[MemberEquity]  # 各成员股权信息

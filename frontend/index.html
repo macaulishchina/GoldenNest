@@ -3,11 +3,43 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/nest.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+    <!-- iOS Safari 状态栏样式 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>小金库 Golden Nest</title>
+    <style>
+      /* iOS Safari 动态视口适配 */
+      :root {
+        --vh: 1vh;
+      }
+      
+      /* 防止 iOS Safari 橡皮筋效果时出现白边 */
+      html, body {
+        background: linear-gradient(135deg, #f0fdf4 0%, #ecfeff 100%);
+        overscroll-behavior: none;
+      }
+      
+      /* iOS Safari 底部安全区域 */
+      body {
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
+    <script>
+      // 动态计算真实视口高度，解决 iOS Safari 工具栏问题
+      function setVH() {
+        const vh = window.innerHeight * 0.01;
+        document.documentElement.style.setProperty('--vh', `${vh}px`);
+      }
+      setVH();
+      window.addEventListener('resize', setVH);
+      window.addEventListener('orientationchange', function() {
+        setTimeout(setVH, 100);
+      });
+    </script>
   </body>
 </html>

@@ -180,10 +180,12 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useMessage } from 'naive-ui'
 import { api } from '@/api'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
+const message = useMessage()
 
 // 状态
 const loading = ref(false)
@@ -253,9 +255,9 @@ const checkin = async () => {
       showLevelUp.value = true
     }
     
-    alert(`签到成功! +${res.data.exp_gained} EXP`)
+    message.success(`签到成功! +${res.data.exp_gained} EXP`)
   } catch (err) {
-    alert(err.response?.data?.detail || '签到失败')
+    message.error(err.response?.data?.detail || '签到失败')
   } finally {
     checkinLoading.value = false
   }
@@ -279,9 +281,9 @@ const feed = async (foodType) => {
       showLevelUp.value = true
     }
     
-    alert(`喂食成功! 心情+${res.data.happiness_gained}`)
+    message.success(`喂食成功! 心情+${res.data.happiness_gained}`)
   } catch (err) {
-    alert(err.response?.data?.detail || '喂食失败')
+    message.error(err.response?.data?.detail || '喂食失败')
   } finally {
     feedLoading.value = false
   }
@@ -294,8 +296,9 @@ const rename = async () => {
     await api.put('/pet', { name: newName.value.trim() })
     pet.value.name = newName.value.trim()
     showRenameModal.value = false
+    message.success('改名成功')
   } catch (err) {
-    alert(err.response?.data?.detail || '改名失败')
+    message.error(err.response?.data?.detail || '改名失败')
   }
 }
 
@@ -853,5 +856,125 @@ onMounted(() => {
   color: #ffd700;
   font-size: 24px;
   margin-top: 16px;
+}
+
+/* 移动端响应式 */
+@media (max-width: 767px) {
+  .pet-page {
+    padding: 16px;
+    padding-bottom: 80px; /* 为底部导航留空间 */
+  }
+  
+  .pet-avatar {
+    width: 120px;
+    height: 120px;
+  }
+  
+  .pet-emoji {
+    font-size: 55px;
+  }
+  
+  .pet-name {
+    font-size: 24px;
+  }
+  
+  /* 属性卡片保持2列 */
+  .stats-grid {
+    gap: 10px;
+  }
+  
+  .stat-card {
+    padding: 12px;
+  }
+  
+  .stat-icon {
+    font-size: 24px;
+  }
+  
+  .stat-value {
+    font-size: 16px;
+  }
+  
+  .stat-label {
+    font-size: 11px;
+  }
+  
+  /* 操作按钮触控优化 */
+  .btn-action {
+    min-height: 52px;
+    padding: 14px 16px;
+    font-size: 15px;
+  }
+  
+  .btn-icon {
+    font-size: 20px;
+    margin-right: 10px;
+  }
+  
+  /* 进化路线横向滚动 */
+  .evolution-section {
+    padding: 16px;
+    overflow-x: auto;
+  }
+  
+  .evolution-path {
+    min-width: max-content;
+    padding: 0 10px;
+  }
+  
+  .stage-emoji {
+    font-size: 28px;
+    width: 44px;
+    height: 44px;
+  }
+  
+  .stage-name {
+    font-size: 10px;
+  }
+  
+  .stage-level {
+    font-size: 9px;
+  }
+  
+  /* 弹窗优化 */
+  .modal-content {
+    margin: 16px;
+    padding: 20px;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  
+  .food-item {
+    min-height: 48px;
+  }
+  
+  .food-icon {
+    font-size: 28px;
+  }
+  
+  /* 输入框字号防止 iOS 缩放 */
+  .form-group input {
+    font-size: 16px;
+    padding: 14px;
+  }
+  
+  .btn-cancel,
+  .btn-submit {
+    padding: 14px;
+    font-size: 15px;
+  }
+  
+  /* 提示区域 */
+  .tips-section {
+    padding: 14px;
+  }
+  
+  .tips-section h3 {
+    font-size: 15px;
+  }
+  
+  .tips-section li {
+    font-size: 13px;
+  }
 }
 </style>

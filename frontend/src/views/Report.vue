@@ -242,7 +242,12 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useMessage } from 'naive-ui'
 import { api } from '@/api'
+import { usePrivacyStore } from '@/stores/privacy'
+
+const message = useMessage()
+const privacyStore = usePrivacyStore()
 
 // 状态
 const loading = ref(false)
@@ -287,8 +292,9 @@ const getGrowthRate = () => {
   return ((change / start) * 100).toFixed(1)
 }
 
-// 格式化金额
+// 格式化金额（支持隐私模式）
 const formatMoney = (value) => {
+  if (privacyStore.privacyMode) return '****'
   if (value === undefined || value === null) return '0.00'
   return Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2 })
 }
@@ -313,9 +319,9 @@ const shareReport = () => {
 —— 小金库年度报告`
 
   navigator.clipboard.writeText(text).then(() => {
-    alert('报告摘要已复制到剪贴板')
+    message.success('报告摘要已复制到剪贴板')
   }).catch(() => {
-    alert('复制失败，请手动复制')
+    message.error('复制失败，请手动复制')
   })
 }
 
@@ -351,6 +357,7 @@ onMounted(() => {
   justify-content: center;
   gap: 12px;
   margin-bottom: 24px;
+  flex-wrap: wrap;
 }
 
 .year-btn {
@@ -361,12 +368,38 @@ onMounted(() => {
   font-size: 16px;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .year-btn.active {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border-color: transparent;
+}
+
+/* 移动端年份选择器 - 横向滚动 */
+@media (max-width: 767px) {
+  .year-selector {
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 16px;
+    margin-left: -16px;
+    margin-right: -16px;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+  }
+  
+  .year-selector::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+  }
+  
+  .year-btn {
+    padding: 10px 20px;
+    font-size: 15px;
+  }
 }
 
 /* 加载状态 */

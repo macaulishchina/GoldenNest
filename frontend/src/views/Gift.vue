@@ -10,7 +10,8 @@
         </div>
       </template>
       
-      <n-form :model="formData" label-placement="left" label-width="100px">
+      <!-- 桌面端表单 -->
+      <n-form class="desktop-only" :model="formData" label-placement="left" label-width="100px">
         <n-grid :cols="2" :x-gap="16">
           <n-gi>
             <n-form-item label="赠送对象">
@@ -32,6 +33,19 @@
               >
                 <template #suffix>%</template>
               </n-input-number>
+            </n-form-item>
+          </n-gi>
+        </n-grid>
+        
+        <n-grid :cols="2" :x-gap="16">
+          <n-gi>
+            <n-form-item label="对应金额">
+              <n-input 
+                :value="'¥' + formatMoney(calculatedAmount)" 
+                readonly 
+                placeholder="自动计算"
+                style="width: 100%"
+              />
             </n-form-item>
           </n-gi>
         </n-grid>
@@ -64,6 +78,66 @@
           </n-space>
         </n-form-item>
       </n-form>
+      
+      <!-- 移动端紧凑表单 -->
+      <div class="mobile-only mobile-gift-form">
+        <!-- 第一行：赠送对象 + 比例 -->
+        <div class="form-row">
+          <div class="form-col target-col">
+            <label>赠送对象</label>
+            <n-select
+              v-model:value="formData.to_user_id"
+              :options="memberOptions"
+              placeholder="选择"
+              size="small"
+            />
+          </div>
+          <div class="form-col amount-col">
+            <label>赠送比例</label>
+            <div class="amount-input-wrapper">
+              <n-input-number 
+                v-model:value="formData.amount" 
+                :min="0.01" 
+                :max="myEquity * 100"
+                :step="0.1"
+                :show-button="false"
+                size="small"
+                placeholder="0.00"
+              />
+              <span class="amount-suffix">%</span>
+            </div>
+          </div>
+        </div>
+        <!-- 第二行：祝福语（单行输入） -->
+        <div class="form-row">
+          <div class="form-col message-col">
+            <label>祝福语</label>
+            <n-input 
+              v-model:value="formData.message" 
+              placeholder="写下祝福（可选）"
+              size="small"
+              maxlength="100"
+            />
+          </div>
+        </div>
+        <!-- 第三行：发送按钮 + 对应金额 + 股权信息 -->
+        <div class="form-row submit-row">
+          <n-button 
+            type="primary" 
+            :loading="submitting" 
+            :disabled="!canSend"
+            @click="handleSend"
+            size="small"
+            class="send-btn"
+          >
+            🎁 发送赠与
+          </n-button>
+          <div class="submit-info">
+            <span class="calculated-amount" v-if="calculatedAmount > 0">≈ ¥{{ formatMoney(calculatedAmount) }}</span>
+            <span class="my-equity">我的股权：{{ (myEquity * 100).toFixed(2) }}%</span>
+          </div>
+        </div>
+      </div>
     </n-card>
     
     <!-- 统计卡片 -->
@@ -235,11 +309,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { giftApi, familyApi, equityApi } from '@/api'
 import { useUserStore } from '@/stores/user'
+import { usePrivacyStore } from '@/stores/privacy'
 import { formatShortDateTime } from '@/utils/date'
 import { checkAndShowAchievements } from '@/utils/achievement'
 
 const message = useMessage()
 const userStore = useUserStore()
+const privacyStore = usePrivacyStore()
 const loading = ref(false)
 const submitting = ref(false)
 const showSuccessAnimation = ref(false)
@@ -250,6 +326,7 @@ const receivedGifts = ref<any[]>([])
 const pendingCount = ref(0)
 const familyMembers = ref<any[]>([])
 const myEquity = ref(0)
+const totalSavings = ref(0) // 家庭总储蓄
 
 const stats = ref({
   total_sent: 0,
@@ -280,6 +357,20 @@ const canSend = computed(() => {
          formData.value.amount > 0 &&
          formData.value.amount <= myEquity.value * 100
 })
+
+// 计算赠送股权对应的金额
+const calculatedAmount = computed(() => {
+  if (!formData.value.amount || formData.value.amount <= 0) {
+    return 0
+  }
+  return totalSavings.value * (formData.value.amount / 100)
+})
+
+// 格式化金额显示（支持隐私模式）
+const formatMoney = (num: number) => {
+  if (privacyStore.privacyMode) return '****'
+  return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
 
 // 方法
 function formatTime(dateStr: string): string {
@@ -323,9 +414,10 @@ async function loadData() {
     stats.value = statsRes.data
     familyMembers.value = familyRes.data.members || []
     
-    // 计算我的股权比例
+    // 计算我的股权比例和总储蓄
     const myMember = equityRes.data.members?.find((m: any) => m.user_id === userStore.user?.id)
     myEquity.value = myMember?.equity_ratio || 0
+    totalSavings.value = equityRes.data.total_savings || 0
   } catch (error: any) {
     message.error(error.response?.data?.detail || '加载数据失败')
   } finally {
@@ -523,5 +615,331 @@ onMounted(() => {
 @keyframes confetti {
   0%, 100% { transform: translateY(0) scale(1); }
   50% { transform: translateY(-10px) scale(1.1); }
+}
+
+/* 桌面/移动端显示控制 */
+.desktop-only {
+  display: block;
+}
+.mobile-only {
+  display: none;
+}
+
+/* ===== 移动端紧凑表单样式 ===== */
+.mobile-gift-form {
+  display: none;
+}
+
+.mobile-gift-form .form-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.mobile-gift-form .form-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mobile-gift-form .form-col label {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.mobile-gift-form .target-col {
+  flex: 1;
+}
+
+.mobile-gift-form .amount-col {
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.mobile-gift-form .message-col {
+  flex: 1;
+}
+
+.mobile-gift-form .amount-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mobile-gift-form .amount-input-wrapper .n-input-number {
+  flex: 1;
+}
+
+.mobile-gift-form .amount-suffix {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.mobile-gift-form .submit-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.mobile-gift-form .send-btn {
+  height: 32px !important;
+  padding: 0 16px !important;
+}
+
+.mobile-gift-form .submit-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mobile-gift-form .calculated-amount {
+  font-size: 13px;
+  font-weight: 600;
+  color: #059669;
+}
+
+.mobile-gift-form .my-equity {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+/* ===== 移动端适配 ===== */
+@media (max-width: 767px) {
+  .desktop-only {
+    display: none !important;
+  }
+  .mobile-only {
+    display: block !important;
+  }
+  .mobile-gift-form {
+    display: block !important;
+  }
+  
+  .page-container {
+    padding: 12px;
+  }
+  
+  /* 卡片内边距 */
+  :deep(.n-card-header) {
+    padding: 10px 12px !important;
+  }
+  
+  :deep(.n-card__content) {
+    padding: 12px !important;
+  }
+  
+  /* 移动端表单输入框样式 */
+  .mobile-gift-form :deep(.n-select),
+  .mobile-gift-form :deep(.n-input),
+  .mobile-gift-form :deep(.n-input-number) {
+    height: 32px !important;
+  }
+  
+  .mobile-gift-form :deep(.n-base-selection) {
+    height: 32px !important;
+    min-height: 32px !important;
+  }
+  
+  .mobile-gift-form :deep(.n-base-selection-label) {
+    height: 32px !important;
+    line-height: 32px !important;
+  }
+  
+  .mobile-gift-form :deep(.n-input__input-el) {
+    height: 30px !important;
+  }
+
+  /* 旧的表单样式（隐藏） */
+  :deep(.n-form .n-grid) {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0 !important;
+  }
+  
+  :deep(.n-form .n-gi) {
+    width: 100% !important;
+  }
+  
+  :deep(.n-form-item) {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 16px;
+  }
+  
+  :deep(.n-form-item-label) {
+    display: block !important;
+    text-align: left !important;
+    padding-bottom: 8px;
+    width: auto !important;
+  }
+  
+  :deep(.n-form-item-blank) {
+    min-height: auto;
+  }
+  
+  /* 输入框宽度 */
+  :deep(.n-input),
+  :deep(.n-select),
+  :deep(.n-input-number),
+  :deep(.n-input[type="textarea"]) {
+    width: 100% !important;
+    font-size: 16px; /* 防止 iOS 自动放大 */
+  }
+  
+  /* 修复 n-input-number 布局 */
+  :deep(.n-input-number) {
+    flex-direction: row !important;
+    display: flex !important;
+  }
+  
+  :deep(.n-input-number .n-input) {
+    flex: 1 !important;
+  }
+  
+  :deep(.n-input-number .n-input-wrapper) {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+  }
+  
+  :deep(.n-input-number .n-input__input-el) {
+    text-align: left !important;
+  }
+  
+  :deep(.n-input-number .n-input__suffix) {
+    margin-left: auto !important;
+    white-space: nowrap !important;
+  }
+  
+  :deep(.n-input-number-button-group) {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-shrink: 0 !important;
+  }
+  
+  /* 统计卡片2x2布局 */
+  :deep(.n-grid[style*="margin-bottom: 24px"]) {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+  }
+  
+  :deep(.n-grid[style*="margin-bottom: 24px"] .n-gi) {
+    width: 100% !important;
+  }
+  
+  .stat-card {
+    padding: 12px;
+  }
+  
+  .stat-card :deep(.n-statistic .n-statistic-value) {
+    font-size: 20px !important;
+  }
+  
+  .stat-card :deep(.n-statistic .n-statistic__label) {
+    font-size: 12px !important;
+  }
+  
+  /* 赠与记录卡片优化 */
+  .gift-item {
+    padding: 12px;
+  }
+  
+  .gift-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .gift-info {
+    min-width: 0;
+    flex: 1;
+  }
+  
+  .gift-title {
+    font-size: 14px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  
+  .gift-time {
+    font-size: 11px;
+  }
+  
+  .gift-message {
+    margin-top: 10px;
+  }
+  
+  .gift-message :deep(.n-card) {
+    padding: 10px !important;
+    font-size: 13px;
+  }
+  
+  .gift-actions {
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+  
+  .gift-actions :deep(.n-button) {
+    flex: 1;
+    height: 36px;
+  }
+  
+  .gift-actions :deep(.n-space) {
+    width: 100%;
+    display: flex !important;
+  }
+  
+  /* 标签页优化 */
+  :deep(.n-tabs-tab) {
+    padding: 8px 12px !important;
+    font-size: 14px !important;
+  }
+  
+  :deep(.n-badge) {
+    transform: scale(0.85);
+  }
+  
+  /* 提交按钮 */
+  :deep(.n-form-item:last-child .n-space) {
+    flex-direction: column;
+    width: 100%;
+    gap: 12px;
+  }
+  
+  :deep(.n-form-item:last-child .n-button) {
+    width: 100%;
+    height: 48px;
+    font-size: 15px;
+  }
+  
+  :deep(.n-form-item:last-child .n-text) {
+    text-align: center;
+  }
+  
+  /* 卡片间距 */
+  :deep(.n-card) {
+    margin-bottom: 16px !important;
+  }
+  
+  /* 空状态 */
+  .empty-state {
+    padding: 30px 0;
+  }
+  
+  /* 成功动画适配 */
+  .gift-animation {
+    font-size: 60px;
+  }
+  
+  .gift-success-text {
+    font-size: 20px;
+  }
+  
+  .gift-confetti {
+    font-size: 24px;
+  }
 }
 </style>

@@ -133,12 +133,18 @@ async def calculate_family_equity(family_id: int, db: AsyncSession) -> EquitySum
     # 计算目标进度
     target_progress = min(total_original / family.savings_target, 1.0) if family.savings_target > 0 else 0
     
+    # 计算今日加权增长
+    # 公式: daily_growth = total_weighted * (rate / 365)
+    # 这表示因为时间流逝一天，加权总额每日增加的金额
+    daily_weighted_growth = round(total_weighted * (family.time_value_rate / 365), 2)
+    
     return EquitySummary(
         family_id=family.id,
         family_name=family.name,
         savings_target=family.savings_target,
         total_savings=total_original,
         total_weighted=total_weighted,
+        daily_weighted_growth=daily_weighted_growth,
         target_progress=round(target_progress, 4),
         time_value_rate=family.time_value_rate,
         members=member_equity_list,

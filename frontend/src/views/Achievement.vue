@@ -678,34 +678,343 @@ onMounted(() => {
   font-size: 1.2rem;
 }
 
-/* 响应式 */
+/* ===== 移动端响应式优化 ===== */
 @media (max-width: 768px) {
   .achievement-page {
-    padding: 16px;
+    padding: 12px;
+    padding-bottom: 80px;
+    background: linear-gradient(180deg, #0f0f1a 0%, #1a1a2e 100%);
+    min-height: 100vh;
   }
   
   .page-header h1 {
-    font-size: 1.8rem;
+    font-size: 1.4rem;
   }
   
+  .page-header {
+    margin-bottom: 16px;
+  }
+  
+  .subtitle {
+    font-size: 0.8rem;
+    color: #888;
+  }
+  
+  /* ===== 统计概览：改为紧凑单行 ===== */
   .stats-overview {
-    grid-template-columns: 1fr;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
   }
   
+  .stat-card {
+    padding: 12px 8px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    text-align: center;
+    background: linear-gradient(145deg, #252540, #1e1e35);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 215, 0, 0.15);
+  }
+  
+  .stat-icon {
+    font-size: 1.4rem;
+    margin-bottom: 2px;
+  }
+  
+  .stat-info {
+    align-items: center;
+  }
+  
+  .stat-value {
+    font-size: 1.2rem;
+    line-height: 1.2;
+  }
+  
+  .stat-label {
+    font-size: 0.65rem;
+    color: #999;
+  }
+  
+  .stat-progress {
+    display: none; /* 移动端隐藏进度条，只显示百分比 */
+  }
+  
+  /* 在已解锁卡片显示百分比 */
+  .stat-card.total .stat-value::after {
+    content: '';
+  }
+  
+  /* ===== 分类筛选：更紧凑、更统一 ===== */
   .category-filter {
+    display: flex;
     justify-content: flex-start;
     overflow-x: auto;
     flex-wrap: nowrap;
-    padding-bottom: 8px;
+    padding: 4px;
+    gap: 6px;
+    margin-bottom: 14px;
+    background: rgba(30, 30, 50, 0.6);
+    border-radius: 20px;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .category-filter::-webkit-scrollbar {
+    display: none;
   }
   
   .filter-btn {
     white-space: nowrap;
     flex-shrink: 0;
+    padding: 8px 14px;
+    min-height: 32px;
+    font-size: 12px;
+    border-radius: 16px;
+    border: none;
+    background: transparent;
+    color: #aaa;
+    transition: all 0.2s ease;
+  }
+  
+  .filter-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+  
+  .filter-btn.active {
+    background: rgba(255, 215, 0, 0.15);
+    color: #ffd700;
+    font-weight: 500;
+  }
+  
+  .filter-btn .count {
+    font-size: 0.65rem;
+    padding: 2px 5px;
+    margin-left: 4px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    color: inherit;
+  }
+  
+  /* ===== 成就网格：2列紧凑布局 ===== */
+  .achievements-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  
+  .achievement-card {
+    border-radius: 14px;
+    background: linear-gradient(145deg, #1f1f35, #181828);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+  
+  .achievement-card.unlocked {
+    background: linear-gradient(145deg, #252545, #1e1e38);
+    border-color: rgba(255, 215, 0, 0.3);
+    box-shadow: 0 4px 16px rgba(255, 215, 0, 0.1);
+  }
+  
+  .achievement-card:not(.unlocked) {
+    opacity: 0.6;
+  }
+  
+  .card-glow {
+    height: 3px;
+  }
+  
+  .card-content {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 140px;
+  }
+  
+  /* 紧凑卡片布局 */
+  .achievement-icon {
+    font-size: 2rem;
+    margin-bottom: 8px;
+    text-align: center;
+  }
+  
+  .achievement-info {
+    flex: 1;
+    text-align: center;
+  }
+  
+  .achievement-name {
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    color: #eee;
+  }
+  
+  .achievement-desc {
+    font-size: 0.7rem;
+    min-height: auto;
+    margin-bottom: 10px;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    color: #888;
+    text-align: center;
+  }
+  
+  .achievement-meta {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 4px;
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  
+  .rarity-badge {
+    padding: 3px 8px;
+    font-size: 0.6rem;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+  
+  .points {
+    font-size: 0.7rem;
+    color: #ffd700;
+  }
+  
+  .unlock-time {
+    margin-top: 8px;
+    padding-top: 8px;
+    font-size: 0.65rem;
+    text-align: center;
+    border-top-color: rgba(255, 255, 255, 0.05);
+  }
+  
+  /* ===== 稀有度颜色加强 ===== */
+  .achievement-card.common.unlocked {
+    border-color: rgba(170, 170, 170, 0.4);
+  }
+  
+  .achievement-card.rare.unlocked {
+    border-color: rgba(79, 195, 247, 0.5);
+    box-shadow: 0 4px 16px rgba(79, 195, 247, 0.15);
+  }
+  
+  .achievement-card.epic.unlocked {
+    border-color: rgba(171, 71, 188, 0.5);
+    box-shadow: 0 4px 16px rgba(171, 71, 188, 0.15);
+  }
+  
+  .achievement-card.legendary.unlocked {
+    border-color: rgba(255, 215, 0, 0.5);
+    box-shadow: 0 4px 16px rgba(255, 215, 0, 0.2);
+  }
+  
+  .achievement-card.mythic.unlocked {
+    border-color: rgba(255, 107, 107, 0.5);
+    box-shadow: 0 4px 16px rgba(255, 107, 107, 0.2);
+  }
+  
+  /* 家庭动态优化 */
+  .family-feed {
+    padding: 14px;
+    margin-bottom: 20px;
+    border-radius: 14px;
+    background: linear-gradient(145deg, #1f1f35, #181828);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  
+  .family-feed h2 {
+    font-size: 1rem;
+    margin-bottom: 12px;
+  }
+  
+  .feed-list {
+    gap: 8px;
+  }
+  
+  .feed-item {
+    padding: 10px 12px;
+    font-size: 0.8rem;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    flex-wrap: wrap;
+  }
+  
+  .feed-icon {
+    font-size: 1.1rem;
+  }
+  
+  .feed-text {
+    font-size: 0.8rem;
+    flex: 1;
+  }
+  
+  .feed-time {
+    font-size: 0.7rem;
+    color: #666;
+    width: 100%;
+    margin-top: 4px;
+    padding-left: calc(1.1rem + 12px);
+  }
+  
+  .achievement-tag {
+    font-size: 0.75rem;
+    padding: 2px 6px;
+  }
+}
+
+/* ===== 超小屏幕 (< 375px) ===== */
+@media (max-width: 374px) {
+  .stats-overview {
+    gap: 6px;
+  }
+  
+  .stat-card {
+    padding: 10px 6px;
+  }
+  
+  .stat-icon {
+    font-size: 1.2rem;
+  }
+  
+  .stat-value {
+    font-size: 1rem;
   }
   
   .achievements-grid {
-    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  
+  .card-content {
+    padding: 10px;
+    min-height: 130px;
+  }
+  
+  .achievement-icon {
+    font-size: 1.6rem;
+  }
+  
+  .achievement-name {
+    font-size: 0.8rem;
+  }
+  
+  .achievement-desc {
+    font-size: 0.65rem;
+  }
+  
+  .filter-btn {
+    padding: 6px 10px;
+    font-size: 11px;
   }
 }
 </style>

@@ -181,7 +181,10 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useMessage } from 'naive-ui'
 import { api } from '@/api'
+
+const message = useMessage()
 
 // 状态
 const loading = ref(false)
@@ -231,11 +234,11 @@ const loadProposals = async () => {
 // 创建提案
 const createProposal = async () => {
   if (!newProposal.value.title.trim()) {
-    alert('请输入提案标题')
+    message.warning('请输入提案标题')
     return
   }
   if (newProposal.value.options.filter(o => o.trim()).length < 2) {
-    alert('至少需要2个有效选项')
+    message.warning('至少需要2个有效选项')
     return
   }
 
@@ -249,9 +252,10 @@ const createProposal = async () => {
     })
     showCreateModal.value = false
     newProposal.value = { title: '', description: '', options: ['同意', '反对'], deadline_days: 7 }
+    message.success('提案创建成功')
     await loadProposals()
   } catch (err) {
-    alert(err.response?.data?.detail || '创建提案失败')
+    message.error(err.response?.data?.detail || '创建提案失败')
   } finally {
     creating.value = false
   }
@@ -274,10 +278,11 @@ const castVote = async (optionIndex) => {
     await api.post(`/vote/proposals/${selectedProposal.value.id}/vote`, {
       option_index: optionIndex
     })
+    message.success('投票成功')
     await viewProposal(selectedProposal.value)
     await loadProposals()
   } catch (err) {
-    alert(err.response?.data?.detail || '投票失败')
+    message.error(err.response?.data?.detail || '投票失败')
   } finally {
     voting.value = false
   }
@@ -346,6 +351,32 @@ onMounted(() => {
   margin-bottom: 20px;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+/* 移动端响应式 */
+@media (max-width: 768px) {
+  .action-bar {
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  
+  .btn-create {
+    width: 100%;
+    max-width: 280px;
+    text-align: center;
+  }
+  
+  .filter-tabs {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  
+  .tab-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
 }
 
 .btn-create {

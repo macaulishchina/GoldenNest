@@ -77,3 +77,80 @@ body {
 .page-title .icon {
   font-size: 28px;
 }
+
+/* ============================================
+   移动端响应式样式
+   ============================================ */
+
+@media (max-width: 767px) {
+  /* 页面容器移动端适配 */
+  .page-container {
+    padding: 16px;
+    max-width: 100%;
+  }
+  
+  /* 标题移动端适配 */
+  .page-title {
+    font-size: 20px;
+    margin-bottom: 16px;
+    gap: 8px;
+  }
+  
+  .page-title .icon {
+    font-size: 24px;
+  }
+  
+  /* 隐藏桌面端滚动条 */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  
+  /* 卡片移动端取消悬停效果（触屏无hover） */
+  .card-hover:hover {
+    transform: none;
+    box-shadow: none;
+  }
+  
+  /* 移动端触控反馈 */
+  .card-hover:active {
+    transform: scale(0.98);
+    opacity: 0.9;
+  }
+}
+
+/* 触控友好的按钮最小尺寸 */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* 移动端表单输入框 */
+@media (max-width: 767px) {
+  .n-input,
+  .n-input-number,
+  .n-select {
+    font-size: 16px !important; /* 防止 iOS 自动放大 */
+  }
+}
+
+/* 移动端卡片样式 */
+.mobile-card {
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+/* 移动端列表项 */
+.mobile-list-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.mobile-list-item:last-child {
+  border-bottom: none;
+}
+
+/* 移动端安全区底部留白 */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}

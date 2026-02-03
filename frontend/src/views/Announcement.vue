@@ -139,7 +139,11 @@
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { useMessage, useDialog } from 'naive-ui'
 import { api } from '@/api'
+
+const message = useMessage()
+const dialog = useDialog()
 
 // 状态
 const loading = ref(false)
@@ -193,7 +197,7 @@ const publish = async () => {
     imageFiles.value = []
     await loadAnnouncements()
   } catch (err) {
-    alert(err.response?.data?.detail || '发布失败')
+    message.error(err.response?.data?.detail || '发布失败')
   } finally {
     publishing.value = false
   }
@@ -204,7 +208,7 @@ const handleImageUpload = (e) => {
   const files = Array.from(e.target.files)
   files.forEach(file => {
     if (previewImages.value.length >= 9) {
-      alert('最多上传9张图片')
+      message.warning('最多上传9张图片')
       return
     }
     
@@ -244,21 +248,28 @@ const togglePin = async (item) => {
     await loadAnnouncements()
     activeMenu.value = null
   } catch (err) {
-    alert(err.response?.data?.detail || '操作失败')
+    message.error(err.response?.data?.detail || '操作失败')
   }
 }
 
 // 删除公告
-const deleteAnnouncement = async (id) => {
-  if (!confirm('确定删除这条公告吗？')) return
-  
-  try {
-    await api.delete(`/announcements/${id}`)
-    await loadAnnouncements()
-    activeMenu.value = null
-  } catch (err) {
-    alert(err.response?.data?.detail || '删除失败')
-  }
+const deleteAnnouncement = (id) => {
+  dialog.warning({
+    title: '确认删除',
+    content: '确定删除这条公告吗？',
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await api.delete(`/announcements/${id}`)
+        await loadAnnouncements()
+        activeMenu.value = null
+        message.success('删除成功')
+      } catch (err) {
+        message.error(err.response?.data?.detail || '删除失败')
+      }
+    }
+  })
 }
 
 // 点赞
@@ -319,7 +330,7 @@ const addComment = async (announcementId) => {
       announcement.comment_count++
     }
   } catch (err) {
-    alert(err.response?.data?.detail || '评论失败')
+    message.error(err.response?.data?.detail || '评论失败')
   }
 }
 

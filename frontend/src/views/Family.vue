@@ -222,4 +222,100 @@ onMounted(loadData)
   align-items: center;
   gap: 8px;
 }
+
+/* 移动端响应式 */
+@media (max-width: 767px) {
+  .page-container {
+    padding: 16px;
+    padding-bottom: 80px; /* 为底部导航留空间 */
+  }
+  
+  .page-title {
+    font-size: 1.5rem;
+    margin-bottom: 16px;
+  }
+  
+  /* 表单全宽 */
+  :deep(.n-form) {
+    max-width: 100% !important;
+  }
+  
+  :deep(.n-form-item) {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 16px;
+  }
+  
+  :deep(.n-form-item-label) {
+    display: block;
+    text-align: left;
+    padding-bottom: 8px;
+    width: auto !important;
+  }
+  
+  :deep(.n-input),
+  :deep(.n-input-number) {
+    width: 100% !important;
+    font-size: 16px; /* 防止 iOS 放大 */
+  }
+  
+  /* 提交按钮 */
+  :deep(.n-button[type="primary"]) {
+    height: 48px;
+    font-size: 15px;
+  }
+  
+  /* 标签页优化 */
+  :deep(.n-tabs-tab) {
+    padding: 12px 16px;
+    font-size: 15px;
+  }
+  
+  /* 卡片内容 */
+  :deep(.n-card) {
+    margin-bottom: 16px !important;
+  }
+  
+  /* 成员列表优化 */
+  :deep(.n-list-item) {
+    padding: 12px 0;
+  }
+  
+  :deep(.n-thing-header-wrapper) {
+    flex-wrap: wrap;
+  }
+  
+  /* 弹窗全屏 */
+  :deep(.n-modal-body-wrapper) {
+    max-width: calc(100vw - 32px) !important;
+    margin: 16px !important;
+  }
+  
+  :deep(.n-dialog) {
+    width: 100% !important;
+    max-width: calc(100vw - 32px);
+  }
+  
+  :deep(.n-dialog .n-form-item) {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  :deep(.n-dialog .n-form-item-label) {
+    display: block;
+    text-align: left;
+    padding-bottom: 8px;
+    width: auto !important;
+  }
+  
+  /* 操作按钮 */
+  :deep(.n-space) {
+    flex-wrap: wrap;
+    gap: 8px !important;
+  }
+  
+  :deep(.n-button) {
+    min-height: 36px;
+  }
+}
 </style>
