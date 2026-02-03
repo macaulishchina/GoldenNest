@@ -131,6 +131,13 @@ docker-compose up -d
 # 重新构建并启动服务
 docker-compose up -d --build
 
+# 查看日志
+docker logs -f golden-nest-backend
+docker logs -f golden-nest-frontend
+
+docker-compose logs --tail=100 backend
+docker-compose logs --tail=100 frontend
+
 # 访问 http://localhost
 ```
 

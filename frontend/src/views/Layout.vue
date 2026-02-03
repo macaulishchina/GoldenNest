@@ -44,6 +44,9 @@
             <span>{{ greeting }}，{{ userStore.user?.nickname || '用户' }}</span>
           </div>
           <div class="header-actions">
+            <n-tag v-if="holidayGreeting" type="warning" round class="holiday-tag">
+              {{ holidayGreeting }}
+            </n-tag>
             <n-tag v-if="family" type="success" round>
               🏡 {{ family.name }}
             </n-tag>
@@ -56,7 +59,10 @@
         <div class="mobile-header-content">
           <span class="mobile-logo">🏠 小金库</span>
           <div class="mobile-header-right">
-            <n-tag v-if="family" type="success" size="small" round>
+            <n-tag v-if="holidayGreeting" type="warning" size="small" round class="holiday-tag">
+              {{ holidayGreeting }}
+            </n-tag>
+            <n-tag v-else-if="family" type="success" size="small" round>
               {{ family.name }}
             </n-tag>
             <div class="hamburger-btn" @click="showDrawer = true">
@@ -242,6 +248,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useMessage, NIcon } from 'naive-ui'
 import { useUserStore } from '@/stores/user'
 import { familyApi } from '@/api'
+import { getHolidayGreeting } from '@/utils/holiday'
 import type { MenuOption } from 'naive-ui'
 import { 
   HomeOutline, 
@@ -427,6 +434,11 @@ const greeting = computed(() => {
   if (hour < 12) return '早上好'
   if (hour < 18) return '下午好'
   return '晚上好'
+})
+
+// 节日彩蛋
+const holidayGreeting = computed(() => {
+  return getHolidayGreeting()
 })
 
 // 渲染图标
@@ -658,6 +670,25 @@ onUnmounted(() => {
   }
   75% {
     transform: rotate(-20deg);
+  }
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.holiday-tag {
+  animation: holiday-glow 2s ease-in-out infinite;
+}
+
+@keyframes holiday-glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(251, 191, 36, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(251, 191, 36, 0.6);
   }
 }
 
