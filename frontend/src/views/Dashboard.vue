@@ -186,6 +186,11 @@ function getProgressColor(percentage: number) {
 
 async function loadData() {
   try {
+    // 确保用户信息已加载
+    if (!userStore.user) {
+      await userStore.fetchUser()
+    }
+    
     // 检查是否有家庭
     if (!userStore.user?.family_id) {
       hasFamily.value = false
