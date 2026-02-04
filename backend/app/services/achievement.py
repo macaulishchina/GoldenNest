@@ -433,6 +433,85 @@ ACHIEVEMENT_DEFINITIONS = [
     {"code": "epic_collector", "name": "史诗收藏", "description": "获得 5 个史诗成就", "category": "special", "icon": "💜", "rarity": "epic", "points": 100, "is_hidden": False, "trigger_type": "rarity_count", "trigger_value": "epic-5"},
     {"code": "legendary_collector", "name": "传奇收藏", "description": "获得 5 个传奇成就", "category": "special", "icon": "💛", "rarity": "legendary", "points": 250, "is_hidden": False, "trigger_type": "rarity_count", "trigger_value": "legendary-5"},
     {"code": "mythic_collector", "name": "神话收藏", "description": "获得 3 个神话成就", "category": "special", "icon": "❤️", "rarity": "mythic", "points": 500, "is_hidden": False, "trigger_type": "rarity_count", "trigger_value": "mythic-3"},
+    
+    # ==================== 待办任务类成就 (TODO) ====================
+    # 完成任务数量
+    {"code": "first_todo", "name": "初试身手", "description": "完成第一个待办任务", "category": "todo", "icon": "✅", "rarity": "common", "points": 10, "is_hidden": False, "trigger_type": "todo_complete_count", "trigger_value": "1"},
+    {"code": "todo_5", "name": "起步达人", "description": "累计完成 5 个待办任务", "category": "todo", "icon": "📋", "rarity": "common", "points": 15, "is_hidden": False, "trigger_type": "todo_complete_count", "trigger_value": "5"},
+    {"code": "todo_10", "name": "任务新手", "description": "累计完成 10 个待办任务", "category": "todo", "icon": "📝", "rarity": "common", "points": 25, "is_hidden": False, "trigger_type": "todo_complete_count", "trigger_value": "10"},
+    {"code": "todo_20", "name": "勤劳小蜜蜂", "description": "累计完成 20 个待办任务", "category": "todo", "icon": "🐝", "rarity": "common", "points": 40, "is_hidden": False, "trigger_type": "todo_complete_count", "trigger_value": "20"},
+    {"code": "todo_30", "name": "任务达人", "description": "累计完成 30 个待办任务", "category": "todo", "icon": "🎯", "rarity": "rare", "points": 50, "is_hidden": False, "trigger_type": "todo_complete_count", "trigger_value": "30"},
+    {"code": "todo_50", "name": "执行力专家", "description": "累计完成 50 个待办任务", "category": "todo", "icon": "💪", "rarity": "rare", "points": 80, "is_hidden": False, "trigger_type": "todo_complete_count", "trigger_value": "50"},
+    {"code": "todo_100", "name": "百事通", "description": "累计完成 100 个待办任务", "category": "todo", "icon": "💯", "rarity": "epic", "points": 150, "is_hidden": False, "trigger_type": "todo_complete_count", "trigger_value": "100"},
+    {"code": "todo_200", "name": "任务狂人", "description": "累计完成 200 个待办任务", "category": "todo", "icon": "🔥", "rarity": "epic", "points": 250, "is_hidden": False, "trigger_type": "todo_complete_count", "trigger_value": "200"},
+    {"code": "todo_500", "name": "任务传说", "description": "累计完成 500 个待办任务", "category": "todo", "icon": "⭐", "rarity": "legendary", "points": 500, "is_hidden": False, "trigger_type": "todo_complete_count", "trigger_value": "500"},
+    {"code": "todo_1000", "name": "千任务大师", "description": "累计完成 1000 个待办任务", "category": "todo", "icon": "👑", "rarity": "mythic", "points": 1000, "is_hidden": False, "trigger_type": "todo_complete_count", "trigger_value": "1000"},
+    
+    # 连续完成任务
+    {"code": "todo_streak_3", "name": "三连胜", "description": "连续 3 天都有完成任务", "category": "todo", "icon": "🔥", "rarity": "common", "points": 20, "is_hidden": False, "trigger_type": "todo_day_streak", "trigger_value": "3"},
+    {"code": "todo_streak_7", "name": "周计划达成", "description": "连续 7 天都有完成任务", "category": "todo", "icon": "📅", "rarity": "rare", "points": 50, "is_hidden": False, "trigger_type": "todo_day_streak", "trigger_value": "7"},
+    {"code": "todo_streak_14", "name": "双周达人", "description": "连续 14 天都有完成任务", "category": "todo", "icon": "📆", "rarity": "rare", "points": 80, "is_hidden": False, "trigger_type": "todo_day_streak", "trigger_value": "14"},
+    {"code": "todo_streak_30", "name": "月度之星", "description": "连续 30 天都有完成任务", "category": "todo", "icon": "🌟", "rarity": "epic", "points": 150, "is_hidden": False, "trigger_type": "todo_day_streak", "trigger_value": "30"},
+    {"code": "todo_streak_60", "name": "双月坚持", "description": "连续 60 天都有完成任务", "category": "todo", "icon": "💎", "rarity": "legendary", "points": 300, "is_hidden": False, "trigger_type": "todo_day_streak", "trigger_value": "60"},
+    {"code": "todo_streak_100", "name": "百日习惯", "description": "连续 100 天都有完成任务", "category": "todo", "icon": "🏆", "rarity": "mythic", "points": 500, "is_hidden": False, "trigger_type": "todo_day_streak", "trigger_value": "100"},
+    
+    # 准时完成任务（截止日期前完成）
+    {"code": "on_time_5", "name": "守时达人", "description": "准时完成 5 个有截止日期的任务", "category": "todo", "icon": "⏰", "rarity": "common", "points": 25, "is_hidden": False, "trigger_type": "todo_on_time_count", "trigger_value": "5"},
+    {"code": "on_time_10", "name": "时间管理者", "description": "准时完成 10 个有截止日期的任务", "category": "todo", "icon": "⏱️", "rarity": "rare", "points": 50, "is_hidden": False, "trigger_type": "todo_on_time_count", "trigger_value": "10"},
+    {"code": "on_time_25", "name": "时间大师", "description": "准时完成 25 个有截止日期的任务", "category": "todo", "icon": "🕐", "rarity": "epic", "points": 100, "is_hidden": False, "trigger_type": "todo_on_time_count", "trigger_value": "25"},
+    {"code": "on_time_50", "name": "效率之王", "description": "准时完成 50 个有截止日期的任务", "category": "todo", "icon": "👑", "rarity": "legendary", "points": 200, "is_hidden": False, "trigger_type": "todo_on_time_count", "trigger_value": "50"},
+    
+    # 创建清单
+    {"code": "first_list", "name": "清单创始人", "description": "创建第一个待办清单", "category": "todo", "icon": "📑", "rarity": "common", "points": 10, "is_hidden": False, "trigger_type": "todo_list_count", "trigger_value": "1"},
+    {"code": "list_3", "name": "多清单管理", "description": "创建 3 个待办清单", "category": "todo", "icon": "📚", "rarity": "common", "points": 20, "is_hidden": False, "trigger_type": "todo_list_count", "trigger_value": "3"},
+    {"code": "list_5", "name": "清单达人", "description": "创建 5 个待办清单", "category": "todo", "icon": "🗂️", "rarity": "rare", "points": 40, "is_hidden": False, "trigger_type": "todo_list_count", "trigger_value": "5"},
+    {"code": "list_10", "name": "分类大师", "description": "创建 10 个待办清单", "category": "todo", "icon": "🏛️", "rarity": "epic", "points": 80, "is_hidden": False, "trigger_type": "todo_list_count", "trigger_value": "10"},
+    
+    # 高优先级任务完成
+    {"code": "high_priority_5", "name": "重点突破", "description": "完成 5 个高优先级任务", "category": "todo", "icon": "🚨", "rarity": "rare", "points": 40, "is_hidden": False, "trigger_type": "todo_high_priority_count", "trigger_value": "5"},
+    {"code": "high_priority_20", "name": "优先级大师", "description": "完成 20 个高优先级任务", "category": "todo", "icon": "🎖️", "rarity": "epic", "points": 100, "is_hidden": False, "trigger_type": "todo_high_priority_count", "trigger_value": "20"},
+    {"code": "high_priority_50", "name": "首要事项专家", "description": "完成 50 个高优先级任务", "category": "todo", "icon": "🥇", "rarity": "legendary", "points": 200, "is_hidden": False, "trigger_type": "todo_high_priority_count", "trigger_value": "50"},
+    
+    # 团队协作（完成指派给自己的任务）
+    {"code": "team_task_5", "name": "好帮手", "description": "完成 5 个指派给自己的任务", "category": "todo", "icon": "🤝", "rarity": "common", "points": 25, "is_hidden": False, "trigger_type": "todo_assigned_complete", "trigger_value": "5"},
+    {"code": "team_task_20", "name": "团队之星", "description": "完成 20 个指派给自己的任务", "category": "todo", "icon": "⭐", "rarity": "rare", "points": 60, "is_hidden": False, "trigger_type": "todo_assigned_complete", "trigger_value": "20"},
+    {"code": "team_task_50", "name": "协作大师", "description": "完成 50 个指派给自己的任务", "category": "todo", "icon": "🌟", "rarity": "epic", "points": 120, "is_hidden": False, "trigger_type": "todo_assigned_complete", "trigger_value": "50"},
+    
+    # ==================== 日历类成就 (CALENDAR) ====================
+    # 创建事件数量
+    {"code": "first_event", "name": "日历初体验", "description": "创建第一个日历事件", "category": "calendar", "icon": "📅", "rarity": "common", "points": 10, "is_hidden": False, "trigger_type": "calendar_event_count", "trigger_value": "1"},
+    {"code": "event_5", "name": "日程安排者", "description": "创建 5 个日历事件", "category": "calendar", "icon": "🗓️", "rarity": "common", "points": 20, "is_hidden": False, "trigger_type": "calendar_event_count", "trigger_value": "5"},
+    {"code": "event_10", "name": "计划达人", "description": "创建 10 个日历事件", "category": "calendar", "icon": "📆", "rarity": "common", "points": 30, "is_hidden": False, "trigger_type": "calendar_event_count", "trigger_value": "10"},
+    {"code": "event_20", "name": "时间规划师", "description": "创建 20 个日历事件", "category": "calendar", "icon": "⏰", "rarity": "rare", "points": 50, "is_hidden": False, "trigger_type": "calendar_event_count", "trigger_value": "20"},
+    {"code": "event_50", "name": "日程专家", "description": "创建 50 个日历事件", "category": "calendar", "icon": "📊", "rarity": "rare", "points": 80, "is_hidden": False, "trigger_type": "calendar_event_count", "trigger_value": "50"},
+    {"code": "event_100", "name": "时间管理大师", "description": "创建 100 个日历事件", "category": "calendar", "icon": "🎯", "rarity": "epic", "points": 150, "is_hidden": False, "trigger_type": "calendar_event_count", "trigger_value": "100"},
+    {"code": "event_200", "name": "日历达人", "description": "创建 200 个日历事件", "category": "calendar", "icon": "🏆", "rarity": "legendary", "points": 300, "is_hidden": False, "trigger_type": "calendar_event_count", "trigger_value": "200"},
+    
+    # 使用系统同步功能
+    {"code": "first_sync", "name": "同步启动", "description": "首次使用日历同步功能", "category": "calendar", "icon": "🔄", "rarity": "common", "points": 15, "is_hidden": False, "trigger_type": "calendar_sync_count", "trigger_value": "1"},
+    {"code": "sync_5", "name": "同步习惯", "description": "使用 5 次日历同步功能", "category": "calendar", "icon": "🔁", "rarity": "common", "points": 25, "is_hidden": False, "trigger_type": "calendar_sync_count", "trigger_value": "5"},
+    {"code": "sync_10", "name": "同步达人", "description": "使用 10 次日历同步功能", "category": "calendar", "icon": "♻️", "rarity": "rare", "points": 40, "is_hidden": False, "trigger_type": "calendar_sync_count", "trigger_value": "10"},
+    {"code": "sync_30", "name": "同步专家", "description": "使用 30 次日历同步功能", "category": "calendar", "icon": "🌀", "rarity": "epic", "points": 80, "is_hidden": False, "trigger_type": "calendar_sync_count", "trigger_value": "30"},
+    
+    # 家庭活动类事件
+    {"code": "family_event_5", "name": "家庭活动策划者", "description": "创建 5 个家庭活动事件", "category": "calendar", "icon": "🏠", "rarity": "common", "points": 25, "is_hidden": False, "trigger_type": "calendar_family_event_count", "trigger_value": "5"},
+    {"code": "family_event_15", "name": "家庭活动达人", "description": "创建 15 个家庭活动事件", "category": "calendar", "icon": "🏡", "rarity": "rare", "points": 60, "is_hidden": False, "trigger_type": "calendar_family_event_count", "trigger_value": "15"},
+    {"code": "family_event_30", "name": "家庭活动专家", "description": "创建 30 个家庭活动事件", "category": "calendar", "icon": "🏰", "rarity": "epic", "points": 120, "is_hidden": False, "trigger_type": "calendar_family_event_count", "trigger_value": "30"},
+    
+    # 生日/纪念日事件
+    {"code": "birthday_event_1", "name": "生日记录者", "description": "创建第一个生日/纪念日事件", "category": "calendar", "icon": "🎂", "rarity": "common", "points": 20, "is_hidden": False, "trigger_type": "calendar_birthday_event_count", "trigger_value": "1"},
+    {"code": "birthday_event_5", "name": "纪念日收藏家", "description": "创建 5 个生日/纪念日事件", "category": "calendar", "icon": "🎉", "rarity": "rare", "points": 50, "is_hidden": False, "trigger_type": "calendar_birthday_event_count", "trigger_value": "5"},
+    {"code": "birthday_event_10", "name": "重要日子大师", "description": "创建 10 个生日/纪念日事件", "category": "calendar", "icon": "🎊", "rarity": "epic", "points": 100, "is_hidden": False, "trigger_type": "calendar_birthday_event_count", "trigger_value": "10"},
+    
+    # 添加参与者
+    {"code": "invite_participant_5", "name": "邀请达人", "description": "累计邀请 5 位成员参与日历事件", "category": "calendar", "icon": "👋", "rarity": "common", "points": 20, "is_hidden": False, "trigger_type": "calendar_participant_invite_count", "trigger_value": "5"},
+    {"code": "invite_participant_20", "name": "社交策划师", "description": "累计邀请 20 位成员参与日历事件", "category": "calendar", "icon": "👥", "rarity": "rare", "points": 50, "is_hidden": False, "trigger_type": "calendar_participant_invite_count", "trigger_value": "20"},
+    {"code": "invite_participant_50", "name": "活动组织者", "description": "累计邀请 50 位成员参与日历事件", "category": "calendar", "icon": "🎪", "rarity": "epic", "points": 100, "is_hidden": False, "trigger_type": "calendar_participant_invite_count", "trigger_value": "50"},
+    
+    # 重复事件
+    {"code": "repeat_event_1", "name": "循环开始", "description": "创建第一个重复事件", "category": "calendar", "icon": "🔁", "rarity": "common", "points": 15, "is_hidden": False, "trigger_type": "calendar_repeat_event_count", "trigger_value": "1"},
+    {"code": "repeat_event_5", "name": "规律生活", "description": "创建 5 个重复事件", "category": "calendar", "icon": "🔄", "rarity": "rare", "points": 40, "is_hidden": False, "trigger_type": "calendar_repeat_event_count", "trigger_value": "5"},
+    {"code": "repeat_event_10", "name": "习惯养成师", "description": "创建 10 个重复事件", "category": "calendar", "icon": "♾️", "rarity": "epic", "points": 80, "is_hidden": False, "trigger_type": "calendar_repeat_event_count", "trigger_value": "10"},
 ]
 
 
@@ -446,6 +525,8 @@ CATEGORY_NAMES = {
     "investment": "理财类",
     "expense": "支出类",
     "vote": "投票类",
+    "todo": "待办任务",
+    "calendar": "共享日历",
     "hidden": "隐藏彩蛋",
     "special": "特殊成就",
 }
@@ -1008,6 +1089,297 @@ class AchievementService:
                     ApprovalRequest.status == ApprovalRequestStatus.APPROVED,
                     ApprovalRecord.approver_id == user_id,
                     ApprovalRecord.is_approved == True
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        # ==================== 待办任务类成就检测 (TODO) ====================
+        elif trigger_type == "todo_complete_count":
+            # 完成的待办任务数量
+            from app.models.models import TodoItem, TodoList
+            # 获取用户所在的家庭
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            
+            result = await self.db.execute(
+                select(func.count(TodoItem.id))
+                .join(TodoList, TodoItem.list_id == TodoList.id)
+                .where(
+                    TodoList.family_id == family_id,
+                    TodoItem.is_completed == True,
+                    TodoItem.completed_by == user_id
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        elif trigger_type == "todo_day_streak":
+            # 连续完成任务天数
+            from app.models.models import TodoItem, TodoList
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            
+            # 获取所有完成日期
+            result = await self.db.execute(
+                select(func.date(TodoItem.completed_at))
+                .join(TodoList, TodoItem.list_id == TodoList.id)
+                .where(
+                    TodoList.family_id == family_id,
+                    TodoItem.is_completed == True,
+                    TodoItem.completed_by == user_id,
+                    TodoItem.completed_at.isnot(None)
+                )
+                .distinct()
+                .order_by(func.date(TodoItem.completed_at).desc())
+            )
+            dates = [row[0] for row in result.fetchall()]
+            
+            if not dates:
+                return False
+            
+            # 检查今天或昨天是否有完成任务
+            today = datetime.now().date()
+            if dates[0] < today - timedelta(days=1):
+                return False
+            
+            # 计算连续天数
+            streak = 1
+            for i in range(1, len(dates)):
+                if (dates[i-1] - dates[i]).days == 1:
+                    streak += 1
+                else:
+                    break
+            
+            return streak >= int(trigger_value)
+        
+        elif trigger_type == "todo_on_time_count":
+            # 准时完成的任务数量（有截止日期且在截止日期前完成）
+            from app.models.models import TodoItem, TodoList
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            
+            result = await self.db.execute(
+                select(func.count(TodoItem.id))
+                .join(TodoList, TodoItem.list_id == TodoList.id)
+                .where(
+                    TodoList.family_id == family_id,
+                    TodoItem.is_completed == True,
+                    TodoItem.completed_by == user_id,
+                    TodoItem.due_date.isnot(None),
+                    TodoItem.completed_at <= TodoItem.due_date
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        elif trigger_type == "todo_list_count":
+            # 创建的清单数量
+            from app.models.models import TodoList
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            
+            result = await self.db.execute(
+                select(func.count(TodoList.id))
+                .where(
+                    TodoList.family_id == family_id,
+                    TodoList.created_by == user_id
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        elif trigger_type == "todo_high_priority_count":
+            # 完成的高优先级任务数量
+            from app.models.models import TodoItem, TodoList
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            
+            result = await self.db.execute(
+                select(func.count(TodoItem.id))
+                .join(TodoList, TodoItem.list_id == TodoList.id)
+                .where(
+                    TodoList.family_id == family_id,
+                    TodoItem.is_completed == True,
+                    TodoItem.completed_by == user_id,
+                    TodoItem.priority == "high"
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        elif trigger_type == "todo_assigned_complete":
+            # 完成的指派给自己的任务数量
+            from app.models.models import TodoItem, TodoList
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            
+            result = await self.db.execute(
+                select(func.count(TodoItem.id))
+                .join(TodoList, TodoItem.list_id == TodoList.id)
+                .where(
+                    TodoList.family_id == family_id,
+                    TodoItem.is_completed == True,
+                    TodoItem.completed_by == user_id,
+                    TodoItem.assigned_to == user_id,
+                    TodoItem.created_by != user_id  # 不是自己创建的
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        # ==================== 日历类成就检测 (CALENDAR) ====================
+        elif trigger_type == "calendar_event_count":
+            # 创建的日历事件数量
+            from app.models.models import CalendarEvent
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            
+            result = await self.db.execute(
+                select(func.count(CalendarEvent.id))
+                .where(
+                    CalendarEvent.family_id == family_id,
+                    CalendarEvent.created_by == user_id
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        elif trigger_type == "calendar_sync_count":
+            # 通过 context 传递同步次数
+            if "sync_count" in context:
+                return context["sync_count"] >= int(trigger_value)
+            # 或者查询数据库中的系统生成事件数量（作为同步的代理指标）
+            from app.models.models import CalendarEvent
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            
+            # 统计系统生成的事件（is_system = True）
+            result = await self.db.execute(
+                select(func.count(CalendarEvent.id))
+                .where(
+                    CalendarEvent.family_id == family_id,
+                    CalendarEvent.is_system == True
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        elif trigger_type == "calendar_family_event_count":
+            # 创建的家庭活动类事件数量
+            from app.models.models import CalendarEvent
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            
+            result = await self.db.execute(
+                select(func.count(CalendarEvent.id))
+                .where(
+                    CalendarEvent.family_id == family_id,
+                    CalendarEvent.created_by == user_id,
+                    CalendarEvent.category == "family"
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        elif trigger_type == "calendar_birthday_event_count":
+            # 创建的生日/纪念日事件数量
+            from app.models.models import CalendarEvent
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            
+            result = await self.db.execute(
+                select(func.count(CalendarEvent.id))
+                .where(
+                    CalendarEvent.family_id == family_id,
+                    CalendarEvent.created_by == user_id,
+                    or_(
+                        CalendarEvent.category == "birthday",
+                        CalendarEvent.category == "anniversary"
+                    )
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        elif trigger_type == "calendar_participant_invite_count":
+            # 邀请参与者数量
+            from app.models.models import CalendarEvent, CalendarEventParticipant
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            
+            # 统计用户创建的事件中的参与者数量
+            result = await self.db.execute(
+                select(func.count(CalendarEventParticipant.id))
+                .join(CalendarEvent, CalendarEventParticipant.event_id == CalendarEvent.id)
+                .where(
+                    CalendarEvent.family_id == family_id,
+                    CalendarEvent.created_by == user_id
+                )
+            )
+            count = result.scalar() or 0
+            return count >= int(trigger_value)
+        
+        elif trigger_type == "calendar_repeat_event_count":
+            # 创建的重复事件数量
+            from app.models.models import CalendarEvent, CalendarRepeatType
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            
+            result = await self.db.execute(
+                select(func.count(CalendarEvent.id))
+                .where(
+                    CalendarEvent.family_id == family_id,
+                    CalendarEvent.created_by == user_id,
+                    CalendarEvent.repeat_type != CalendarRepeatType.NONE
                 )
             )
             count = result.scalar() or 0

@@ -16,6 +16,8 @@ class AchievementCategory(str, Enum):
     INVESTMENT = "investment"
     EXPENSE = "expense"
     VOTE = "vote"
+    TODO = "todo"
+    CALENDAR = "calendar"
     HIDDEN = "hidden"
     SPECIAL = "special"
 

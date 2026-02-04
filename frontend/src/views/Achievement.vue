@@ -173,7 +173,10 @@ const categories = [
   { key: 'family', name: '家庭协作', icon: '👨‍👩‍👧‍👦' },
   { key: 'equity', name: '股权大师', icon: '📊' },
   { key: 'investment', name: '理财先锋', icon: '📈' },
-  { key: 'expense', name: '审批专家', icon: '✅' },
+  { key: 'expense', name: '审批专家', icon: '💳' },
+  { key: 'vote', name: '民主参与', icon: '🗳️' },
+  { key: 'todo', name: '待办达人', icon: '✅' },
+  { key: 'calendar', name: '日程管理', icon: '📅' },
   { key: 'hidden', name: '隐藏彩蛋', icon: '🎁' },
   { key: 'special', name: '特殊成就', icon: '🌈' }
 ]

@@ -85,6 +85,16 @@ const router = createRouter({
           path: 'approval',
           name: 'Approval',
           component: () => import('@/views/Approval.vue')
+        },
+        {
+          path: 'todo',
+          name: 'Todo',
+          component: () => import('@/views/Todo.vue')
+        },
+        {
+          path: 'calendar',
+          name: 'Calendar',
+          component: () => import('@/views/Calendar.vue')
         }
       ]
     }

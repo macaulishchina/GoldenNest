@@ -14,6 +14,7 @@ from app.models.models import (
     Transaction, TransactionType, Family, ExpenseRequest, ExpenseStatus
 )
 from app.schemas.approval import ApprovalRequestResponse, ApprovalRecordResponse
+from app.services.calendar import calendar_service
 
 
 class ApprovalService:
@@ -480,6 +481,19 @@ class ApprovalService:
         
         logging.info(f"Investment created: id={investment.id}, family_id={investment.family_id}")
         
+        # 创建日历提醒（如果有到期日）
+        try:
+            if investment.end_date:
+                await calendar_service.create_investment_reminder(
+                    db=self.db,
+                    family_id=request.family_id,
+                    investment=investment,
+                    created_by=request.requester_id
+                )
+                logging.info(f"Calendar reminder created for investment {investment.id}")
+        except Exception as e:
+            logging.warning(f"Calendar reminder creation failed after investment create: {e}")
+        
         # 检查成就解锁（失败不影响主业务）
         try:
             from app.services.achievement import AchievementService
@@ -519,6 +533,18 @@ class ApprovalService:
             investment.is_active = data["is_active"]
         if data.get("note") is not None:
             investment.note = data["note"]
+        
+        # 更新日历提醒
+        try:
+            await calendar_service.update_investment_reminder(
+                db=self.db,
+                family_id=request.family_id,
+                investment=investment,
+                created_by=request.requester_id
+            )
+            logging.info(f"Calendar reminder updated for investment {investment.id}")
+        except Exception as e:
+            logging.warning(f"Calendar reminder update failed after investment update: {e}")
     
     async def _execute_investment_income(self, request: ApprovalRequest, data: Dict[str, Any]) -> None:
         """执行登记理财收益"""

@@ -18,6 +18,7 @@ from app.schemas.gift import (
     GiftListResponse,
     GiftStats,
 )
+from app.services.calendar import calendar_service
 
 router = APIRouter(prefix="/api/gift", tags=["股权赠与"])
 
@@ -150,8 +151,23 @@ async def send_gift(
     )
     
     db.add(new_gift)
-    await db.commit()
+    await db.flush()
     await db.refresh(new_gift)
+    
+    # 创建日历提醒，通知接收人有待处理的赠与
+    try:
+        await calendar_service.create_gift_reminder(
+            db=db,
+            family_id=family_id,
+            gift=new_gift,
+            to_user_id=gift_data.to_user_id,
+            created_by=current_user.id
+        )
+        logging.info(f"Calendar reminder created for gift {new_gift.id}")
+    except Exception as e:
+        logging.warning(f"Calendar reminder creation failed after gift send: {e}")
+    
+    await db.commit()
     
     return await build_gift_response(db, new_gift)
 
@@ -269,6 +285,18 @@ async def respond_to_gift(
     
     gift.responded_at = datetime.utcnow()
     
+    # 更新日历事件状态
+    try:
+        await calendar_service.update_gift_status(
+            db=db,
+            family_id=gift.family_id,
+            gift_id=gift.id,
+            is_accepted=response_data.accept
+        )
+        logging.info(f"Calendar event updated for gift {gift.id}")
+    except Exception as e:
+        logging.warning(f"Calendar event update failed after gift response: {e}")
+    
     await db.commit()
     await db.refresh(gift)
     
@@ -298,6 +326,17 @@ async def cancel_gift(
     
     if gift.status != EquityGiftStatus.PENDING:
         raise HTTPException(status_code=400, detail="只能取消待处理的赠与")
+    
+    # 删除日历提醒
+    try:
+        await calendar_service.delete_gift_reminder(
+            db=db,
+            family_id=gift.family_id,
+            gift_id=gift.id
+        )
+        logging.info(f"Calendar reminder deleted for gift {gift.id}")
+    except Exception as e:
+        logging.warning(f"Calendar reminder deletion failed after gift cancel: {e}")
     
     await db.delete(gift)
     await db.commit()

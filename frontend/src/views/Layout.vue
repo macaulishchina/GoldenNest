@@ -202,13 +202,17 @@
             @change="handleDrawerAvatarChange"
           />
           
-          <!-- 资金管理 -->
+          <!-- 💰 财务管理 -->
           <div class="drawer-section">
-            <div class="drawer-section-title">💰 资金管理</div>
+            <div class="drawer-section-title">💰 财务管理</div>
             <div class="drawer-menu-items">
+              <div class="drawer-menu-item" @click="navigateAndClose('/approval')">
+                <n-icon :size="20"><DocumentTextOutline /></n-icon>
+                <span>审批中心</span>
+              </div>
               <div class="drawer-menu-item" @click="navigateAndClose('/deposit')">
                 <n-icon :size="20"><WalletOutline /></n-icon>
-                <span>存款管理</span>
+                <span>资金注入</span>
               </div>
               <div class="drawer-menu-item" @click="navigateAndClose('/expense')">
                 <n-icon :size="20"><CardOutline /></n-icon>
@@ -216,57 +220,66 @@
               </div>
               <div class="drawer-menu-item" @click="navigateAndClose('/transaction')">
                 <n-icon :size="20"><ListOutline /></n-icon>
-                <span>交易记录</span>
-              </div>
-            </div>
-          </div>
-          
-          <!-- 财务分析 -->
-          <div class="drawer-section">
-            <div class="drawer-section-title">📊 财务分析</div>
-            <div class="drawer-menu-items">
-              <div class="drawer-menu-item" @click="navigateAndClose('/equity')">
-                <n-icon :size="20"><PieChartOutline /></n-icon>
-                <span>股权结构</span>
+                <span>资金流水</span>
               </div>
               <div class="drawer-menu-item" @click="navigateAndClose('/investment')">
                 <n-icon :size="20"><TrendingUpOutline /></n-icon>
-                <span>理财配置</span>
+                <span>理财产品</span>
               </div>
-              <div class="drawer-menu-item" @click="navigateAndClose('/gift')">
-                <n-icon :size="20"><GiftOutline /></n-icon>
-                <span>股权赠与</span>
-              </div>
-            </div>
-          </div>
-          
-          <!-- 家庭互动 -->
-          <div class="drawer-section">
-            <div class="drawer-section-title">🎉 家庭互动</div>
-            <div class="drawer-menu-items">
-              <div class="drawer-menu-item" @click="navigateAndClose('/achievement')">
-                <n-icon :size="20"><TrophyOutline /></n-icon>
-                <span>成就殿堂</span>
-              </div>
-              <div class="drawer-menu-item" @click="navigateAndClose('/vote')">
-                <n-icon :size="20"><CheckboxOutline /></n-icon>
-                <span>股东大会</span>
-              </div>
-              <div class="drawer-menu-item" @click="navigateAndClose('/announcement')">
-                <n-icon :size="20"><MegaphoneOutline /></n-icon>
-                <span>家庭公告</span>
+              <div class="drawer-menu-item" @click="navigateAndClose('/report')">
+                <n-icon :size="20"><StatsChartOutline /></n-icon>
+                <span>年度报告</span>
               </div>
             </div>
           </div>
           
-          <!-- 账户 -->
+          <!-- 🏡 家庭事务 -->
           <div class="drawer-section">
-            <div class="drawer-section-title">⚙️ 账户</div>
+            <div class="drawer-section-title">� 家庭事务</div>
             <div class="drawer-menu-items">
               <div class="drawer-menu-item" @click="navigateAndClose('/family')">
                 <n-icon :size="20"><PeopleOutline /></n-icon>
                 <span>家庭管理</span>
               </div>
+              <div class="drawer-menu-item" @click="navigateAndClose('/equity')">
+                <n-icon :size="20"><PieChartOutline /></n-icon>
+                <span>股权结构</span>
+              </div>
+              <div class="drawer-menu-item" @click="navigateAndClose('/gift')">
+                <n-icon :size="20"><GiftOutline /></n-icon>
+                <span>股权赠与</span>
+              </div>
+              <div class="drawer-menu-item" @click="navigateAndClose('/vote')">
+                <n-icon :size="20"><CheckboxOutline /></n-icon>
+                <span>股东大会</span>
+              </div>
+              <div class="drawer-menu-item" @click="navigateAndClose('/pet')">
+                <n-icon :size="20"><PawOutline /></n-icon>
+                <span>家庭宠物</span>
+              </div>
+              <div class="drawer-menu-item" @click="navigateAndClose('/todo')">
+                <n-icon :size="20"><ClipboardOutline /></n-icon>
+                <span>家庭清单</span>
+              </div>
+              <div class="drawer-menu-item" @click="navigateAndClose('/calendar')">
+                <n-icon :size="20"><CalendarOutline /></n-icon>
+                <span>共享日历</span>
+              </div>
+              <div class="drawer-menu-item" @click="navigateAndClose('/announcement')">
+                <n-icon :size="20"><MegaphoneOutline /></n-icon>
+                <span>家庭公告</span>
+              </div>
+              <div class="drawer-menu-item" @click="navigateAndClose('/achievement')">
+                <n-icon :size="20"><TrophyOutline /></n-icon>
+                <span>成就殿堂</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- ⚙️ 系统设置 -->
+          <div class="drawer-section">
+            <div class="drawer-section-title">⚙️ 系统设置</div>
+            <div class="drawer-menu-items">
               <div class="drawer-menu-item logout" @click="handleLogout">
                 <n-icon :size="20"><LogOutOutline /></n-icon>
                 <span>退出登录</span>
@@ -303,14 +316,15 @@ import {
   MegaphoneOutline,
   StatsChartOutline,
   CashOutline,
-  BusinessOutline,
-  SparklesOutline,
+  SettingsOutline,
   DocumentTextOutline,
   PersonOutline,
   MenuOutline,
   LogOutOutline,
   AddOutline,
-  CameraOutline
+  CameraOutline,
+  ClipboardOutline,
+  CalendarOutline
 } from '@vicons/ionicons5'
 import { api } from '@/api'
 
@@ -342,16 +356,22 @@ const fixedTabItems = [
   { key: 'approval', label: '审批', icon: DocumentTextOutline }
 ]
 
-// 可选的快捷模块列表
+// 可选的快捷模块列表（按分类排序：财务管理、家庭事务）
 const availableModules = [
-  { key: 'report', label: '报告', icon: StatsChartOutline },
+  // 财务管理
   { key: 'deposit', label: '存款', icon: WalletOutline },
   { key: 'expense', label: '支出', icon: CardOutline },
-  { key: 'equity', label: '股权', icon: PieChartOutline },
+  { key: 'transaction', label: '流水', icon: ListOutline },
   { key: 'investment', label: '理财', icon: TrendingUpOutline },
-  { key: 'achievement', label: '成就', icon: TrophyOutline },
+  { key: 'report', label: '报告', icon: StatsChartOutline },
+  // 家庭事务
+  { key: 'equity', label: '股权', icon: PieChartOutline },
+  { key: 'gift', label: '赠与', icon: GiftOutline },
   { key: 'vote', label: '投票', icon: CheckboxOutline },
-  { key: 'announcement', label: '公告', icon: MegaphoneOutline }
+  { key: 'todo', label: '清单', icon: ClipboardOutline },
+  { key: 'calendar', label: '日历', icon: CalendarOutline },
+  { key: 'announcement', label: '公告', icon: MegaphoneOutline },
+  { key: 'achievement', label: '成就', icon: TrophyOutline }
 ]
 
 // 用户自定义的快捷模块
@@ -490,7 +510,7 @@ function renderIcon(icon: any) {
   return () => h(NIcon, null, { default: () => h(icon) })
 }
 
-// 菜单选项
+// 菜单选项 - 3大分类：财务管理、家庭事务、系统设置
 const menuOptions: MenuOption[] = [
   {
     label: '仪表盘',
@@ -502,7 +522,7 @@ const menuOptions: MenuOption[] = [
     key: 'd1'
   },
   {
-    label: '资金管理',
+    label: '财务管理',
     key: 'finance-group',
     icon: renderIcon(CashOutline),
     children: [
@@ -525,14 +545,7 @@ const menuOptions: MenuOption[] = [
         label: '资金流水',
         key: 'transaction',
         icon: renderIcon(ListOutline)
-      }
-    ]
-  },
-  {
-    label: '投资理财',
-    key: 'invest-group',
-    icon: renderIcon(TrendingUpOutline),
-    children: [
+      },
       {
         label: '理财产品',
         key: 'investment',
@@ -546,13 +559,9 @@ const menuOptions: MenuOption[] = [
     ]
   },
   {
-    type: 'divider',
-    key: 'd2'
-  },
-  {
     label: '家庭事务',
     key: 'family-group',
-    icon: renderIcon(BusinessOutline),
+    icon: renderIcon(PeopleOutline),
     children: [
       {
         label: '家庭管理',
@@ -573,18 +582,21 @@ const menuOptions: MenuOption[] = [
         label: '股东大会',
         key: 'vote',
         icon: renderIcon(CheckboxOutline)
-      }
-    ]
-  },
-  {
-    label: '趣味互动',
-    key: 'fun-group',
-    icon: renderIcon(SparklesOutline),
-    children: [
+      },
       {
         label: '家庭宠物',
         key: 'pet',
         icon: renderIcon(PawOutline)
+      },
+      {
+        label: '家庭清单',
+        key: 'todo',
+        icon: renderIcon(ClipboardOutline)
+      },
+      {
+        label: '共享日历',
+        key: 'calendar',
+        icon: renderIcon(CalendarOutline)
       },
       {
         label: '家庭公告',
@@ -597,12 +609,30 @@ const menuOptions: MenuOption[] = [
         icon: renderIcon(TrophyOutline)
       }
     ]
+  },
+  {
+    type: 'divider',
+    key: 'd2'
+  },
+  {
+    label: '系统设置',
+    key: 'settings-group',
+    icon: renderIcon(SettingsOutline),
+    children: [
+      {
+        label: '退出登录',
+        key: 'logout',
+        icon: renderIcon(LogOutOutline)
+      }
+    ]
   }
 ]
 
 function handleMenuClick(key: string) {
   if (key === 'dashboard') {
     router.push('/')
+  } else if (key === 'logout') {
+    handleLogout()
   } else {
     router.push(`/${key}`)
   }

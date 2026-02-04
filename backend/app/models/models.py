@@ -511,3 +511,131 @@ class AnnualReport(Base):
     monthly_data: Mapped[str] = mapped_column(Text)  # 月度数据(JSON)
     highlights: Mapped[str] = mapped_column(Text)  # 年度亮点(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# ==================== 家庭清单模型 ====================
+
+class TodoPriority(str, enum.Enum):
+    """任务优先级"""
+    HIGH = "high"           # 高优先级
+    MEDIUM = "medium"       # 中优先级
+    LOW = "low"             # 低优先级
+
+
+class TodoRepeatType(str, enum.Enum):
+    """任务重复类型"""
+    NONE = "none"           # 不重复
+    DAILY = "daily"         # 每日
+    WEEKLY = "weekly"       # 每周
+    MONTHLY = "monthly"     # 每月
+
+
+class TodoList(Base):
+    """家庭清单表"""
+    __tablename__ = "todo_lists"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    name: Mapped[str] = mapped_column(String(100))  # 清单名称
+    icon: Mapped[str] = mapped_column(String(20), default="📋")  # 图标 emoji
+    color: Mapped[str] = mapped_column(String(20), default="#667eea")  # 颜色主题
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)  # 排序顺序
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 关联关系
+    items: Mapped[List["TodoItem"]] = relationship(back_populates="todo_list", cascade="all, delete-orphan")
+
+
+class TodoItem(Base):
+    """清单任务项表"""
+    __tablename__ = "todo_items"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    list_id: Mapped[int] = mapped_column(ForeignKey("todo_lists.id"))
+    title: Mapped[str] = mapped_column(String(200))  # 任务标题
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 详细描述
+    assignee_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)  # 指派给谁
+    priority: Mapped[TodoPriority] = mapped_column(SQLEnum(TodoPriority), default=TodoPriority.MEDIUM)  # 优先级
+    due_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 截止日期
+    repeat_type: Mapped[TodoRepeatType] = mapped_column(SQLEnum(TodoRepeatType), default=TodoRepeatType.NONE)  # 重复类型
+    is_completed: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否完成
+    completed_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)  # 完成者
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 完成时间
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)  # 排序顺序
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 关联关系
+    todo_list: Mapped["TodoList"] = relationship(back_populates="items")
+
+
+# ==================== 共享日历模型 ====================
+
+class CalendarEventCategory(str, enum.Enum):
+    """日历事件分类"""
+    FAMILY = "family"             # 家庭活动
+    PERSONAL = "personal"         # 个人日程
+    BIRTHDAY = "birthday"         # 生日纪念日
+    FINANCE = "finance"           # 财务提醒
+    SYSTEM = "system"             # 系统提醒（自动生成）
+
+
+class CalendarRepeatType(str, enum.Enum):
+    """日历事件重复类型"""
+    NONE = "none"                 # 不重复
+    DAILY = "daily"               # 每天
+    WEEKLY = "weekly"             # 每周
+    MONTHLY = "monthly"           # 每月
+    YEARLY = "yearly"             # 每年
+
+
+class CalendarEvent(Base):
+    """日历事件表"""
+    __tablename__ = "calendar_events"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    title: Mapped[str] = mapped_column(String(200))  # 事件标题
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 详细描述
+    category: Mapped[CalendarEventCategory] = mapped_column(
+        SQLEnum(CalendarEventCategory), 
+        default=CalendarEventCategory.FAMILY
+    )  # 事件分类
+    start_time: Mapped[datetime] = mapped_column(DateTime)  # 开始时间
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 结束时间
+    is_all_day: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否全天事件
+    repeat_type: Mapped[CalendarRepeatType] = mapped_column(
+        SQLEnum(CalendarRepeatType), 
+        default=CalendarRepeatType.NONE
+    )  # 重复类型
+    repeat_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 重复截止日期
+    color: Mapped[str] = mapped_column(String(20), default="#667eea")  # 自定义颜色
+    location: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # 地点
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否系统自动生成
+    source_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # 来源类型
+    source_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 来源ID
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 关联关系
+    participants: Mapped[List["CalendarEventParticipant"]] = relationship(
+        back_populates="event", 
+        cascade="all, delete-orphan"
+    )
+
+
+class CalendarEventParticipant(Base):
+    """日历事件参与者表"""
+    __tablename__ = "calendar_event_participants"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("calendar_events.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    # 关联关系
+    event: Mapped["CalendarEvent"] = relationship(back_populates="participants")

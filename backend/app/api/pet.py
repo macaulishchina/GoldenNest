@@ -67,6 +67,21 @@ EXP_CONFIG = {
     "expense_approved": 20,       # 支出审批
     "gift_sent": 30,              # 赠送股权
     "achievement_unlock": 25,     # 解锁成就
+    # ========== Todo 待办任务相关 ==========
+    "todo_complete_low": 5,       # 完成低优先级任务
+    "todo_complete_medium": 10,   # 完成中优先级任务
+    "todo_complete_high": 15,     # 完成高优先级任务
+    "todo_on_time_bonus": 5,      # 准时完成任务额外奖励
+    "todo_assigned": 8,           # 完成他人指派的任务
+    # ========== Calendar 日历事件相关 ==========
+    "calendar_event_personal": 8,    # 创建个人日程
+    "calendar_event_family": 15,     # 创建家庭活动
+    "calendar_event_birthday": 20,   # 创建生日/纪念日事件
+    "calendar_event_finance": 10,    # 创建财务提醒
+    "calendar_repeat_bonus": 5,      # 创建重复事件额外奖励
+    "calendar_participant_bonus": 2, # 每邀请1位参与者奖励
+    "calendar_sync": 5,              # 同步系统事件基础经验
+    "calendar_sync_per_event": 2,    # 每同步一个事件额外奖励
 }
 
 def get_level_exp(level: int) -> int:
@@ -212,6 +227,22 @@ EXP_SOURCE_NAMES = {
     "gift": "赠送股权",
     "gift_sent": "赠送股权",
     "achievement_unlock": "解锁成就",
+    # ========== Todo 待办任务相关 ==========
+    "todo_complete_low": "完成低优先级任务",
+    "todo_complete_medium": "完成中优先级任务",
+    "todo_complete_high": "完成高优先级任务",
+    "todo_complete": "完成待办任务",
+    "todo_on_time_bonus": "准时完成任务",
+    "todo_assigned": "完成他人指派任务",
+    # ========== Calendar 日历事件相关 ==========
+    "calendar_event_personal": "创建个人日程",
+    "calendar_event_family": "创建家庭活动",
+    "calendar_event_birthday": "创建生日纪念日",
+    "calendar_event_finance": "创建财务提醒",
+    "calendar_event": "创建日历事件",
+    "calendar_repeat_bonus": "创建重复事件",
+    "calendar_participant_bonus": "邀请参与者",
+    "calendar_sync": "同步系统事件",
 }
 
 
@@ -445,15 +476,34 @@ async def get_exp_sources():
     """获取经验值来源配置"""
     return {
         "sources": [
-            {"key": "daily_checkin", "name": "每日签到", "exp": EXP_CONFIG["daily_checkin"]},
-            {"key": "streak_bonus", "name": "连续签到奖励", "exp": f"+{EXP_CONFIG['streak_bonus']}/天 (最多7天)"},
-            {"key": "deposit", "name": "存款操作", "exp": EXP_CONFIG["deposit"]},
-            {"key": "investment", "name": "理财操作", "exp": EXP_CONFIG["investment"]},
-            {"key": "vote", "name": "参与投票", "exp": EXP_CONFIG["vote"]},
-            {"key": "proposal_passed", "name": "提案通过", "exp": EXP_CONFIG["proposal_passed"]},
-            {"key": "expense_approved", "name": "审批支出", "exp": EXP_CONFIG["expense_approved"]},
-            {"key": "gift_sent", "name": "赠送股权", "exp": EXP_CONFIG["gift_sent"]},
-            {"key": "achievement_unlock", "name": "解锁成就", "exp": EXP_CONFIG["achievement_unlock"]},
+            # 基础操作
+            {"key": "daily_checkin", "name": "每日签到", "exp": EXP_CONFIG["daily_checkin"], "category": "基础"},
+            {"key": "streak_bonus", "name": "连续签到奖励", "exp": f"+{EXP_CONFIG['streak_bonus']}/天 (最多7天)", "category": "基础"},
+            {"key": "feed", "name": "喂食宠物", "exp": 5, "category": "基础"},
+            # 财务操作
+            {"key": "deposit", "name": "存款操作", "exp": EXP_CONFIG["deposit"], "category": "财务"},
+            {"key": "investment", "name": "理财操作", "exp": EXP_CONFIG["investment"], "category": "财务"},
+            {"key": "expense_approved", "name": "审批支出", "exp": EXP_CONFIG["expense_approved"], "category": "财务"},
+            {"key": "gift_sent", "name": "赠送股权", "exp": EXP_CONFIG["gift_sent"], "category": "财务"},
+            # 投票提案
+            {"key": "vote", "name": "参与投票", "exp": EXP_CONFIG["vote"], "category": "治理"},
+            {"key": "proposal_passed", "name": "提案通过", "exp": EXP_CONFIG["proposal_passed"], "category": "治理"},
+            # 待办任务
+            {"key": "todo_complete_low", "name": "完成低优先级任务", "exp": EXP_CONFIG["todo_complete_low"], "category": "待办"},
+            {"key": "todo_complete_medium", "name": "完成中优先级任务", "exp": EXP_CONFIG["todo_complete_medium"], "category": "待办"},
+            {"key": "todo_complete_high", "name": "完成高优先级任务", "exp": EXP_CONFIG["todo_complete_high"], "category": "待办"},
+            {"key": "todo_on_time_bonus", "name": "准时完成任务奖励", "exp": f"+{EXP_CONFIG['todo_on_time_bonus']}", "category": "待办"},
+            {"key": "todo_assigned", "name": "完成他人指派任务", "exp": f"+{EXP_CONFIG['todo_assigned']}", "category": "待办"},
+            # 日历事件
+            {"key": "calendar_event_personal", "name": "创建个人日程", "exp": EXP_CONFIG["calendar_event_personal"], "category": "日历"},
+            {"key": "calendar_event_family", "name": "创建家庭活动", "exp": EXP_CONFIG["calendar_event_family"], "category": "日历"},
+            {"key": "calendar_event_birthday", "name": "创建生日纪念日", "exp": EXP_CONFIG["calendar_event_birthday"], "category": "日历"},
+            {"key": "calendar_event_finance", "name": "创建财务提醒", "exp": EXP_CONFIG["calendar_event_finance"], "category": "日历"},
+            {"key": "calendar_repeat_bonus", "name": "创建重复事件奖励", "exp": f"+{EXP_CONFIG['calendar_repeat_bonus']}", "category": "日历"},
+            {"key": "calendar_participant_bonus", "name": "邀请参与者奖励", "exp": f"+{EXP_CONFIG['calendar_participant_bonus']}/人", "category": "日历"},
+            {"key": "calendar_sync", "name": "同步系统事件", "exp": f"{EXP_CONFIG['calendar_sync']}+{EXP_CONFIG['calendar_sync_per_event']}/个", "category": "日历"},
+            # 成就
+            {"key": "achievement_unlock", "name": "解锁成就", "exp": EXP_CONFIG["achievement_unlock"], "category": "成就"},
         ]
     }
 
