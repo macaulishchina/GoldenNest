@@ -4,9 +4,35 @@
     
     <!-- 个人信息区域 -->
     <div v-if="hasFamily && currentMember" class="profile-section">
-      <n-avatar round :size="48" :style="{ backgroundColor: getAvatarColor(userStore.user?.nickname || '') }">
-        {{ userStore.user?.nickname?.[0] || '?' }}
-      </n-avatar>
+      <div class="avatar-wrapper" @click="triggerAvatarUpload">
+        <!-- 使用 URL 方式加载头像 -->
+        <img 
+          v-if="userStore.user?.id && !selfAvatarError" 
+          :src="`/api/auth/users/${userStore.user.id}/avatar?v=${userStore.user.avatar_version || 0}&t=${avatarCacheKey}`" 
+          class="avatar-img"
+          alt="头像"
+          @error="selfAvatarError = true"
+        />
+        <!-- 无头像或加载失败时显示首字母 -->
+        <n-avatar 
+          v-else
+          round 
+          :size="56" 
+          :style="{ backgroundColor: getAvatarColor(userStore.user?.nickname || '') }"
+        >
+          {{ userStore.user?.nickname?.[0] || '?' }}
+        </n-avatar>
+        <div class="avatar-edit-hint">
+          <span>📷</span>
+        </div>
+      </div>
+      <input 
+        ref="avatarInputRef" 
+        type="file" 
+        accept="image/jpeg,image/png,image/gif,image/webp" 
+        style="display: none" 
+        @change="handleAvatarChange"
+      />
       <div class="profile-info">
         <div class="profile-name">{{ userStore.user?.nickname }}</div>
         <div class="profile-meta">
@@ -65,7 +91,12 @@
           <n-list-item v-for="member in members" :key="member.id">
             <n-thing>
               <template #avatar>
-                <n-avatar round>{{ member.nickname[0] }}</n-avatar>
+                <UserAvatar 
+                  :userId="member.user_id" 
+                  :name="member.nickname" 
+                  :size="40" 
+                  :avatarVersion="member.avatar_version"
+                />
               </template>
               <template #header>
                 <div class="member-header">
@@ -125,12 +156,18 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
-import { familyApi, approvalApi } from '@/api'
+import { familyApi, approvalApi, api } from '@/api'
 import { useUserStore } from '@/stores/user'
+import { compressImage, getAvatarColor } from '@/utils/avatar'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 const message = useMessage()
 const userStore = useUserStore()
 const loading = ref(false)
+const avatarInputRef = ref<HTMLInputElement | null>(null)
+const avatarUploading = ref(false)
+const selfAvatarError = ref(false)
+const avatarCacheKey = ref(Date.now())
 const family = ref<any>(null)
 const members = ref<any[]>([])
 
@@ -146,16 +183,6 @@ const currentMember = computed(() => {
 const isCurrentUserAdmin = computed(() => {
   return currentMember.value?.role === 'admin'
 })
-
-// 头像背景色
-function getAvatarColor(name: string): string {
-  const colors = ['#f56a00', '#7265e6', '#ffbf00', '#00a2ae', '#87d068', '#1890ff', '#eb2f96']
-  let hash = 0
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  return colors[Math.abs(hash) % colors.length]
-}
 
 // 时间问候语
 function getGreeting(): string {
@@ -294,6 +321,78 @@ async function confirmRemoveMember() {
   }
 }
 
+// ========== 头像上传相关 ==========
+
+// 触发文件选择
+function triggerAvatarUpload() {
+  if (avatarUploading.value) return
+  avatarInputRef.value?.click()
+}
+
+// 处理头像文件选择
+async function handleAvatarChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  
+  // 验证文件类型
+  if (!file.type.startsWith('image/')) {
+    message.error('请选择图片文件')
+    return
+  }
+  
+  // 验证原始文件大小（限制20MB，防止浏览器卡死）
+  if (file.size > 20 * 1024 * 1024) {
+    message.error('图片大小不能超过 20MB')
+    return
+  }
+  
+  avatarUploading.value = true
+  
+  try {
+    // 先压缩图片为适合头像的大小（200x200）
+    const base64 = await compressImage(file)
+    
+    // 压缩后检查大小（2MB限制，Base64约为原始数据的1.37倍）
+    const compressedSize = base64.length * 0.75 // 估算实际字节数
+    if (compressedSize > 2 * 1024 * 1024) {
+      message.error('图片压缩后仍超过 2MB，请选择更小的图片')
+      avatarUploading.value = false
+      return
+    }
+    
+    // 上传到服务器
+    const res = await api.put('/auth/avatar', { avatar: base64 })
+    
+    if (res.data.success) {
+      // 更新本地用户信息
+      await userStore.fetchUser()
+      // 刷新家庭成员列表（获取最新的 avatar_version）
+      await loadData()
+      // 刷新头像缓存（用于个人信息区域的自定义头像显示）
+      selfAvatarError.value = false
+      avatarCacheKey.value = Date.now()
+      message.success('头像更新成功！')
+    }
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '头像上传失败')
+  } finally {
+    avatarUploading.value = false
+    // 清空 input，允许再次选择相同文件
+    input.value = ''
+  }
+}
+
+// 读取文件为 base64
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
 onMounted(loadData)
 </script>
 
@@ -331,6 +430,46 @@ onMounted(loadData)
 .greeting {
   font-size: 13px;
   opacity: 0.9;
+}
+
+/* 头像编辑区域 */
+.avatar-wrapper {
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.avatar-img {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.avatar-wrapper:hover .avatar-edit-hint {
+  opacity: 1;
+}
+
+.avatar-wrapper:active {
+  transform: scale(0.95);
+}
+
+.avatar-edit-hint {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 22px;
+  height: 22px;
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  opacity: 0.9;
+  transition: all 0.2s;
 }
 
 .member-header {

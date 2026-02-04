@@ -165,6 +165,43 @@
     <n-drawer v-model:show="showDrawer" :width="280" placement="right">
       <n-drawer-content title="更多功能" closable>
         <div class="drawer-menu">
+          <!-- 用户信息区域 -->
+          <div class="drawer-user-section">
+            <div class="drawer-avatar-wrapper" @click="triggerDrawerAvatarUpload">
+              <!-- 使用 URL 方式加载头像 -->
+              <img 
+                v-if="userStore.user?.id && !selfAvatarError" 
+                :src="`/api/auth/users/${userStore.user.id}/avatar?t=${avatarCacheKey}`" 
+                class="drawer-avatar-img"
+                alt="头像"
+                @error="selfAvatarError = true"
+              />
+              <!-- 无头像或加载失败时显示首字母 -->
+              <n-avatar 
+                v-else
+                round 
+                :size="56" 
+                :style="{ backgroundColor: getAvatarColor(userStore.user?.nickname || '') }"
+              >
+                {{ userStore.user?.nickname?.[0] || '?' }}
+              </n-avatar>
+              <div class="drawer-avatar-camera">
+                <n-icon :size="12"><CameraOutline /></n-icon>
+              </div>
+            </div>
+            <div class="drawer-user-info">
+              <div class="drawer-user-name">{{ userStore.user?.nickname || '用户' }}</div>
+              <div class="drawer-user-family" v-if="family">🏡 {{ family.name }}</div>
+            </div>
+          </div>
+          <input 
+            ref="drawerAvatarInputRef" 
+            type="file" 
+            accept="image/jpeg,image/png,image/gif,image/webp" 
+            style="display: none" 
+            @change="handleDrawerAvatarChange"
+          />
+          
           <!-- 资金管理 -->
           <div class="drawer-section">
             <div class="drawer-section-title">💰 资金管理</div>
@@ -249,6 +286,7 @@ import { useMessage, NIcon } from 'naive-ui'
 import { useUserStore } from '@/stores/user'
 import { familyApi } from '@/api'
 import { getHolidayGreeting } from '@/utils/holiday'
+import { compressImage, getAvatarColor } from '@/utils/avatar'
 import type { MenuOption } from 'naive-ui'
 import { 
   HomeOutline, 
@@ -271,8 +309,10 @@ import {
   PersonOutline,
   MenuOutline,
   LogOutOutline,
-  AddOutline
+  AddOutline,
+  CameraOutline
 } from '@vicons/ionicons5'
+import { api } from '@/api'
 
 const router = useRouter()
 const route = useRoute()
@@ -283,6 +323,10 @@ const collapsed = ref(false)
 const family = ref<any>(null)
 const showDrawer = ref(false)
 const showShortcutModal = ref(false)
+const drawerAvatarInputRef = ref<HTMLInputElement | null>(null)
+const avatarUploading = ref(false)
+const selfAvatarError = ref(false)
+const avatarCacheKey = ref(Date.now())
 
 // 响应式检测 - 768px 断点
 const isMobile = ref(window.innerWidth < 768)
@@ -570,6 +614,76 @@ function handleLogout() {
   router.push('/login')
 }
 
+// ========== 头像相关功能 ==========
+
+// 触发抽屉头像上传
+function triggerDrawerAvatarUpload() {
+  if (avatarUploading.value) return
+  drawerAvatarInputRef.value?.click()
+}
+
+// 处理抽屉头像文件选择
+async function handleDrawerAvatarChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  
+  // 验证文件类型
+  if (!file.type.startsWith('image/')) {
+    message.error('请选择图片文件')
+    return
+  }
+  
+  // 验证原始文件大小（限制20MB，防止浏览器卡死）
+  if (file.size > 20 * 1024 * 1024) {
+    message.error('图片大小不能超过 20MB')
+    return
+  }
+  
+  avatarUploading.value = true
+  
+  try {
+    // 先压缩图片为适合头像的大小（200x200）
+    const base64 = await compressImage(file)
+    
+    // 压缩后检查大小（2MB限制，Base64约为原始数据的1.37倍）
+    const compressedSize = base64.length * 0.75 // 估算实际字节数
+    if (compressedSize > 2 * 1024 * 1024) {
+      message.error('图片压缩后仍超过 2MB，请选择更小的图片')
+      avatarUploading.value = false
+      return
+    }
+    
+    // 上传到服务器
+    const res = await api.put('/auth/avatar', { avatar: base64 })
+    
+    if (res.data.success) {
+      // 更新本地用户信息
+      await userStore.fetchUser()
+      // 刷新头像缓存
+      selfAvatarError.value = false
+      avatarCacheKey.value = Date.now()
+      message.success('头像更新成功！')
+    }
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '头像上传失败')
+  } finally {
+    avatarUploading.value = false
+    // 清空 input，允许再次选择相同文件
+    input.value = ''
+  }
+}
+
+// 读取文件为 base64
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
 async function loadFamily() {
   try {
     if (userStore.user?.family_id) {
@@ -825,6 +939,70 @@ onUnmounted(() => {
    ============================================ */
 .drawer-menu {
   padding: 8px 0;
+}
+
+/* 抽屉用户信息区域 */
+.drawer-user-section {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 12px;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 14px;
+  color: white;
+}
+
+.drawer-avatar-wrapper {
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.drawer-avatar-wrapper:active {
+  transform: scale(0.95);
+}
+
+.drawer-avatar-img {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.drawer-avatar-camera {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.drawer-user-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.drawer-user-name {
+  font-size: 17px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drawer-user-family {
+  font-size: 13px;
+  opacity: 0.9;
 }
 
 .drawer-section {

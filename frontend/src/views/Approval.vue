@@ -82,7 +82,10 @@
             <p class="description">{{ item.description }}</p>
             <div class="meta">
               <span v-if="!isMemberRequest(item.request_type)">💰 ¥{{ formatAmount(item.amount) }}</span>
-              <span>👤 {{ item.requester_nickname }}</span>
+              <span class="requester-info">
+                <UserAvatar :userId="item.requester_id" :name="item.requester_nickname" :avatarVersion="item.requester_avatar_version" :size="20" />
+                {{ item.requester_nickname }}
+              </span>
               <span>📅 {{ formatDate(item.created_at) }}</span>
             </div>
             <div class="progress-bar">
@@ -132,7 +135,10 @@
             <p class="description">{{ item.description }}</p>
             <div class="meta">
               <span v-if="!isMemberRequest(item.request_type)">💰 ¥{{ formatAmount(item.amount) }}</span>
-              <span>👤 {{ item.requester_nickname }}</span>
+              <span class="requester-info">
+                <UserAvatar :userId="item.requester_id" :name="item.requester_nickname" :avatarVersion="item.requester_avatar_version" :size="20" />
+                {{ item.requester_nickname }}
+              </span>
               <span>📅 {{ formatDate(item.created_at) }}</span>
             </div>
             <!-- 审批进度 -->
@@ -146,7 +152,10 @@
                 <span :class="record.is_approved ? 'approved' : 'rejected'">
                   {{ record.is_approved ? '✅' : '❌' }}
                 </span>
-                <span class="approver">{{ record.approver_nickname }}</span>
+                <span class="approver-info">
+                  <UserAvatar :userId="record.approver_id" :name="record.approver_nickname" :avatarVersion="record.approver_avatar_version" :size="18" />
+                  <span class="approver">{{ record.approver_nickname }}</span>
+                </span>
                 <span v-if="record.comment" class="comment">: {{ record.comment }}</span>
               </div>
             </div>
@@ -317,6 +326,7 @@ import { useMessage, useDialog } from 'naive-ui'
 import { approvalApi, investmentApi, familyApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { checkAndShowAchievements } from '@/utils/achievement'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -335,6 +345,7 @@ interface ApprovalRecord {
   request_id: number
   approver_id: number
   approver_nickname: string
+  approver_avatar?: string
   is_approved: boolean
   comment?: string
   created_at: string
@@ -345,6 +356,7 @@ interface ApprovalItem {
   family_id: number
   requester_id: number
   requester_nickname: string
+  requester_avatar?: string
   request_type: string
   title: string
   description: string
@@ -1019,6 +1031,8 @@ onMounted(() => {
 }
 
 .record {
+  display: flex;
+  align-items: center;
   font-size: 13px;
   margin-bottom: 4px;
 }
@@ -1027,6 +1041,14 @@ onMounted(() => {
 .record .rejected { color: #dc2626; }
 .record .approver { font-weight: 600; margin-left: 4px; }
 .record .comment { color: #666; }
+
+/* 申请人/审批人头像样式 */
+.requester-info,
+.approver-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 
 .card-actions {
   display: flex;

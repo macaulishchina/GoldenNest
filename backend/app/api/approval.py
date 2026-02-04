@@ -63,7 +63,7 @@ async def create_deposit_approval(
     )
     
     await db.commit()
-    return await service.get_request_response(request, current_user.nickname)
+    return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
 # ==================== 支出申请 ====================
@@ -129,7 +129,7 @@ async def create_expense_approval(
     )
     
     await db.commit()
-    return await service.get_request_response(request, current_user.nickname)
+    return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
 # ==================== 理财产品创建申请 ====================
@@ -163,7 +163,7 @@ async def create_investment_create_approval(
     )
     
     await db.commit()
-    return await service.get_request_response(request, current_user.nickname)
+    return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
 # ==================== 理财产品更新申请 ====================
@@ -219,7 +219,7 @@ async def create_investment_update_approval(
     )
     
     await db.commit()
-    return await service.get_request_response(request, current_user.nickname)
+    return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
 # ==================== 理财收益登记申请 ====================
@@ -261,7 +261,7 @@ async def create_investment_income_approval(
     )
     
     await db.commit()
-    return await service.get_request_response(request, current_user.nickname)
+    return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
 # ==================== 审批操作 ====================
@@ -289,7 +289,7 @@ async def approve_request(
         requester = result.scalar_one()
         
         await db.commit()
-        return await service.get_request_response(request, requester.nickname)
+        return await service.get_request_response(request, requester.nickname, requester.avatar_version or 0)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -322,7 +322,7 @@ async def reject_request(
         requester = result.scalar_one()
         
         await db.commit()
-        return await service.get_request_response(request, requester.nickname)
+        return await service.get_request_response(request, requester.nickname, requester.avatar_version or 0)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -339,7 +339,7 @@ async def cancel_request(
         request = await service.cancel_request(request_id, current_user.id)
         
         await db.commit()
-        return await service.get_request_response(request, current_user.nickname)
+        return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -378,7 +378,7 @@ async def list_approval_requests(
     rejected_count = 0
     
     for request, requester in rows:
-        items.append(await service.get_request_response(request, requester.nickname))
+        items.append(await service.get_request_response(request, requester.nickname, requester.avatar_version or 0))
         if request.status == ApprovalRequestStatus.PENDING:
             pending_count += 1
         elif request.status == ApprovalRequestStatus.APPROVED:
@@ -429,15 +429,22 @@ async def list_pending_approvals(
         if result.scalar_one_or_none():
             continue  # 已审批过，跳过
         
-        # 检查是否是申请人（多人家庭时申请人不需要审批）
+        # 检查是否是申请人（多人家庭时申请人一般不需要审批，但成员剔除例外）
         result = await db.execute(
             select(FamilyMember).where(FamilyMember.family_id == family_id)
         )
         members = result.scalars().all()
-        if len(members) > 1 and request.requester_id == current_user.id:
-            continue  # 多人家庭，申请人不需要审批自己的申请
         
-        pending_items.append(await service.get_request_response(request, requester.nickname))
+        # 成员剔除申请：管理员可以审批自己发起的申请
+        if request.request_type == ApprovalRequestType.MEMBER_REMOVE:
+            # 检查当前用户是否是管理员
+            current_member = next((m for m in members if m.user_id == current_user.id), None)
+            if not current_member or current_member.role != "admin":
+                continue  # 非管理员不能审批剔除申请
+        elif len(members) > 1 and request.requester_id == current_user.id:
+            continue  # 其他类型：多人家庭，申请人不需要审批自己的申请
+        
+        pending_items.append(await service.get_request_response(request, requester.nickname, requester.avatar_version or 0))
     
     return pending_items
 
@@ -465,7 +472,7 @@ async def get_approval_request(
     
     request, requester = row
     service = ApprovalService(db)
-    return await service.get_request_response(request, requester.nickname)
+    return await service.get_request_response(request, requester.nickname, requester.avatar_version or 0)
 
 
 # ==================== 成员加入申请 ====================
@@ -524,7 +531,7 @@ async def create_member_join_approval(
     )
     
     await db.commit()
-    return await service.get_request_response(request, current_user.nickname)
+    return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
 # ==================== 成员剔除申请 ====================
@@ -599,4 +606,4 @@ async def create_member_remove_approval(
     )
     
     await db.commit()
-    return await service.get_request_response(request, current_user.nickname)
+    return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)

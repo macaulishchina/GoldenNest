@@ -15,7 +15,7 @@ from app.models.models import (
     User, FamilyMember, Announcement, AnnouncementLike, AnnouncementComment
 )
 
-router = APIRouter(prefix="/announcement", tags=["announcement"])
+router = APIRouter(prefix="/announcements", tags=["announcements"])
 
 
 # ==================== Schema ====================
@@ -41,7 +41,7 @@ class AnnouncementResponse(BaseModel):
     created_at: str
     author_id: int
     author_name: str
-    author_avatar: Optional[str]
+    author_avatar_version: int = 0
     likes_count: int
     comments_count: int
     is_liked: bool
@@ -108,8 +108,7 @@ async def build_announcement_response(
                 "content": comment.content,
                 "created_at": comment.created_at.isoformat(),
                 "author_id": user.id,
-                "author_name": user.nickname,
-                "author_avatar": user.avatar
+                "author_name": user.nickname
             })
     else:
         result = await db.execute(
@@ -135,7 +134,7 @@ async def build_announcement_response(
         "created_at": announcement.created_at.isoformat(),
         "author_id": author.id if author else 0,
         "author_name": author.nickname if author else "未知用户",
-        "author_avatar": author.avatar if author else None,
+        "author_avatar_version": author.avatar_version if author else 0,
         "likes_count": likes_count,
         "comments_count": comments_count,
         "is_liked": is_liked,
@@ -368,7 +367,50 @@ async def toggle_like(
         }
 
 
-@router.post("/{announcement_id}/comment", response_model=dict)
+@router.get("/{announcement_id}/comments", response_model=list)
+async def get_comments(
+    announcement_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取评论列表"""
+    family_id = await get_user_family_id(current_user.id, db)
+    
+    # 验证公告存在且属于该家庭
+    result = await db.execute(
+        select(Announcement).where(
+            Announcement.id == announcement_id,
+            Announcement.family_id == family_id
+        )
+    )
+    announcement = result.scalar_one_or_none()
+    
+    if not announcement:
+        raise HTTPException(status_code=404, detail="公告不存在")
+    
+    # 获取评论
+    result = await db.execute(
+        select(AnnouncementComment, User)
+        .join(User, AnnouncementComment.user_id == User.id)
+        .where(AnnouncementComment.announcement_id == announcement_id)
+        .order_by(AnnouncementComment.created_at.asc())
+    )
+    comment_rows = result.fetchall()
+    
+    comments = []
+    for comment, user in comment_rows:
+        comments.append({
+            "id": comment.id,
+            "content": comment.content,
+            "created_at": comment.created_at.isoformat(),
+            "author_id": user.id,
+            "author_name": user.nickname
+        })
+    
+    return comments
+
+
+@router.post("/{announcement_id}/comments", response_model=dict)
 async def add_comment(
     announcement_id: int,
     data: CommentCreate,
@@ -413,8 +455,7 @@ async def add_comment(
             "content": comment.content,
             "created_at": comment.created_at.isoformat(),
             "author_id": current_user.id,
-            "author_name": current_user.nickname,
-            "author_avatar": current_user.avatar
+            "author_name": current_user.nickname
         }
     }
 

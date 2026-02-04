@@ -39,7 +39,7 @@
             <div v-for="member in equity.members" :key="member.user_id" class="member-card">
               <div class="member-card-header">
                 <div class="member-info">
-                  <n-avatar round :size="36">{{ member.nickname[0] }}</n-avatar>
+                  <UserAvatar :userId="member.user_id" :name="member.nickname" :avatarVersion="member.avatar_version" :size="36" />
                   <span class="member-name">{{ member.nickname }}</span>
                 </div>
                 <div class="member-percentage">
@@ -72,10 +72,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, h, computed } from 'vue'
-import { NProgress, NAvatar } from 'naive-ui'
+import { NProgress } from 'naive-ui'
 import { storeToRefs } from 'pinia'
 import { equityApi } from '@/api'
 import { usePrivacyStore } from '@/stores/privacy'
+import UserAvatar from '@/components/UserAvatar.vue'
+import { getAvatarColor } from '@/utils/avatar'
 
 const privacyStore = usePrivacyStore()
 const { privacyMode } = storeToRefs(privacyStore)
@@ -90,7 +92,7 @@ const columns = [
     title: '成员', 
     key: 'nickname',
     render: (row: any) => h('div', { style: 'display:flex;align-items:center;gap:8px' }, [
-      h(NAvatar, { round: true, size: 'small' }, { default: () => row.nickname[0] }),
+      h(UserAvatar, { userId: row.user_id, name: row.nickname, avatarVersion: row.avatar_version, size: 28 }),
       row.nickname
     ])
   },

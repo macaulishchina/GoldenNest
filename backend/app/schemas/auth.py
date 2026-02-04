@@ -27,6 +27,7 @@ class UserResponse(BaseModel):
     email: str
     nickname: str
     avatar: Optional[str] = None
+    avatar_version: int = 0  # 头像版本号，用于缓存失效
     is_active: bool
     created_at: datetime
     family_id: Optional[int] = None  # 用户所属家庭ID

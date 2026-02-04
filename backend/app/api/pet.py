@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.api.auth import get_current_user
-from app.models.models import User, FamilyMember, FamilyPet
+from app.models.models import User, FamilyMember, FamilyPet, PetExpLog
 
 router = APIRouter(prefix="/pet", tags=["pet"])
 
@@ -200,8 +200,32 @@ def build_pet_response(pet: FamilyPet) -> dict:
     }
 
 
-async def add_exp(db: AsyncSession, pet: FamilyPet, exp_amount: int, source: str) -> dict:
-    """为宠物增加经验值"""
+# 经验来源名称映射
+EXP_SOURCE_NAMES = {
+    "daily_checkin": "每日签到",
+    "feed": "喂食宠物",
+    "deposit": "存款操作",
+    "investment": "理财收益",
+    "vote": "参与投票",
+    "proposal_passed": "提案通过",
+    "expense_approved": "审批支出",
+    "gift": "赠送股权",
+    "gift_sent": "赠送股权",
+    "achievement_unlock": "解锁成就",
+}
+
+
+async def add_exp(db: AsyncSession, pet: FamilyPet, exp_amount: int, source: str, source_detail: str = None, operator_id: int = None) -> dict:
+    """为宠物增加经验值
+    
+    Args:
+        db: 数据库会话
+        pet: 宠物对象
+        exp_amount: 经验值数量
+        source: 来源类型
+        source_detail: 来源详情
+        operator_id: 操作者用户ID
+    """
     pet.exp += exp_amount
     pet.total_exp += exp_amount
     
@@ -221,6 +245,16 @@ async def add_exp(db: AsyncSession, pet: FamilyPet, exp_amount: int, source: str
     if new_type != pet.pet_type:
         pet.pet_type = new_type
         evolved = True
+    
+    # 记录经验获取日志
+    exp_log = PetExpLog(
+        family_id=pet.family_id,
+        operator_id=operator_id,
+        exp_amount=exp_amount,
+        source=source,
+        source_detail=source_detail or EXP_SOURCE_NAMES.get(source, source)
+    )
+    db.add(exp_log)
     
     await db.commit()
     await db.refresh(pet)
@@ -316,8 +350,8 @@ async def daily_checkin(
     streak_bonus = min(pet.checkin_streak, 7) * EXP_CONFIG["streak_bonus"]  # 最多7天额外奖励
     total_exp = base_exp + streak_bonus
     
-    # 增加经验
-    exp_result = await add_exp(db, pet, total_exp, "daily_checkin")
+    # 增加经验（记录操作者）
+    exp_result = await add_exp(db, pet, total_exp, "daily_checkin", operator_id=current_user.id)
     
     # 增加心情值
     pet.happiness = min(100, pet.happiness + 5)
@@ -360,8 +394,8 @@ async def feed_pet(
     old_happiness = pet.happiness
     pet.happiness = min(100, pet.happiness + 20)
     
-    # 喂食也给少量经验
-    exp_result = await add_exp(db, pet, 5, "feed")
+    # 喂食也给少量经验（记录操作者）
+    exp_result = await add_exp(db, pet, 5, "feed", operator_id=current_user.id)
     
     await db.commit()
     
@@ -424,8 +458,64 @@ async def get_exp_sources():
     }
 
 
+@router.get("/exp-logs", response_model=dict)
+async def get_exp_logs(
+    limit: int = 50,
+    offset: int = 0,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取宠物经验获取记录"""
+    family_id = await get_user_family_id(current_user.id, db)
+    
+    # 查询记录总数
+    count_result = await db.execute(
+        select(func.count()).select_from(PetExpLog).where(PetExpLog.family_id == family_id)
+    )
+    total = count_result.scalar()
+    
+    # 查询记录列表（按时间倒序），联表查询操作者信息
+    # 使用 outerjoin 因为 operator_id 可能为空（历史记录）
+    from sqlalchemy.orm import aliased
+    OperatorUser = aliased(User)
+    
+    result = await db.execute(
+        select(PetExpLog, OperatorUser.nickname)
+        .outerjoin(OperatorUser, PetExpLog.operator_id == OperatorUser.id)
+        .where(PetExpLog.family_id == family_id)
+        .order_by(PetExpLog.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = result.all()
+    
+    # 构建响应
+    log_list = []
+    for row in rows:
+        log = row[0]  # PetExpLog 对象
+        operator_nickname = row[1]  # 操作者昵称（可能为 None）
+        
+        log_list.append({
+            "id": log.id,
+            "exp_amount": log.exp_amount,
+            "source": log.source,
+            "source_name": EXP_SOURCE_NAMES.get(log.source, log.source),
+            "source_detail": log.source_detail,
+            "operator_id": log.operator_id,
+            "operator_nickname": operator_nickname or "系统",
+            "created_at": log.created_at.isoformat() if log.created_at else None
+        })
+    
+    return {
+        "total": total,
+        "logs": log_list,
+        "limit": limit,
+        "offset": offset
+    }
+
+
 # 外部调用接口 - 供其他模块调用增加经验
-async def grant_pet_exp(db: AsyncSession, family_id: int, source: str, multiplier: float = 1.0) -> dict:
+async def grant_pet_exp(db: AsyncSession, family_id: int, source: str, multiplier: float = 1.0, operator_id: int = None, source_detail: str = None) -> dict:
     """
     为宠物增加经验值（供其他模块调用）
     
@@ -434,6 +524,8 @@ async def grant_pet_exp(db: AsyncSession, family_id: int, source: str, multiplie
         family_id: 家庭ID
         source: 经验来源 (deposit, investment, vote, etc.)
         multiplier: 经验倍数
+        operator_id: 操作者用户ID
+        source_detail: 来源详情描述
     
     Returns:
         经验增加结果
@@ -442,4 +534,4 @@ async def grant_pet_exp(db: AsyncSession, family_id: int, source: str, multiplie
     base_exp = EXP_CONFIG.get(source, 10)
     actual_exp = int(base_exp * multiplier)
     
-    return await add_exp(db, pet, actual_exp, source)
+    return await add_exp(db, pet, actual_exp, source, source_detail=source_detail, operator_id=operator_id)

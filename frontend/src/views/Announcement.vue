@@ -57,7 +57,7 @@
 
         <!-- 作者信息 -->
         <div class="author-info">
-          <div class="avatar">{{ item.author_name?.charAt(0) || '?' }}</div>
+          <UserAvatar :userId="item.author_id" :name="item.author_name" :avatarVersion="item.author_avatar_version" :size="40" />
           <div class="author-detail">
             <span class="author-name">{{ item.author_name }}</span>
             <span class="post-time">{{ formatTime(item.created_at) }}</span>
@@ -96,10 +96,10 @@
             :class="{ liked: item.is_liked }"
             @click="toggleLike(item)"
           >
-            {{ item.is_liked ? '❤️' : '🤍' }} {{ item.like_count }}
+            {{ item.is_liked ? '❤️' : '🤍' }} {{ item.likes_count }}
           </button>
           <button class="comment-btn" @click="toggleComments(item.id)">
-            💬 {{ item.comment_count }}
+            💬 {{ item.comments_count }}
           </button>
         </div>
 
@@ -141,6 +141,7 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import { api } from '@/api'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -162,7 +163,8 @@ const loadAnnouncements = async () => {
   loading.value = true
   try {
     const res = await api.get('/announcements')
-    announcements.value = res.data
+    // 后端返回 { total, page, page_size, items: [...] }
+    announcements.value = res.data.items || []
   } catch (err) {
     console.error('获取公告失败:', err)
   } finally {
@@ -275,14 +277,13 @@ const deleteAnnouncement = (id) => {
 // 点赞
 const toggleLike = async (item) => {
   try {
-    if (item.is_liked) {
-      await api.delete(`/announcements/${item.id}/like`)
+    const res = await api.post(`/announcements/${item.id}/like`)
+    if (res.data.action === 'unliked') {
       item.is_liked = false
-      item.like_count--
+      item.likes_count--
     } else {
-      await api.post(`/announcements/${item.id}/like`)
       item.is_liked = true
-      item.like_count++
+      item.likes_count++
     }
   } catch (err) {
     console.error('点赞失败:', err)
@@ -327,7 +328,7 @@ const addComment = async (announcementId) => {
     // 更新评论数
     const announcement = announcements.value.find(a => a.id === announcementId)
     if (announcement) {
-      announcement.comment_count++
+      announcement.comments_count++
     }
   } catch (err) {
     message.error(err.response?.data?.detail || '评论失败')
@@ -342,7 +343,13 @@ const viewImage = (img) => {
 // 格式化时间
 const formatTime = (dateStr) => {
   if (!dateStr) return ''
-  const date = new Date(dateStr)
+  // 后端返回的是 ISO 格式的 UTC 时间，确保正确解析
+  // 如果没有时区标识，添加 Z 表示 UTC
+  let isoStr = dateStr
+  if (!dateStr.endsWith('Z') && !dateStr.includes('+')) {
+    isoStr = dateStr + 'Z'
+  }
+  const date = new Date(isoStr)
   const now = new Date()
   const diff = now - date
   

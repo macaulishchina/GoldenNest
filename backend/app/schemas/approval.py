@@ -20,6 +20,7 @@ class ApprovalRecordResponse(BaseModel):
     request_id: int
     approver_id: int
     approver_nickname: str
+    approver_avatar_version: int = 0  # 审批者头像版本号
     is_approved: bool
     comment: Optional[str] = None
     created_at: datetime
@@ -43,6 +44,7 @@ class ApprovalRequestResponse(BaseModel):
     family_id: int
     requester_id: int
     requester_nickname: str
+    requester_avatar_version: int = 0  # 申请者头像版本号
     request_type: ApprovalRequestType
     title: str
     description: str
@@ -120,8 +122,13 @@ class MemberJoinApprovalCreate(BaseModel):
 
 class MemberRemoveApprovalCreate(BaseModel):
     """创建成员剔除申请"""
-    user_id: int = Field(..., description="要剔除的成员ID")
+    target_user_id: int = Field(..., description="要剔除的成员ID")
     reason: Optional[str] = Field(None, max_length=500, description="剔除原因")
+    
+    @property
+    def user_id(self) -> int:
+        """兼容旧字段名"""
+        return self.target_user_id
 
 
 # ============ 支出申请 ============

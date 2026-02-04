@@ -1,6 +1,7 @@
 """
 股权赠与 API 路由
 """
+import logging
 from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
@@ -62,8 +63,10 @@ async def build_gift_response(db: AsyncSession, gift: EquityGift) -> GiftRespons
         family_id=gift.family_id,
         from_user_id=gift.from_user_id,
         from_user_nickname=from_user.nickname,
+        from_avatar_version=from_user.avatar_version or 0,
         to_user_id=gift.to_user_id,
         to_user_nickname=to_user.nickname,
+        to_avatar_version=to_user.avatar_version or 0,
         amount=gift.amount,
         message=gift.message,
         status=gift.status.value,
@@ -250,6 +253,17 @@ async def respond_to_gift(
             db.add(add_deposit)
         
         gift.status = EquityGiftStatus.ACCEPTED
+        
+        # 宠物经验奖励：赠送股权 +30 EXP（赠送者获得）
+        try:
+            from app.api.pet import grant_pet_exp
+            await grant_pet_exp(
+                db, gift.family_id, "gift", 1, 
+                operator_id=gift.from_user_id,
+                source_detail=f"赠送股权 {gift.amount*100:.1f}%"
+            )  # gift 基础经验是30，multiplier=1
+        except Exception as e:
+            logging.warning(f"Pet EXP grant failed after gift accepted: {e}")
     else:
         gift.status = EquityGiftStatus.REJECTED
     

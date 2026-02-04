@@ -19,8 +19,10 @@ class GiftResponse(BaseModel):
     family_id: int
     from_user_id: int
     from_user_nickname: str
+    from_avatar_version: int = 0  # 发送者头像版本号
     to_user_id: int
     to_user_nickname: str
+    to_avatar_version: int = 0  # 接收者头像版本号
     amount: float
     message: Optional[str]
     status: str

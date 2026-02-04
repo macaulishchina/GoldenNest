@@ -7,6 +7,7 @@ interface User {
   username: string
   nickname: string
   family_id: number | null
+  avatar: string | null
   created_at: string
 }
 

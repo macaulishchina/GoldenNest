@@ -4,7 +4,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
-from sqlalchemy import String, Float, Boolean, DateTime, ForeignKey, Text, Enum as SQLEnum
+from sqlalchemy import String, Float, Boolean, DateTime, ForeignKey, Text, Enum as SQLEnum, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
 
@@ -49,7 +49,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
     nickname: Mapped[str] = mapped_column(String(50))  # 昵称，显示用
-    avatar: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # 头像URL
+    avatar: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 头像 Base64
+    avatar_version: Mapped[int] = mapped_column(Integer, default=0)  # 头像版本号，用于缓存失效
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -418,6 +419,19 @@ class FamilyPet(Base):
     last_fed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)  # 上次喂食时间
     last_checkin_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 上次签到时间
     checkin_streak: Mapped[int] = mapped_column(default=0)  # 连续签到天数
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PetExpLog(Base):
+    """宠物经验获取记录表"""
+    __tablename__ = "pet_exp_logs"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    operator_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)  # 操作者用户ID
+    exp_amount: Mapped[int] = mapped_column()  # 获得的经验值
+    source: Mapped[str] = mapped_column(String(50))  # 来源: daily_checkin, deposit, investment, vote, gift
+    source_detail: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # 详细描述
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

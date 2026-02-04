@@ -202,18 +202,39 @@ async def list_proposals(
         )
         my_vote = result.scalar_one_or_none()
         
+        # 获取每个选项的投票统计（用于已完成提案显示结果）
+        result = await db.execute(
+            select(Vote.option_index, func.count(Vote.id), func.sum(Vote.weight))
+            .where(Vote.proposal_id == p.id)
+            .group_by(Vote.option_index)
+        )
+        vote_stats = {row[0]: {"count": row[1], "weight": row[2] or 0} for row in result.fetchall()}
+        
+        options = json.loads(p.options)
+        votes_summary = []
+        for i, opt in enumerate(options):
+            stat = vote_stats.get(i, {"count": 0, "weight": 0})
+            votes_summary.append({
+                "option": opt,
+                "count": stat["count"],
+                "weight_percent": round(stat["weight"] * 100, 1) if stat["weight"] else 0
+            })
+        
         response.append({
             "id": p.id,
             "title": p.title,
             "description": p.description,
-            "options": json.loads(p.options),
+            "options": options,
             "status": p.status.value if hasattr(p.status, 'value') else p.status,
             "deadline": p.deadline.isoformat(),
             "created_at": p.created_at.isoformat(),
+            "creator_id": creator.id if creator else None,
             "creator_name": creator.nickname if creator else "未知",
+            "creator_avatar_version": creator.avatar_version or 0 if creator else 0,
             "total_members": total_members,
             "voted_count": voted_count,
-            "my_vote": my_vote
+            "my_vote": my_vote,
+            "votes_summary": votes_summary
         })
     
     return response
@@ -260,7 +281,7 @@ async def get_proposal_detail(
     votes_detail = []
     for i, option in enumerate(options):
         option_votes = [v for v, u in votes if v.option_index == i]
-        voters = [{"name": u.nickname, "weight": v.weight} for v, u in votes if v.option_index == i]
+        voters = [{"user_id": u.id, "name": u.nickname, "weight": v.weight, "avatar_version": u.avatar_version or 0} for v, u in votes if v.option_index == i]
         votes_detail.append({
             "option": option,
             "count": len(option_votes),
@@ -269,6 +290,12 @@ async def get_proposal_detail(
     
     # 当前用户的投票
     my_vote = next((v.option_index for v, u in votes if v.user_id == current_user.id), None)
+    
+    # 计算每个选项的权重百分比
+    total_weight = sum(v.weight for v, u in votes) if votes else 0
+    for detail in votes_detail:
+        detail_weight = sum(voter["weight"] for voter in detail["voters"]) if detail["voters"] else 0
+        detail["weight_percent"] = round(detail_weight * 100, 1) if detail_weight else 0
     
     return {
         "id": proposal.id,
@@ -279,7 +306,9 @@ async def get_proposal_detail(
         "deadline": proposal.deadline.isoformat(),
         "created_at": proposal.created_at.isoformat(),
         "closed_at": proposal.closed_at.isoformat() if proposal.closed_at else None,
+        "creator_id": creator.id if creator else None,
         "creator_name": creator.nickname if creator else "未知",
+        "creator_avatar_version": creator.avatar_version or 0 if creator else 0,
         "total_members": total_members,
         "voted_count": len(votes),
         "my_vote": my_vote,

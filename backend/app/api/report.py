@@ -60,9 +60,11 @@ async def calculate_equity_at_date(db: AsyncSession, family_id: int, target_date
         user_deposits = deposits_by_user.get(user.id, 0)
         equity_ratio = (user_deposits / total_deposits * 100) if total_deposits > 0 else 0
         equity_data[str(user.id)] = {
+            "member_id": user.id,
             "name": user.nickname,
             "deposits": user_deposits,
-            "equity_ratio": round(equity_ratio, 2)
+            "equity_ratio": round(equity_ratio, 2),
+            "avatar_version": user.avatar_version or 0
         }
     
     return equity_data
@@ -260,15 +262,19 @@ async def generate_annual_report_data(db: AsyncSession, family_id: int, year: in
     equity_start_list = []
     equity_end_list = []
     for user_id, data in equity_changes.items():
+        # 从 equity_end 获取 avatar_version（因为它是当前最新的数据）
+        avatar_version = equity_end.get(user_id, {}).get("avatar_version", 0)
         equity_start_list.append({
             "member_id": int(user_id),
             "name": data["name"],
-            "percentage": data["start_ratio"]
+            "percentage": data["start_ratio"],
+            "avatar_version": avatar_version
         })
         equity_end_list.append({
             "member_id": int(user_id),
             "name": data["name"],
-            "percentage": data["end_ratio"]
+            "percentage": data["end_ratio"],
+            "avatar_version": avatar_version
         })
     
     # 转换 monthly_data 为前端期望的格式
@@ -341,7 +347,8 @@ async def generate_annual_report_data(db: AsyncSession, family_id: int, year: in
                 "member_id": eq["member_id"],
                 "name": eq["name"],
                 "equity_percentage": eq["percentage"],
-                "dividend_amount": member_dividend
+                "dividend_amount": member_dividend,
+                "avatar_version": eq.get("avatar_version", 0)
             })
     
     return {

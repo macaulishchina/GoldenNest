@@ -116,6 +116,13 @@ class ApprovalService:
         self.db.add(approval)
         await self.db.flush()
         
+        # 宠物经验奖励：参与投票 +10 EXP
+        try:
+            from app.api.pet import grant_pet_exp
+            await grant_pet_exp(self.db, request.family_id, "vote", 1, operator_id=approver_id)  # vote 基础经验是10，multiplier=1
+        except Exception as e:
+            logging.warning(f"Pet EXP grant failed after voting: {e}")
+        
         # 检查审批状态
         await self._check_and_update_status(request)
         
@@ -145,7 +152,8 @@ class ApprovalService:
     async def get_request_response(
         self,
         request: ApprovalRequest,
-        requester_nickname: str
+        requester_nickname: str,
+        requester_avatar_version: int = 0
     ) -> ApprovalRequestResponse:
         """获取申请响应对象"""
         # 获取审批记录
@@ -162,6 +170,7 @@ class ApprovalService:
                 request_id=a.request_id,
                 approver_id=a.approver_id,
                 approver_nickname=u.nickname,
+                approver_avatar_version=u.avatar_version or 0,
                 is_approved=a.is_approved,
                 comment=a.comment,
                 created_at=a.created_at
@@ -176,13 +185,21 @@ class ApprovalService:
         all_members = result.scalars().all()
         all_member_ids = [m.user_id for m in all_members]
         
-        # 计算待审批成员（申请人自己不需要审批，除非是单人家庭）
+        # 计算待审批成员
         approved_user_ids = [a.approver_id for a, _ in approval_rows]
+        
         if len(all_member_ids) == 1:
             # 单人家庭，申请人自己审批
             pending_approvers = [uid for uid in all_member_ids if uid not in approved_user_ids]
+        elif request.request_type == ApprovalRequestType.MEMBER_REMOVE:
+            # 成员剔除：需要管理员同意，申请人如果是管理员也可以自己审批
+            admin_ids = [m.user_id for m in all_members if m.role == "admin"]
+            pending_approvers = [
+                uid for uid in admin_ids
+                if uid not in approved_user_ids
+            ]
         else:
-            # 多人家庭，除申请人外的成员需要审批
+            # 其他申请类型：除申请人外的成员需要审批
             pending_approvers = [
                 uid for uid in all_member_ids
                 if uid != request.requester_id and uid not in approved_user_ids
@@ -196,6 +213,7 @@ class ApprovalService:
             family_id=request.family_id,
             requester_id=request.requester_id,
             requester_nickname=requester_nickname,
+            requester_avatar_version=requester_avatar_version,
             request_type=request.request_type,
             title=request.title,
             description=request.description,
@@ -417,6 +435,18 @@ class ApprovalService:
             )
         except Exception as e:
             logging.warning(f"Achievement check failed after deposit: {e}")
+        
+        # 宠物经验奖励：每100元存款 +1 EXP
+        try:
+            from app.api.pet import grant_pet_exp
+            exp_multiplier = max(1, int(request.amount / 100))  # 至少1点经验
+            await grant_pet_exp(
+                self.db, request.family_id, "deposit", exp_multiplier, 
+                operator_id=request.requester_id,
+                source_detail=f"存款 ¥{request.amount:.0f}"
+            )
+        except Exception as e:
+            logging.warning(f"Pet EXP grant failed after deposit: {e}")
     
     async def _execute_investment_create(self, request: ApprovalRequest, data: Dict[str, Any]) -> None:
         """执行创建理财产品"""
@@ -550,6 +580,18 @@ class ApprovalService:
             )
         except Exception as e:
             logging.warning(f"Achievement check failed after investment income: {e}")
+        
+        # 宠物经验奖励：每10元收益 +1 EXP
+        try:
+            from app.api.pet import grant_pet_exp
+            exp_multiplier = max(1, int(request.amount / 10))  # 至少1点经验
+            await grant_pet_exp(
+                self.db, request.family_id, "investment", exp_multiplier,
+                operator_id=request.requester_id,
+                source_detail=f"理财收益 {investment.name} +¥{request.amount:.0f}"
+            )
+        except Exception as e:
+            logging.warning(f"Pet EXP grant failed after investment income: {e}")
     
     async def _execute_member_join(self, request: ApprovalRequest, data: Dict[str, Any]) -> None:
         """执行成员加入"""

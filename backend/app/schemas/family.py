@@ -26,7 +26,7 @@ class FamilyMemberResponse(BaseModel):
     user_id: int
     username: str
     nickname: str
-    avatar: Optional[str] = None
+    avatar_version: int = 0  # 头像版本号，用于缓存失效
     role: str
     joined_at: datetime
     

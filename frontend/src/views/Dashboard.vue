@@ -97,7 +97,7 @@
         <div class="equity-list">
           <div v-for="member in equity?.members" :key="member.user_id" class="equity-item">
             <div class="member-info">
-              <n-avatar round size="small">{{ member.nickname?.[0] || '?' }}</n-avatar>
+              <UserAvatar :userId="member.user_id" :name="member.nickname" :avatarVersion="member.avatar_version" :size="28" />
               <span class="member-name">{{ member.nickname }}</span>
             </div>
             <div class="member-deposit">
@@ -143,6 +143,7 @@ import { storeToRefs } from 'pinia'
 import { equityApi, familyApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { usePrivacyStore } from '@/stores/privacy'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 const router = useRouter()
 const userStore = useUserStore()

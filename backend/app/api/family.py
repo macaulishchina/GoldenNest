@@ -258,7 +258,7 @@ async def get_family_with_members(family_id: int, db: AsyncSession) -> dict:
             user_id=user.id,
             username=user.username,
             nickname=user.nickname,
-            avatar=user.avatar,
+            avatar_version=user.avatar_version or 0,
             role=member.role,
             joined_at=member.joined_at
         ))

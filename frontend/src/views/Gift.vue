@@ -198,9 +198,7 @@
             >
               <div class="gift-content">
                 <div class="gift-header">
-                  <n-avatar :size="40" round>
-                    {{ gift.from_user_nickname.charAt(0) }}
-                  </n-avatar>
+                  <UserAvatar :userId="gift.from_user_id" :name="gift.from_user_nickname" :avatarVersion="gift.from_avatar_version" :size="40" />
                   <div class="gift-info">
                     <div class="gift-title">
                       <span class="sender-name">{{ gift.from_user_nickname }}</span>
@@ -254,9 +252,7 @@
             >
               <div class="gift-content">
                 <div class="gift-header">
-                  <n-avatar :size="40" round>
-                    {{ gift.to_user_nickname.charAt(0) }}
-                  </n-avatar>
+                  <UserAvatar :userId="gift.to_user_id" :name="gift.to_user_nickname" :avatarVersion="gift.to_avatar_version" :size="40" />
                   <div class="gift-info">
                     <div class="gift-title">
                       送给
@@ -312,6 +308,7 @@ import { useUserStore } from '@/stores/user'
 import { usePrivacyStore } from '@/stores/privacy'
 import { formatShortDateTime } from '@/utils/date'
 import { checkAndShowAchievements } from '@/utils/achievement'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 const message = useMessage()
 const userStore = useUserStore()

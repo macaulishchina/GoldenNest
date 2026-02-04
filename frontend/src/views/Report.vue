@@ -190,7 +190,7 @@
               :key="item.member_id"
             >
               <div class="member-info">
-                <span class="member-avatar">👤</span>
+                <UserAvatar :userId="item.member_id" :name="item.name" :size="32" :avatarVersion="item.avatar_version" />
                 <span class="member-name">{{ item.name }}</span>
                 <span class="member-equity">持股 {{ item.equity_percentage.toFixed(1) }}%</span>
               </div>
@@ -245,6 +245,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { api } from '@/api'
 import { usePrivacyStore } from '@/stores/privacy'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 const message = useMessage()
 const privacyStore = usePrivacyStore()

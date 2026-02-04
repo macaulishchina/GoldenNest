@@ -110,16 +110,62 @@
         </div>
       </div>
 
-      <!-- 喂养提示 -->
-      <div class="tips-section">
-        <h3>💡 经验获取方式</h3>
-        <ul>
-          <li>📅 每日签到: +10~60 EXP (连续签到加成)</li>
-          <li>💰 存款操作: 每100元 +1 EXP</li>
-          <li>📈 投资收益: 每10元收益 +1 EXP</li>
-          <li>🗳️ 参与投票: +20 EXP</li>
-          <li>🎁 赠送股权: +30 EXP</li>
-        </ul>
+      <!-- 经验获取记录 -->
+      <div class="exp-logs-section">
+        <div class="exp-logs-header" @click="toggleExpLogs">
+          <h3>📊 经验获取记录</h3>
+          <span class="toggle-icon" :class="{ expanded: showExpLogs }">▼</span>
+        </div>
+        
+        <div v-if="showExpLogs" class="exp-logs-content">
+          <!-- 经验获取方式说明 -->
+          <div class="tips-box">
+            <h4>💡 经验获取方式</h4>
+            <ul>
+              <li>📅 每日签到: +10~60 EXP (连续签到加成)</li>
+              <li>💰 存款操作: 每100元 +1 EXP</li>
+              <li>📈 投资收益: 每10元收益 +1 EXP</li>
+              <li>🗳️ 参与投票: +20 EXP</li>
+              <li>🎁 赠送股权: +30 EXP</li>
+            </ul>
+          </div>
+          
+          <!-- 经验记录列表 -->
+          <div class="exp-logs-list">
+            <div v-if="expLogsLoading" class="loading-small">
+              <span class="spinner-small"></span>
+              加载中...
+            </div>
+            <template v-else-if="expLogs.length > 0">
+              <div 
+                v-for="log in expLogs" 
+                :key="log.id" 
+                class="exp-log-item"
+              >
+                <div class="log-icon">{{ getSourceIcon(log.source) }}</div>
+                <div class="log-info">
+                  <span class="log-source">
+                    {{ log.source_detail || log.source_name }}
+                  </span>
+                  <span class="log-meta">
+                    <span class="log-operator">{{ log.operator_nickname }}</span>
+                    <span class="log-separator">·</span>
+                    <span class="log-time">{{ formatLogTime(log.created_at) }}</span>
+                  </span>
+                </div>
+                <div class="log-exp">+{{ log.exp_amount }} EXP</div>
+              </div>
+              <div v-if="expLogsTotal > expLogs.length" class="load-more">
+                <button @click="loadMoreExpLogs" :disabled="expLogsLoading">
+                  加载更多 ({{ expLogs.length }}/{{ expLogsTotal }})
+                </button>
+              </div>
+            </template>
+            <div v-else class="no-logs">
+              暂无经验获取记录
+            </div>
+          </div>
+        </div>
       </div>
     </template>
 
@@ -198,6 +244,14 @@ const showRenameModal = ref(false)
 const showLevelUp = ref(false)
 const newName = ref('')
 const levelUpInfo = ref({})
+
+// 经验记录相关状态
+const showExpLogs = ref(false)
+const expLogs = ref([])
+const expLogsTotal = ref(0)
+const expLogsLoading = ref(false)
+const expLogsOffset = ref(0)
+const EXP_LOGS_LIMIT = 20
 
 // 进化阶段
 const evolutionStages = {
@@ -332,6 +386,81 @@ const formatAge = (dateStr) => {
   const now = new Date()
   const days = Math.floor((now - created) / (1000 * 60 * 60 * 24))
   return days + '天'
+}
+
+// 经验记录相关方法
+const toggleExpLogs = async () => {
+  showExpLogs.value = !showExpLogs.value
+  if (showExpLogs.value && expLogs.value.length === 0) {
+    await loadExpLogs()
+  }
+}
+
+const loadExpLogs = async () => {
+  expLogsLoading.value = true
+  try {
+    const res = await api.get('/pet/exp-logs', {
+      params: { limit: EXP_LOGS_LIMIT, offset: 0 }
+    })
+    expLogs.value = res.data.logs
+    expLogsTotal.value = res.data.total
+    expLogsOffset.value = res.data.logs.length
+  } catch (err) {
+    console.error('获取经验记录失败:', err)
+    message.error('获取经验记录失败')
+  } finally {
+    expLogsLoading.value = false
+  }
+}
+
+const loadMoreExpLogs = async () => {
+  if (expLogsLoading.value) return
+  expLogsLoading.value = true
+  try {
+    const res = await api.get('/pet/exp-logs', {
+      params: { limit: EXP_LOGS_LIMIT, offset: expLogsOffset.value }
+    })
+    expLogs.value.push(...res.data.logs)
+    expLogsOffset.value += res.data.logs.length
+  } catch (err) {
+    console.error('加载更多记录失败:', err)
+  } finally {
+    expLogsLoading.value = false
+  }
+}
+
+const getSourceIcon = (source) => {
+  const icons = {
+    'daily_checkin': '📅',
+    'feed': '🍖',
+    'deposit': '💰',
+    'investment': '📈',
+    'vote': '🗳️',
+    'proposal_passed': '✅',
+    'expense_approved': '💳',
+    'gift': '🎁',
+    'gift_sent': '🎁',
+    'achievement_unlock': '🏆'
+  }
+  return icons[source] || '⭐'
+}
+
+const formatLogTime = (dateStr) => {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diff = now - date
+  
+  // 1分钟内
+  if (diff < 60000) return '刚刚'
+  // 1小时内
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`
+  // 24小时内
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`
+  // 7天内
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}天前`
+  // 更早
+  return `${date.getMonth() + 1}/${date.getDate()}`
 }
 
 onMounted(() => {
@@ -655,27 +784,203 @@ onMounted(() => {
   color: #999;
 }
 
-/* 提示区域 */
-.tips-section {
+/* 经验获取记录区域 */
+.exp-logs-section {
+  background: white;
+  border-radius: 16px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  overflow: hidden;
+}
+
+.exp-logs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.exp-logs-header:hover {
   background: #f9f9f9;
-  border-radius: 12px;
-  padding: 16px;
 }
 
-.tips-section h3 {
-  margin: 0 0 12px 0;
-  font-size: 16px;
-}
-
-.tips-section ul {
+.exp-logs-header h3 {
   margin: 0;
-  padding-left: 20px;
+  font-size: 16px;
+  color: #333;
 }
 
-.tips-section li {
-  color: #666;
+.toggle-icon {
+  font-size: 12px;
+  color: #999;
+  transition: transform 0.3s;
+}
+
+.toggle-icon.expanded {
+  transform: rotate(180deg);
+}
+
+.exp-logs-content {
+  padding: 0 20px 20px;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tips-box {
+  background: #fffbeb;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 16px;
+  border: 1px solid #ffeeba;
+}
+
+.tips-box h4 {
+  margin: 0 0 10px 0;
   font-size: 14px;
-  margin: 6px 0;
+  color: #856404;
+}
+
+.tips-box ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.tips-box li {
+  color: #666;
+  font-size: 13px;
+  margin: 4px 0;
+}
+
+.exp-logs-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.loading-small {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  color: #888;
+  font-size: 14px;
+}
+
+.spinner-small {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #ffc107;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.exp-log-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  background: #f9f9f9;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  transition: background 0.2s;
+}
+
+.exp-log-item:hover {
+  background: #f0f0f0;
+}
+
+.log-icon {
+  font-size: 24px;
+  margin-right: 12px;
+  width: 32px;
+  text-align: center;
+}
+
+.log-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.log-source {
+  font-size: 14px;
+  color: #333;
+  font-weight: 500;
+}
+
+.log-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.log-operator {
+  color: #666;
+  font-weight: 500;
+}
+
+.log-separator {
+  color: #ccc;
+}
+
+.log-time {
+  color: #999;
+}
+
+.log-exp {
+  font-size: 14px;
+  font-weight: bold;
+  color: #ffc107;
+  background: #fff9e6;
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+.load-more {
+  text-align: center;
+  padding: 12px 0;
+}
+
+.load-more button {
+  background: none;
+  border: 1px solid #ddd;
+  padding: 8px 20px;
+  border-radius: 20px;
+  color: #666;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.load-more button:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #ccc;
+}
+
+.load-more button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.no-logs {
+  text-align: center;
+  padding: 30px;
+  color: #999;
+  font-size: 14px;
 }
 
 /* 无宠物状态 */

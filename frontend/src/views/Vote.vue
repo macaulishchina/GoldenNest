@@ -54,8 +54,14 @@
         <p class="proposal-desc">{{ proposal.description }}</p>
         
         <div class="proposal-meta">
-          <span class="meta-item">
-            👤 发起人: {{ proposal.creator_name }}
+          <span class="meta-item creator-info">
+            <UserAvatar 
+              :userId="proposal.creator_id" 
+              :name="proposal.creator_name" 
+              :size="20" 
+              :avatarVersion="proposal.creator_avatar_version" 
+            />
+            <span>发起人: {{ proposal.creator_name }}</span>
           </span>
           <span class="meta-item">
             🗳️ {{ proposal.voted_count }}/{{ proposal.total_members }} 已投票
@@ -63,6 +69,28 @@
           <span class="meta-item" v-if="proposal.status === 'voting'">
             ⏰ 截止: {{ formatDate(proposal.deadline) }}
           </span>
+        </div>
+
+        <!-- 投票结果（仅在投票结束后显示） -->
+        <div class="vote-result-summary" v-if="proposal.status !== 'voting' && proposal.votes_summary">
+          <div 
+            v-for="(item, idx) in proposal.votes_summary" 
+            :key="idx" 
+            class="result-bar"
+            :class="{ winner: idx === 0 && proposal.status === 'passed' }"
+          >
+            <div class="result-label">
+              <span>{{ item.option }}</span>
+              <span>{{ item.count }}票 ({{ item.weight_percent }}%)</span>
+            </div>
+            <div class="result-progress">
+              <div 
+                class="result-fill" 
+                :style="{ width: item.weight_percent + '%' }"
+                :class="{ 'agree': idx === 0, 'disagree': idx === 1 }"
+              ></div>
+            </div>
+          </div>
         </div>
 
         <div class="vote-progress">
@@ -135,7 +163,15 @@
           <p class="description">{{ selectedProposal.description }}</p>
           
           <div class="detail-info">
-            <p>👤 发起人: {{ selectedProposal.creator_name }}</p>
+            <div class="info-row creator-row">
+              <UserAvatar 
+                :userId="selectedProposal.creator_id" 
+                :name="selectedProposal.creator_name" 
+                :size="24" 
+                :avatarVersion="selectedProposal.creator_avatar_version" 
+              />
+              <span>发起人: {{ selectedProposal.creator_name }}</span>
+            </div>
             <p>📅 发起时间: {{ formatDate(selectedProposal.created_at) }}</p>
             <p>⏰ 截止时间: {{ formatDate(selectedProposal.deadline) }}</p>
             <p>🗳️ 投票进度: {{ selectedProposal.voted_count }}/{{ selectedProposal.total_members }}</p>
@@ -154,8 +190,11 @@
                 <span class="option-text">{{ detail.option }}</span>
                 <span class="vote-count">{{ detail.count }} 票</span>
               </div>
-              <div class="voters" v-if="detail.voters.length > 0">
-                {{ detail.voters.map(v => v.name).join('、') }}
+              <div class="voters-list" v-if="detail.voters.length > 0">
+                <div class="voter-item" v-for="voter in detail.voters" :key="voter.user_id">
+                  <UserAvatar :userId="voter.user_id" :name="voter.name" :size="24" :avatarVersion="voter.avatar_version" />
+                  <span class="voter-name">{{ voter.name }}</span>
+                </div>
               </div>
               
               <!-- 投票按钮 -->
@@ -183,6 +222,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { api } from '@/api'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 const message = useMessage()
 
@@ -767,6 +807,28 @@ onMounted(() => {
   margin-bottom: 8px;
 }
 
+.voters-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.voter-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  padding: 4px 10px 4px 4px;
+  border-radius: 16px;
+  border: 1px solid #e0e0e0;
+}
+
+.voter-name {
+  font-size: 13px;
+  color: #555;
+}
+
 .btn-vote {
   width: 100%;
   padding: 10px;
@@ -785,5 +847,77 @@ onMounted(() => {
 .btn-vote:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* 发起人信息 */
+.creator-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 投票结果汇总 */
+.vote-result-summary {
+  margin: 12px 0;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.result-bar {
+  margin-bottom: 10px;
+}
+
+.result-bar:last-child {
+  margin-bottom: 0;
+}
+
+.result-bar.winner .result-fill.agree {
+  background: linear-gradient(90deg, #4caf50, #81c784);
+}
+
+.result-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 4px;
+  color: #555;
+}
+
+.result-progress {
+  height: 8px;
+  background: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.result-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.result-fill.agree {
+  background: linear-gradient(90deg, #66bb6a, #a5d6a7);
+}
+
+.result-fill.disagree {
+  background: linear-gradient(90deg, #ef5350, #e57373);
+}
+
+/* 详情页发起人头像 */
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.detail-info .creator-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 </style>
