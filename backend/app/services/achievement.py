@@ -1245,7 +1245,7 @@ class AchievementService:
                     TodoList.family_id == family_id,
                     TodoItem.is_completed == True,
                     TodoItem.completed_by == user_id,
-                    TodoItem.assigned_to == user_id,
+                    TodoItem.assignee_id == user_id,
                     TodoItem.created_by != user_id  # 不是自己创建的
                 )
             )

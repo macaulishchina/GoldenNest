@@ -323,6 +323,32 @@ async def get_pet(
     return build_pet_response(pet)
 
 
+@router.put("", response_model=dict)
+async def update_pet(
+    data: PetRename,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """更新宠物信息（重命名）"""
+    family_id = await get_user_family_id(current_user.id, db)
+    pet = await get_or_create_pet(db, family_id)
+    
+    if len(data.name) < 1 or len(data.name) > 20:
+        raise HTTPException(status_code=400, detail="昵称长度应在1-20个字符之间")
+    
+    old_name = pet.name
+    pet.name = data.name
+    await db.commit()
+    
+    return {
+        "success": True,
+        "message": f"宠物已改名为「{data.name}」",
+        "old_name": old_name,
+        "new_name": data.name,
+        "pet": build_pet_response(pet)
+    }
+
+
 @router.put("/rename", response_model=dict)
 async def rename_pet(
     data: PetRename,

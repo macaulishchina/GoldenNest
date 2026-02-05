@@ -301,6 +301,7 @@ import { familyApi } from '@/api'
 import { getHolidayGreeting } from '@/utils/holiday'
 import { compressImage, getAvatarColor } from '@/utils/avatar'
 import type { MenuOption } from 'naive-ui'
+import { markRaw } from 'vue'
 import { 
   HomeOutline, 
   WalletOutline, 
@@ -349,29 +350,29 @@ function handleResize() {
   isMobile.value = window.innerWidth < 768
 }
 
-// 固定的3个Tab（首页、宠物、审批）
+// 固定的3个Tab（首页、宠物、审批）- 使用 markRaw 避免 Vue 将组件变为响应式
 const fixedTabItems = [
-  { key: 'dashboard', label: '首页', icon: HomeOutline },
-  { key: 'pet', label: '宠物', icon: PawOutline },
-  { key: 'approval', label: '审批', icon: DocumentTextOutline }
+  { key: 'dashboard', label: '首页', icon: markRaw(HomeOutline) },
+  { key: 'pet', label: '宠物', icon: markRaw(PawOutline) },
+  { key: 'approval', label: '审批', icon: markRaw(DocumentTextOutline) }
 ]
 
-// 可选的快捷模块列表（按分类排序：财务管理、家庭事务）
+// 可选的快捷模块列表（按分类排序：财务管理、家庭事务）- 使用 markRaw 包装图标组件
 const availableModules = [
   // 财务管理
-  { key: 'deposit', label: '存款', icon: WalletOutline },
-  { key: 'expense', label: '支出', icon: CardOutline },
-  { key: 'transaction', label: '流水', icon: ListOutline },
-  { key: 'investment', label: '理财', icon: TrendingUpOutline },
-  { key: 'report', label: '报告', icon: StatsChartOutline },
+  { key: 'deposit', label: '存款', icon: markRaw(WalletOutline) },
+  { key: 'expense', label: '支出', icon: markRaw(CardOutline) },
+  { key: 'transaction', label: '流水', icon: markRaw(ListOutline) },
+  { key: 'investment', label: '理财', icon: markRaw(TrendingUpOutline) },
+  { key: 'report', label: '报告', icon: markRaw(StatsChartOutline) },
   // 家庭事务
-  { key: 'equity', label: '股权', icon: PieChartOutline },
-  { key: 'gift', label: '赠与', icon: GiftOutline },
-  { key: 'vote', label: '投票', icon: CheckboxOutline },
-  { key: 'todo', label: '清单', icon: ClipboardOutline },
-  { key: 'calendar', label: '日历', icon: CalendarOutline },
-  { key: 'announcement', label: '公告', icon: MegaphoneOutline },
-  { key: 'achievement', label: '成就', icon: TrophyOutline }
+  { key: 'equity', label: '股权', icon: markRaw(PieChartOutline) },
+  { key: 'gift', label: '赠与', icon: markRaw(GiftOutline) },
+  { key: 'vote', label: '投票', icon: markRaw(CheckboxOutline) },
+  { key: 'todo', label: '清单', icon: markRaw(ClipboardOutline) },
+  { key: 'calendar', label: '日历', icon: markRaw(CalendarOutline) },
+  { key: 'announcement', label: '公告', icon: markRaw(MegaphoneOutline) },
+  { key: 'achievement', label: '成就', icon: markRaw(TrophyOutline) }
 ]
 
 // 用户自定义的快捷模块
@@ -1111,13 +1112,14 @@ onUnmounted(() => {
   z-index: 1999;
 }
 
-/* 气泡菜单 */
+/* 气泡菜单 - 屏幕居中而非相对于按钮居中 */
 .shortcut-popup {
-  position: absolute;
-  bottom: 70px;
+  position: fixed;
+  bottom: calc(60px + env(safe-area-inset-bottom, 0px) + 16px);
   left: 50%;
   transform: translateX(-50%);
-  width: 280px;
+  width: calc(100vw - 32px);
+  max-width: 320px;
   background: white;
   border-radius: 16px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
@@ -1125,11 +1127,11 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* 气泡箭头 */
+/* 气泡箭头 - 指向快捷按钮位置（第4个tab，约60%位置） */
 .popup-arrow {
   position: absolute;
   bottom: -8px;
-  left: 50%;
+  left: 60%;
   transform: translateX(-50%);
   width: 0;
   height: 0;
@@ -1227,5 +1229,16 @@ onUnmounted(() => {
 .popup-leave-from {
   opacity: 1;
   transform: translateX(-50%) translateY(0) scale(1);
+}
+
+/* 超窄屏幕优化（<320px） */
+@media (max-width: 320px) {
+  .shortcut-popup {
+    width: calc(100vw - 16px);
+  }
+  
+  .popup-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 </style>
