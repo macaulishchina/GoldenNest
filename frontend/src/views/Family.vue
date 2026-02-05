@@ -2,80 +2,62 @@
   <div class="page-container">
     <h1 class="page-title"><span class="icon">👨‍👩‍👧‍👦</span> 家庭管理</h1>
     
-    <!-- 个人信息区域 -->
-    <div v-if="hasFamily && currentMember" class="profile-section">
-      <div class="avatar-wrapper" @click="triggerAvatarUpload">
-        <!-- 使用 URL 方式加载头像 -->
-        <img 
-          v-if="userStore.user?.id && !selfAvatarError" 
-          :src="`/api/auth/users/${userStore.user.id}/avatar?v=${userStore.user.avatar_version || 0}&t=${avatarCacheKey}`" 
-          class="avatar-img"
-          alt="头像"
-          @error="selfAvatarError = true"
-        />
-        <!-- 无头像或加载失败时显示首字母 -->
-        <n-avatar 
-          v-else
-          round 
-          :size="56" 
-          :style="{ backgroundColor: getAvatarColor(userStore.user?.nickname || '') }"
-        >
-          {{ userStore.user?.nickname?.[0] || '?' }}
-        </n-avatar>
-        <div class="avatar-edit-hint">
-          <span>📷</span>
-        </div>
-      </div>
-      <input 
-        ref="avatarInputRef" 
-        type="file" 
-        accept="image/jpeg,image/png,image/gif,image/webp" 
-        style="display: none" 
-        @change="handleAvatarChange"
-      />
-      <div class="profile-info">
-        <div class="profile-name">{{ userStore.user?.nickname }}</div>
-        <div class="profile-meta">
-          <n-tag 
-            round 
-            size="small" 
-            :type="currentMember.role === 'admin' ? 'warning' : 'default'"
-            :bordered="false"
-          >
-            {{ currentMember.role === 'admin' ? '👑 管理员' : '👤 成员' }}
-          </n-tag>
-          <span class="greeting">{{ getGreeting() }}</span>
-        </div>
-      </div>
+    <!-- 初始化加载状态 -->
+    <div v-if="initializing" class="initializing-container">
+      <n-spin size="large" />
+      <p class="initializing-text">加载中...</p>
     </div>
     
-    <n-card v-if="!hasFamily" class="card-hover">
-      <n-tabs type="segment">
-        <n-tab-pane name="create" tab="创建家庭">
-          <n-form :model="createForm" style="max-width: 400px; margin-top: 16px">
-            <n-form-item label="家庭名称">
-              <n-input v-model:value="createForm.name" placeholder="如：温馨之家" />
-            </n-form-item>
-            <n-form-item label="储蓄目标">
-              <n-input-number v-model:value="createForm.savings_target" :min="1" style="width: 100%">
-                <template #prefix>¥</template>
-              </n-input-number>
-            </n-form-item>
-            <n-button type="primary" block :loading="loading" @click="handleCreate">创建家庭</n-button>
-          </n-form>
-        </n-tab-pane>
-        <n-tab-pane name="join" tab="加入家庭">
-          <n-form :model="joinForm" style="max-width: 400px; margin-top: 16px">
-            <n-form-item label="邀请码">
-              <n-input v-model:value="joinForm.invite_code" placeholder="请输入邀请码" />
-            </n-form-item>
-            <n-button type="primary" block :loading="loading" @click="handleJoin">加入家庭</n-button>
-          </n-form>
-        </n-tab-pane>
-      </n-tabs>
-    </n-card>
+    <!-- 已有家庭的用户界面 -->
+    <template v-else-if="hasFamily">
+      <!-- 个人信息区域 -->
+      <div v-if="currentMember" class="profile-section">
+        <div class="avatar-wrapper" @click="triggerAvatarUpload">
+          <!-- 使用 URL 方式加载头像 -->
+          <img 
+            v-if="userStore.user?.id && !selfAvatarError" 
+            :src="`/api/auth/users/${userStore.user.id}/avatar?v=${userStore.user.avatar_version || 0}&t=${avatarCacheKey}`" 
+            class="avatar-img"
+            alt="头像"
+            @error="selfAvatarError = true"
+          />
+          <!-- 无头像或加载失败时显示首字母 -->
+          <n-avatar 
+            v-else
+            round 
+            :size="56" 
+            :style="{ backgroundColor: getAvatarColor(userStore.user?.nickname || '') }"
+          >
+            {{ userStore.user?.nickname?.[0] || '?' }}
+          </n-avatar>
+          <div class="avatar-edit-hint">
+            <span>📷</span>
+          </div>
+        </div>
+        <input 
+          ref="avatarInputRef" 
+          type="file" 
+          accept="image/jpeg,image/png,image/gif,image/webp" 
+          style="display: none" 
+          @change="handleAvatarChange"
+        />
+        <div class="profile-info">
+          <div class="profile-name">{{ userStore.user?.nickname }}</div>
+          <div class="profile-meta">
+            <n-tag 
+              round 
+              size="small" 
+              :type="currentMember.role === 'admin' ? 'warning' : 'default'"
+              :bordered="false"
+            >
+              {{ currentMember.role === 'admin' ? '👑 管理员' : '👤 成员' }}
+            </n-tag>
+            <span class="greeting">{{ getGreeting() }}</span>
+          </div>
+        </div>
+      </div>
 
-    <template v-else>
+      <!-- 家庭信息卡片 -->
       <n-card class="card-hover family-info-card">
         <div style="display: flex; justify-content: space-between; align-items: center">
           <div>
@@ -165,6 +147,7 @@
         </n-collapse-item>
       </n-collapse>
 
+      <!-- 家庭成员列表 -->
       <n-card title="家庭成员" class="card-hover">
         <n-list>
           <n-list-item v-for="member in members" :key="member.id">
@@ -206,6 +189,33 @@
         </n-list>
       </n-card>
     </template>
+
+    <!-- 未加入家庭的用户界面 -->
+    <n-card v-else class="card-hover">
+      <n-tabs type="segment">
+        <n-tab-pane name="create" tab="创建家庭">
+          <n-form :model="createForm" style="max-width: 400px; margin-top: 16px">
+            <n-form-item label="家庭名称">
+              <n-input v-model:value="createForm.name" placeholder="如：温馨之家" />
+            </n-form-item>
+            <n-form-item label="储蓄目标">
+              <n-input-number v-model:value="createForm.savings_target" :min="1" style="width: 100%">
+                <template #prefix>¥</template>
+              </n-input-number>
+            </n-form-item>
+            <n-button type="primary" block :loading="loading" @click="handleCreate">创建家庭</n-button>
+          </n-form>
+        </n-tab-pane>
+        <n-tab-pane name="join" tab="加入家庭">
+          <n-form :model="joinForm" style="max-width: 400px; margin-top: 16px">
+            <n-form-item label="邀请码">
+              <n-input v-model:value="joinForm.invite_code" placeholder="请输入邀请码" />
+            </n-form-item>
+            <n-button type="primary" block :loading="loading" @click="handleJoin">加入家庭</n-button>
+          </n-form>
+        </n-tab-pane>
+      </n-tabs>
+    </n-card>
     
     <!-- Webhook 配置弹窗 -->
     <n-modal v-model:show="showWebhookModal" preset="dialog" title="配置企业微信机器人">
@@ -275,6 +285,7 @@ import UserAvatar from '@/components/UserAvatar.vue'
 const message = useMessage()
 const userStore = useUserStore()
 const loading = ref(false)
+const initializing = ref(true) // 初始化状态，等待用户数据加载完成
 const avatarInputRef = ref<HTMLInputElement | null>(null)
 const avatarUploading = ref(false)
 const selfAvatarError = ref(false)
@@ -662,13 +673,38 @@ async function handleTestNotification() {
 }
 
 onMounted(async () => {
-  await loadData()
-  // 加载完家庭数据后再加载通知配置
-  loadNotificationConfig()
+  try {
+    // 如果用户数据还没加载完成，先等待加载
+    if (!userStore.user && userStore.token) {
+      await userStore.fetchUser()
+    }
+    // 加载家庭数据
+    await loadData()
+    // 加载完家庭数据后再加载通知配置
+    loadNotificationConfig()
+  } finally {
+    // 无论成功失败，都关闭初始化状态
+    initializing.value = false
+  }
 })
 </script>
 
 <style scoped>
+/* 初始化加载状态 */
+.initializing-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #64748b;
+}
+
+.initializing-text {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
 /* 个人信息区域 */
 .profile-section {
   display: flex;
