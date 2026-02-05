@@ -33,6 +33,11 @@
       </div>
     </div>
 
+    <!-- 时间筛选器 -->
+    <div class="filter-area">
+      <TimeRangeSelector v-model="timeRange" />
+    </div>
+
     <!-- 加载状态 -->
     <div v-if="loading" class="loading">
       <span class="spinner"></span>
@@ -138,10 +143,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import { api } from '@/api'
 import UserAvatar from '@/components/UserAvatar.vue'
+import TimeRangeSelector from '@/components/TimeRangeSelector.vue'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -151,6 +157,7 @@ const loading = ref(false)
 const publishing = ref(false)
 const announcements = ref([])
 const newContent = ref('')
+const timeRange = ref('month')
 const previewImages = ref([])
 const imageFiles = ref([])
 const activeMenu = ref(null)
@@ -162,7 +169,9 @@ const viewingImage = ref(null)
 const loadAnnouncements = async () => {
   loading.value = true
   try {
-    const res = await api.get('/announcements')
+    const res = await api.get('/announcements', {
+      params: { time_range: timeRange.value }
+    })
     // 后端返回 { total, page, page_size, items: [...] }
     announcements.value = res.data.items || []
   } catch (err) {
@@ -171,6 +180,11 @@ const loadAnnouncements = async () => {
     loading.value = false
   }
 }
+
+// 监听时间范围变化
+watch(timeRange, () => {
+  loadAnnouncements()
+})
 
 // 发布公告
 const publish = async () => {
@@ -390,6 +404,11 @@ onUnmounted(() => {
 
 .page-header p {
   color: #666;
+}
+
+/* 筛选区域 */
+.filter-area {
+  margin-bottom: 16px;
 }
 
 /* 发布区域 */

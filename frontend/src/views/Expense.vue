@@ -113,6 +113,9 @@
       </n-form>
     </n-card>
 
+    <!-- 时间范围选择器 -->
+    <TimeRangeSelector v-model="timeRange" />
+
     <n-card title="申请记录" class="card-hover">
       <!-- 桌面端：表格 -->
       <n-data-table class="desktop-only" :columns="columns" :data="expenses" :loading="loading" :bordered="false" />
@@ -157,11 +160,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, onMounted, h, watch } from 'vue'
 import { useMessage, NButton, NTag, NSpace, NTooltip, NProgress } from 'naive-ui'
 import { approvalApi, familyApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { formatShortDateTime } from '@/utils/date'
+import TimeRangeSelector from '@/components/TimeRangeSelector.vue'
 
 const message = useMessage()
 const userStore = useUserStore()
@@ -169,6 +173,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const expenses = ref<any[]>([])
 const familyMembers = ref<any[]>([])
+const timeRange = ref('month')
 
 const formData = ref({
   title: '',
@@ -351,12 +356,17 @@ async function loadData() {
   loading.value = true
   try {
     // 从审批中心获取支出类型的申请
-    const res = await approvalApi.list({ request_type: 'expense' })
+    const res = await approvalApi.list({ request_type: 'expense', time_range: timeRange.value })
     expenses.value = res.data.items || []
   } finally {
     loading.value = false
   }
 }
+
+// 时间范围变化时重新加载数据
+watch(timeRange, () => {
+  loadData()
+})
 
 async function handleSubmit() {
   if (!formData.value.title || !formData.value.amount || !formData.value.reason) { 

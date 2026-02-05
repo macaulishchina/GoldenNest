@@ -4,12 +4,13 @@
 from datetime import datetime, date, timedelta
 from typing import Optional
 import math
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel
 
 from app.core.database import get_db
+from app.schemas.common import TimeRange, get_time_range_filter
 from app.api.auth import get_current_user
 from app.models.models import User, FamilyMember, FamilyPet, PetExpLog
 
@@ -538,15 +539,24 @@ async def get_exp_sources():
 async def get_exp_logs(
     limit: int = 50,
     offset: int = 0,
+    time_range: TimeRange = Query(TimeRange.DAY, description="时间范围：day/week/month/year/all"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """获取宠物经验获取记录"""
+    """获取宠物经验获取记录（支持时间范围筛选，默认最近一天）"""
     family_id = await get_user_family_id(current_user.id, db)
+    
+    # 时间范围筛选
+    start_time = get_time_range_filter(time_range)
+    
+    # 构建基础查询条件
+    base_conditions = [PetExpLog.family_id == family_id]
+    if start_time:
+        base_conditions.append(PetExpLog.created_at >= start_time)
     
     # 查询记录总数
     count_result = await db.execute(
-        select(func.count()).select_from(PetExpLog).where(PetExpLog.family_id == family_id)
+        select(func.count()).select_from(PetExpLog).where(*base_conditions)
     )
     total = count_result.scalar()
     
@@ -558,7 +568,7 @@ async def get_exp_logs(
     result = await db.execute(
         select(PetExpLog, OperatorUser.nickname)
         .outerjoin(OperatorUser, PetExpLog.operator_id == OperatorUser.id)
-        .where(PetExpLog.family_id == family_id)
+        .where(*base_conditions)
         .order_by(PetExpLog.created_at.desc())
         .limit(limit)
         .offset(offset)

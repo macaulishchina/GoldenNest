@@ -172,6 +172,9 @@
       </n-gi>
     </n-grid>
     
+    <!-- 时间范围选择器 -->
+    <TimeRangeSelector v-model="timeRange" @change="loadData" />
+    
     <!-- 赠与记录 -->
     <n-tabs type="card" animated>
       <n-tab-pane name="received" tab="收到的赠与">
@@ -309,6 +312,7 @@ import { usePrivacyStore } from '@/stores/privacy'
 import { formatShortDateTime } from '@/utils/date'
 import { checkAndShowAchievements } from '@/utils/achievement'
 import UserAvatar from '@/components/UserAvatar.vue'
+import TimeRangeSelector from '@/components/TimeRangeSelector.vue'
 
 const message = useMessage()
 const userStore = useUserStore()
@@ -316,6 +320,7 @@ const privacyStore = usePrivacyStore()
 const loading = ref(false)
 const submitting = ref(false)
 const showSuccessAnimation = ref(false)
+const timeRange = ref('month') // 默认最近一个月
 
 // 数据
 const sentGifts = ref<any[]>([])
@@ -399,7 +404,7 @@ async function loadData() {
   try {
     // 并行加载所有数据
     const [giftListRes, statsRes, familyRes, equityRes] = await Promise.all([
-      giftApi.list(),
+      giftApi.list({ time_range: timeRange.value }),
       giftApi.getStats(),
       familyApi.getMy(),
       equityApi.getSummary()

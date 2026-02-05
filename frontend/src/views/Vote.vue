@@ -231,7 +231,7 @@ const loading = ref(false)
 const creating = ref(false)
 const voting = ref(false)
 const proposals = ref([])
-const currentTab = ref('all')
+const currentTab = ref('voting')
 const showCreateModal = ref(false)
 const selectedProposal = ref(null)
 

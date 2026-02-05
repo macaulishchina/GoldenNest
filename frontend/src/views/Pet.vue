@@ -400,7 +400,7 @@ const loadExpLogs = async () => {
   expLogsLoading.value = true
   try {
     const res = await api.get('/pet/exp-logs', {
-      params: { limit: EXP_LOGS_LIMIT, offset: 0 }
+      params: { limit: EXP_LOGS_LIMIT, offset: 0, time_range: 'day' }
     })
     expLogs.value = res.data.logs
     expLogsTotal.value = res.data.total
@@ -418,7 +418,7 @@ const loadMoreExpLogs = async () => {
   expLogsLoading.value = true
   try {
     const res = await api.get('/pet/exp-logs', {
-      params: { limit: EXP_LOGS_LIMIT, offset: expLogsOffset.value }
+      params: { limit: EXP_LOGS_LIMIT, offset: expLogsOffset.value, time_range: 'day' }
     })
     expLogs.value.push(...res.data.logs)
     expLogsOffset.value += res.data.logs.length

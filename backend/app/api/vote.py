@@ -4,7 +4,7 @@
 from datetime import datetime, timedelta
 from typing import List, Optional
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel
@@ -14,6 +14,7 @@ from app.api.auth import get_current_user
 from app.models.models import (
     User, FamilyMember, Proposal, Vote, ProposalStatus
 )
+from app.schemas.common import TimeRange, get_time_range_filter
 
 router = APIRouter(prefix="/vote", tags=["vote"])
 
@@ -158,10 +159,11 @@ async def create_proposal(
 @router.get("/proposals", response_model=List[dict])
 async def list_proposals(
     status: Optional[str] = None,
+    time_range: TimeRange = Query(TimeRange.MONTH, description="时间范围：day/week/month/year/all"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """获取提案列表"""
+    """获取提案列表（支持时间范围筛选，默认最近一个月）"""
     family_id = await get_user_family_id(current_user.id, db)
     
     # 先检查过期提案
@@ -170,6 +172,12 @@ async def list_proposals(
     query = select(Proposal).where(Proposal.family_id == family_id)
     if status:
         query = query.where(Proposal.status == status)
+    
+    # 时间范围筛选
+    start_time = get_time_range_filter(time_range)
+    if start_time:
+        query = query.where(Proposal.created_at >= start_time)
+    
     query = query.order_by(Proposal.created_at.desc())
     
     result = await db.execute(query)

@@ -4,7 +4,7 @@
 import logging
 from datetime import datetime
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_, func
 
@@ -18,6 +18,7 @@ from app.schemas.gift import (
     GiftListResponse,
     GiftStats,
 )
+from app.schemas.common import TimeRange, get_time_range_filter
 from app.services.calendar import calendar_service
 
 router = APIRouter(prefix="/api/gift", tags=["股权赠与"])
@@ -174,23 +175,29 @@ async def send_gift(
 
 @router.get("/list", response_model=GiftListResponse)
 async def list_gifts(
+    time_range: TimeRange = Query(TimeRange.MONTH, description="时间范围：day/week/month/year/all"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取我的赠与列表（发送和接收的）"""
+    """获取我的赠与列表（发送和接收的，支持时间范围筛选，默认最近一个月）"""
+    # 时间范围筛选
+    start_time = get_time_range_filter(time_range)
+    
     # 获取我发送的赠与
+    sent_query = select(EquityGift).where(EquityGift.from_user_id == current_user.id)
+    if start_time:
+        sent_query = sent_query.where(EquityGift.created_at >= start_time)
     sent_result = await db.execute(
-        select(EquityGift)
-        .where(EquityGift.from_user_id == current_user.id)
-        .order_by(EquityGift.created_at.desc())
+        sent_query.order_by(EquityGift.created_at.desc())
     )
     sent_gifts = sent_result.scalars().all()
     
     # 获取我收到的赠与
+    received_query = select(EquityGift).where(EquityGift.to_user_id == current_user.id)
+    if start_time:
+        received_query = received_query.where(EquityGift.created_at >= start_time)
     received_result = await db.execute(
-        select(EquityGift)
-        .where(EquityGift.to_user_id == current_user.id)
-        .order_by(EquityGift.created_at.desc())
+        received_query.order_by(EquityGift.created_at.desc())
     )
     received_gifts = received_result.scalars().all()
     

@@ -38,6 +38,9 @@
       </div>
     </div>
 
+    <!-- 时间范围选择器 -->
+    <TimeRangeSelector v-model="timeRange" @change="loadApprovals" />
+
     <!-- 操作栏 -->
     <div class="action-bar">
       <div class="filters">
@@ -366,6 +369,7 @@ import { useUserStore } from '@/stores/user'
 import { useApprovalStore } from '@/stores/approval'
 import { checkAndShowAchievements } from '@/utils/achievement'
 import UserAvatar from '@/components/UserAvatar.vue'
+import TimeRangeSelector from '@/components/TimeRangeSelector.vue'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -378,6 +382,7 @@ const submitting = ref(false)
 const showCreateModal = ref(false)
 const filterType = ref('')
 const filterStatus = ref('')
+const timeRange = ref('month')
 const processingApprovalId = ref<number | null>(null)  // 防重复点击：当前正在处理的审批ID
 
 interface ApprovalRecord {
@@ -559,6 +564,7 @@ const loadApprovals = async () => {
     const params: Record<string, string> = {}
     if (filterType.value) params.request_type = filterType.value
     if (filterStatus.value) params.status = filterStatus.value
+    params.time_range = timeRange.value
     
     const response = await approvalApi.list(params)
     approvalList.value = response.data

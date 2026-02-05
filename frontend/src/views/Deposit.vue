@@ -67,6 +67,9 @@
       </div>
     </n-card>
     
+    <!-- 时间范围选择器 -->
+    <TimeRangeSelector v-model="timeRange" @change="loadData" />
+    
     <n-card title="存款记录" class="card-hover">
       <!-- 桌面端：表格 -->
       <n-data-table class="desktop-only" :columns="columns" :data="deposits" :loading="loading" :bordered="false" />
@@ -103,6 +106,7 @@ import { useUserStore } from '@/stores/user'
 import { SendOutline } from '@vicons/ionicons5'
 import { formatShortDateTime } from '@/utils/date'
 import { checkAndShowAchievements } from '@/utils/achievement'
+import TimeRangeSelector from '@/components/TimeRangeSelector.vue'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -111,6 +115,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const deposits = ref<any[]>([])
 const pendingApprovals = ref<any[]>([])
+const timeRange = ref('month')
 const formData = ref({ amount: null as number | null, deposit_date: Date.now(), note: '' })
 
 const columns = [
@@ -162,7 +167,7 @@ async function loadData() {
   loading.value = true
   try {
     const [depositsRes, approvalsRes] = await Promise.all([
-      depositApi.list(),
+      depositApi.list({ time_range: timeRange.value }),
       approvalApi.list({ status: 'pending', request_type: 'deposit' })
     ])
     deposits.value = depositsRes.data

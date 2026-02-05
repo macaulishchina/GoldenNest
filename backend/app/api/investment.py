@@ -2,7 +2,7 @@
 小金库 (Golden Nest) - 理财管理路由
 """
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -12,6 +12,7 @@ from app.schemas.investment import (
     InvestmentCreate, InvestmentUpdate, InvestmentResponse,
     InvestmentIncomeCreate, InvestmentIncomeResponse, InvestmentSummary
 )
+from app.schemas.common import TimeRange, get_time_range_filter
 from app.api.auth import get_current_user
 
 router = APIRouter()
@@ -48,18 +49,25 @@ async def create_investment(
 
 @router.get("/list", response_model=List[InvestmentResponse])
 async def list_investments(
+    time_range: TimeRange = Query(TimeRange.MONTH, description="时间范围：day/week/month/year/all"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """获取理财列表"""
+    """获取理财列表（支持时间范围筛选，默认最近一个月）"""
     import logging
     family_id = await get_user_family_id(current_user.id, db)
     logging.info(f"Listing investments for user_id={current_user.id}, family_id={family_id}")
     
+    # 构建查询
+    query = select(Investment).where(Investment.family_id == family_id)
+    
+    # 时间范围筛选
+    start_time = get_time_range_filter(time_range)
+    if start_time:
+        query = query.where(Investment.created_at >= start_time)
+    
     result = await db.execute(
-        select(Investment)
-        .where(Investment.family_id == family_id)
-        .order_by(Investment.created_at.desc())
+        query.order_by(Investment.created_at.desc())
     )
     investments = result.scalars().all()
     logging.info(f"Found {len(investments)} investments for family_id={family_id}")

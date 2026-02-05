@@ -64,7 +64,8 @@ export const familyApi = {
 export const depositApi = {
   create: (data: { amount: number; deposit_date: string; note?: string }) => 
     api.post('/deposit/create', data),
-  list: () => api.get('/deposit/list')
+  list: (params?: { time_range?: string }) => api.get('/deposit/list', { params }),
+  my: (params?: { time_range?: string }) => api.get('/deposit/my', { params })
 }
 
 export const equityApi = {
@@ -81,7 +82,7 @@ export const investmentApi = {
     end_date?: string
     note?: string
   }) => api.post('/investment/create', data),
-  list: () => api.get('/investment/list'),
+  list: (params?: { time_range?: string }) => api.get('/investment/list', { params }),
   update: (id: number, data: {
     name?: string
     principal?: number
@@ -98,7 +99,7 @@ export const investmentApi = {
 // expenseApi 已废弃，支出申请请使用 approvalApi.createExpense()
 
 export const transactionApi = {
-  list: () => api.get('/transaction/list')
+  list: (params?: { time_range?: string }) => api.get('/transaction/list', { params })
 }
 
 // 成就系统 API
@@ -124,7 +125,7 @@ export const giftApi = {
   send: (data: { to_user_id: number; amount: number; message?: string }) =>
     api.post('/gift/send', data),
   // 获取赠与列表
-  list: () => api.get('/gift/list'),
+  list: (params?: { time_range?: string }) => api.get('/gift/list', { params }),
   // 响应赠与（接受/拒绝）
   respond: (giftId: number, accept: boolean) =>
     api.post(`/gift/${giftId}/respond`, { accept }),
@@ -189,7 +190,7 @@ export const approvalApi = {
     api.post('/approval/member/remove', data),
   
   // 获取申请列表
-  list: (params?: { request_type?: string; status?: string }) =>
+  list: (params?: { request_type?: string; status?: string; time_range?: string }) =>
     api.get('/approval/list', { params }),
   
   // 获取待我审批的申请

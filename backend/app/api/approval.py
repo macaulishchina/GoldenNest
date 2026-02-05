@@ -19,6 +19,7 @@ from app.schemas.approval import (
     InvestmentUpdateApprovalCreate, InvestmentIncomeApprovalCreate,
     MemberJoinApprovalCreate, MemberRemoveApprovalCreate, ExpenseApprovalCreate
 )
+from app.schemas.common import TimeRange, get_time_range_filter
 from app.api.auth import get_current_user
 from app.services.approval import ApprovalService
 
@@ -350,16 +351,22 @@ async def cancel_request(
 async def list_approval_requests(
     request_type: Optional[ApprovalRequestType] = Query(None, description="申请类型"),
     status: Optional[ApprovalRequestStatus] = Query(None, description="申请状态"),
+    time_range: TimeRange = Query(TimeRange.MONTH, description="时间范围：day/week/month/year/all"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """获取申请列表"""
+    """获取申请列表（支持时间范围筛选，默认最近一个月）"""
     family_id = await get_user_family_id(current_user.id, db)
     
     # 构建查询
     query = select(ApprovalRequest, User).join(
         User, ApprovalRequest.requester_id == User.id
     ).where(ApprovalRequest.family_id == family_id)
+    
+    # 时间范围筛选
+    start_time = get_time_range_filter(time_range)
+    if start_time:
+        query = query.where(ApprovalRequest.created_at >= start_time)
     
     if request_type:
         query = query.where(ApprovalRequest.request_type == request_type)

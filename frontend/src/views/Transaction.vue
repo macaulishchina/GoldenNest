@@ -2,6 +2,9 @@
   <div class="page-container">
     <h1 class="page-title"><span class="icon">📝</span> 资金流水</h1>
     
+    <!-- 时间范围选择器 -->
+    <TimeRangeSelector v-model="timeRange" @change="loadData" />
+    
     <n-card class="card-hover">
       <!-- 桌面端：表格 -->
       <n-data-table class="desktop-only" :columns="columns" :data="transactions" :loading="loading" :bordered="false" />
@@ -41,12 +44,14 @@ import { storeToRefs } from 'pinia'
 import { transactionApi } from '@/api'
 import { formatShortDateTime } from '@/utils/date'
 import { usePrivacyStore } from '@/stores/privacy'
+import TimeRangeSelector from '@/components/TimeRangeSelector.vue'
 
 const privacyStore = usePrivacyStore()
 const { privacyMode } = storeToRefs(privacyStore)
 
 const loading = ref(false)
 const transactions = ref<any[]>([])
+const timeRange = ref('month')
 
 // 格式化金额，支持隐私模式
 const formatAmount = (amount: number) => {
@@ -99,7 +104,7 @@ function getTagType(type: string) {
 async function loadData() {
   loading.value = true
   try {
-    const res = await transactionApi.list()
+    const res = await transactionApi.list({ time_range: timeRange.value })
     transactions.value = res.data
   } finally {
     loading.value = false

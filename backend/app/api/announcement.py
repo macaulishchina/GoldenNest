@@ -4,12 +4,13 @@
 from datetime import datetime
 from typing import List, Optional
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 from pydantic import BaseModel
 
 from app.core.database import get_db
+from app.schemas.common import TimeRange, get_time_range_filter
 from app.api.auth import get_current_user
 from app.models.models import (
     User, FamilyMember, Announcement, AnnouncementLike, AnnouncementComment
@@ -184,23 +185,31 @@ async def create_announcement(
 async def list_announcements(
     page: int = 1,
     page_size: int = 20,
+    time_range: TimeRange = Query(TimeRange.MONTH, description="时间范围：day/week/month/year/all"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """获取公告列表"""
+    """获取公告列表（支持时间范围筛选，默认最近一个月）"""
     family_id = await get_user_family_id(current_user.id, db)
     
+    # 时间范围筛选
+    start_time = get_time_range_filter(time_range)
+    
+    # 构建基础查询条件
+    base_conditions = [Announcement.family_id == family_id]
+    if start_time:
+        base_conditions.append(Announcement.created_at >= start_time)
+    
     # 获取总数
-    result = await db.execute(
-        select(func.count(Announcement.id)).where(Announcement.family_id == family_id)
-    )
+    count_query = select(func.count(Announcement.id)).where(*base_conditions)
+    result = await db.execute(count_query)
     total = result.scalar() or 0
     
     # 获取公告列表（置顶优先，然后按时间倒序）
     offset = (page - 1) * page_size
     result = await db.execute(
         select(Announcement)
-        .where(Announcement.family_id == family_id)
+        .where(*base_conditions)
         .order_by(desc(Announcement.is_pinned), desc(Announcement.created_at))
         .offset(offset)
         .limit(page_size)

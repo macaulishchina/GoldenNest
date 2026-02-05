@@ -2,13 +2,14 @@
 小金库 (Golden Nest) - 交易流水路由
 """
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.core.database import get_db
 from app.models.models import Transaction, TransactionType, FamilyMember, User, InvestmentIncome, Investment
 from app.schemas.transaction import TransactionResponse, TransactionSummary, DividendCalculation, MemberDividend
+from app.schemas.common import TimeRange, get_time_range_filter
 from app.api.auth import get_current_user
 from app.services.equity import calculate_family_equity
 
@@ -28,18 +29,23 @@ async def get_user_family_id(user_id: int, db: AsyncSession) -> int:
 
 @router.get("/list", response_model=List[TransactionResponse])
 async def list_transactions(
-    limit: int = 50,
+    time_range: TimeRange = Query(TimeRange.MONTH, description="时间范围：day/week/month/year/all"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """获取交易流水列表"""
+    """获取交易流水列表（支持时间范围筛选，默认最近一个月）"""
     family_id = await get_user_family_id(current_user.id, db)
     
+    # 构建查询
+    query = select(Transaction).where(Transaction.family_id == family_id)
+    
+    # 时间范围筛选
+    start_time = get_time_range_filter(time_range)
+    if start_time:
+        query = query.where(Transaction.created_at >= start_time)
+    
     result = await db.execute(
-        select(Transaction)
-        .where(Transaction.family_id == family_id)
-        .order_by(Transaction.created_at.desc())
-        .limit(limit)
+        query.order_by(Transaction.created_at.desc())
     )
     transactions = result.scalars().all()
     
