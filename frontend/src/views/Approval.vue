@@ -88,6 +88,25 @@
               </span>
               <span>📅 {{ formatDate(item.created_at) }}</span>
             </div>
+            <!-- 支付比例分配（仅支出类型显示） -->
+            <div v-if="item.request_type === 'expense' && item.request_data?.deduction_ratios" class="payment-ratios">
+              <div class="ratios-header">💳 支付比例分配</div>
+              <div class="ratios-list">
+                <div v-for="ratio in getDeductionRatiosArray(item.request_data.deduction_ratios)" :key="ratio.user_id" class="ratio-item">
+                  <div class="member-info">
+                    <UserAvatar :userId="ratio.user_id" :name="getMemberName(ratio.user_id)" :size="24" />
+                    <span class="member-name">{{ getMemberName(ratio.user_id) }}</span>
+                  </div>
+                  <div class="ratio-bar desktop-only">
+                    <div class="bar-bg">
+                      <div class="bar-fill" :style="{ width: (ratio.ratio * 100) + '%' }"></div>
+                    </div>
+                    <span class="ratio-text">{{ (ratio.ratio * 100).toFixed(1) }}%</span>
+                  </div>
+                  <div class="amount-text">¥{{ formatAmount(item.amount * ratio.ratio) }} <span class="ratio-suffix">({{ (ratio.ratio * 100).toFixed(1) }}%)</span></div>
+                </div>
+              </div>
+            </div>
             <div class="progress-bar">
               <div class="progress" :style="{ width: getProgressWidth(item) }"></div>
               <span class="progress-text">{{ getProgressText(item) }}</span>
@@ -140,6 +159,25 @@
                 {{ item.requester_nickname }}
               </span>
               <span>📅 {{ formatDate(item.created_at) }}</span>
+            </div>
+            <!-- 支付比例分配（仅支出类型显示） -->
+            <div v-if="item.request_type === 'expense' && item.request_data?.deduction_ratios" class="payment-ratios">
+              <div class="ratios-header">💳 支付比例分配</div>
+              <div class="ratios-list">
+                <div v-for="ratio in getDeductionRatiosArray(item.request_data.deduction_ratios)" :key="ratio.user_id" class="ratio-item">
+                  <div class="member-info">
+                    <UserAvatar :userId="ratio.user_id" :name="getMemberName(ratio.user_id)" :size="24" />
+                    <span class="member-name">{{ getMemberName(ratio.user_id) }}</span>
+                  </div>
+                  <div class="ratio-bar desktop-only">
+                    <div class="bar-bg">
+                      <div class="bar-fill" :style="{ width: (ratio.ratio * 100) + '%' }"></div>
+                    </div>
+                    <span class="ratio-text">{{ (ratio.ratio * 100).toFixed(1) }}%</span>
+                  </div>
+                  <div class="amount-text">¥{{ formatAmount(item.amount * ratio.ratio) }}<span class="ratio-suffix"> ({{ (ratio.ratio * 100).toFixed(1) }}%)</span></div>
+                </div>
+              </div>
             </div>
             <!-- 审批进度 -->
             <div v-if="item.status === 'pending'" class="progress-bar">
@@ -288,7 +326,7 @@
             <div class="form-group">
               <label>各成员扣减比例 (%)</label>
               <div class="ratio-list">
-                <div v-for="(item, index) in createForm.deduction_ratios" :key="item.user_id" class="ratio-item">
+                <div v-for="(item, index) in createForm.deduction_ratios" :key="item.user_id" class="ratio-input-item">
                   <span class="member-name">{{ getMemberNickname(item.user_id) }}</span>
                   <input 
                     :value="item.ratio"
@@ -325,12 +363,14 @@ import { ref, onMounted, computed, h } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import { approvalApi, investmentApi, familyApi } from '@/api'
 import { useUserStore } from '@/stores/user'
+import { useApprovalStore } from '@/stores/approval'
 import { checkAndShowAchievements } from '@/utils/achievement'
 import UserAvatar from '@/components/UserAvatar.vue'
 
 const message = useMessage()
 const dialog = useDialog()
 const userStore = useUserStore()
+const approvalStore = useApprovalStore()
 const currentUserId = computed(() => userStore.user?.id)
 
 const loading = ref(false)
@@ -600,7 +640,10 @@ const doApproval = async (id: number, isApproved: boolean, reason: string) => {
     message.success(isApproved ? '已同意该申请' : '已拒绝该申请')
     loadApprovals()
     loadPendingApprovals()
-    
+
+    // 刷新导航徽章计数
+    await approvalStore.fetchPendingCount()
+
     // 审批通过后检查成就
     if (isApproved) {
       setTimeout(() => checkAndShowAchievements(), 500)
@@ -767,6 +810,25 @@ const getTypeClass = (type: string) => {
 // 判断是否是成员相关的申请类型（不显示金额）
 const isMemberRequest = (type: string) => {
   return ['member_join', 'member_remove'].includes(type)
+}
+
+// 获取成员昵称
+const getMemberName = (userId: number) => {
+  const member = familyMembers.value.find(m => m.user_id === userId)
+  return member?.nickname || '未知成员'
+}
+
+// 将 deduction_ratios 对象格式转换为数组格式
+// 后端存储格式: { "user_id": ratio, ... } 例如 { "1": 0.5, "2": 0.5 }
+// 前端期望格式: [{ user_id: 1, ratio: 0.5 }, { user_id: 2, ratio: 0.5 }]
+const getDeductionRatiosArray = (deductionRatios: Record<string, number> | undefined) => {
+  if (!deductionRatios || typeof deductionRatios !== 'object') {
+    return []
+  }
+  return Object.entries(deductionRatios).map(([userId, ratio]) => ({
+    user_id: parseInt(userId),
+    ratio: Number(ratio)
+  }))
 }
 
 // 获取审批进度的描述文本
@@ -996,6 +1058,155 @@ onMounted(() => {
   font-size: 13px;
   color: #888;
   margin-bottom: 12px;
+}
+
+/* 支付比例分配 - 桌面端卡片式布局 */
+.payment-ratios {
+  background: linear-gradient(135deg, #fef9e7, #fef3c7);
+  border-radius: 16px;
+  padding: 20px;
+  margin: 16px 0;
+  border: 1px solid rgba(251, 191, 36, 0.2);
+}
+
+.ratios-header {
+  font-size: 14px;
+  font-weight: 600;
+  color: #92400e;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ratios-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ratio-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  background: white;
+  padding: 14px 20px;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.ratio-item:hover {
+  background: #fefefe;
+}
+
+.member-info {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.member-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+/* 桌面端：比例和金额组合靠右 */
+.ratio-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.bar-bg {
+  display: none;
+}
+
+.bar-fill {
+  display: none;
+}
+
+.ratio-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #b45309;
+  background: #fef3c7;
+  padding: 4px 10px;
+  border-radius: 6px;
+  min-width: unset;
+}
+
+.amount-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: #16a34a;
+  min-width: 90px;
+  text-align: right;
+}
+
+/* 桌面端隐藏括号百分比 */
+.ratio-suffix {
+  display: none;
+}
+
+/* 移动端支付比例分配布局优化 - 单行紧凑式 */
+@media (max-width: 767px) {
+  .payment-ratios {
+    padding: 10px;
+  }
+
+  .ratios-header {
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+
+  .ratios-list {
+    gap: 6px;
+  }
+
+  .ratio-item {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 16px !important;
+  }
+
+  .member-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .member-name {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 移动端隐藏进度条（包含里面所有内容） */
+  .ratio-bar.desktop-only {
+    display: none !important;
+  }
+
+  /* 移动端显示括号百分比 */
+  .ratio-suffix {
+    display: inline;
+    font-size: 12px;
+    color: #d97706;
+    font-weight: 500;
+  }
+
+  .amount-text {
+    font-size: 14px;
+    min-width: unset;
+    white-space: nowrap;
+  }
 }
 
 .progress-bar {
@@ -1247,14 +1458,14 @@ onMounted(() => {
 
 .btn-secondary:hover { background: #e5e7eb; }
 
-/* 支出比例列表 */
+/* 支出比例列表（弹窗用） */
 .ratio-list {
   background: #f9fafb;
   border-radius: 8px;
   padding: 12px;
 }
 
-.ratio-item {
+.ratio-list .ratio-input-item {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1262,7 +1473,7 @@ onMounted(() => {
   border-bottom: 1px solid #e5e7eb;
 }
 
-.ratio-item:last-child {
+.ratio-list .ratio-input-item:last-child {
   border-bottom: none;
 }
 
@@ -1506,8 +1717,8 @@ onMounted(() => {
     min-height: 48px;
   }
   
-  /* 比例输入 */
-  .ratio-item {
+  /* 比例输入（弹窗用） */
+  .ratio-list .ratio-input-item {
     flex-wrap: wrap;
   }
   

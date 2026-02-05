@@ -18,7 +18,7 @@
         <span v-show="!collapsed" class="logo-text">小金库</span>
       </div>
       
-      <n-menu 
+      <n-menu
         :collapsed="collapsed"
         :collapsed-width="64"
         :collapsed-icon-size="22"
@@ -81,16 +81,25 @@
         <!-- 内容区包装器 - 固定60px高度，不受safe-area影响 -->
         <div class="mobile-tabbar-inner">
           <!-- 前3个固定Tab -->
-          <div 
-            v-for="tab in fixedTabItems" 
+          <div
+            v-for="tab in fixedTabItems"
             :key="tab.key"
             class="tabbar-item"
             :class="{ active: isTabActive(tab.key) }"
             @click="handleTabClick(tab.key)"
           >
-            <n-icon :size="24">
-              <component :is="tab.icon" />
-            </n-icon>
+            <div style="position: relative">
+              <n-icon :size="24">
+                <component :is="tab.icon" />
+              </n-icon>
+              <!-- 审批中心徽章 -->
+              <div
+                v-if="tab.key === 'approval' && approvalStore.pendingCount > 0"
+                class="tabbar-badge"
+              >
+                {{ approvalStore.pendingCount > 99 ? '99+' : approvalStore.pendingCount }}
+              </div>
+            </div>
             <span class="tabbar-label">{{ tab.label }}</span>
           </div>
           
@@ -209,6 +218,13 @@
               <div class="drawer-menu-item" @click="navigateAndClose('/approval')">
                 <n-icon :size="20"><DocumentTextOutline /></n-icon>
                 <span>审批中心</span>
+                <n-badge
+                  v-if="approvalStore.pendingCount > 0"
+                  :value="approvalStore.pendingCount"
+                  :max="99"
+                  type="error"
+                  style="margin-left: auto"
+                />
               </div>
               <div class="drawer-menu-item" @click="navigateAndClose('/deposit')">
                 <n-icon :size="20"><WalletOutline /></n-icon>
@@ -293,10 +309,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, h, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useMessage, NIcon } from 'naive-ui'
+import { useMessage, NIcon, NBadge } from 'naive-ui'
 import { useUserStore } from '@/stores/user'
+import { useApprovalStore } from '@/stores/approval'
 import { familyApi } from '@/api'
 import { getHolidayGreeting } from '@/utils/holiday'
 import { compressImage, getAvatarColor } from '@/utils/avatar'
@@ -333,6 +350,7 @@ const router = useRouter()
 const route = useRoute()
 const message = useMessage()
 const userStore = useUserStore()
+const approvalStore = useApprovalStore()
 
 const collapsed = ref(false)
 const family = ref<any>(null)
@@ -511,8 +529,27 @@ function renderIcon(icon: any) {
   return () => h(NIcon, null, { default: () => h(icon) })
 }
 
-// 菜单选项 - 3大分类：财务管理、家庭事务、系统设置
-const menuOptions: MenuOption[] = [
+// 自定义渲染审批中心菜单项（带徽章）
+function renderApprovalLabel() {
+  return h(
+    'div',
+    { style: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%' } },
+    [
+      h('span', '审批中心'),
+      approvalStore.pendingCount > 0
+        ? h(NBadge, {
+            value: approvalStore.pendingCount,
+            type: 'error',
+            max: 99,
+            showZero: false
+          })
+        : null
+    ]
+  )
+}
+
+// 菜单选项 - 3大分类:财务管理、家庭事务、系统设置
+const menuOptions = computed<MenuOption[]>(() => [
   {
     label: '仪表盘',
     key: 'dashboard',
@@ -528,7 +565,7 @@ const menuOptions: MenuOption[] = [
     icon: renderIcon(CashOutline),
     children: [
       {
-        label: '审批中心',
+        label: renderApprovalLabel,
         key: 'approval',
         icon: renderIcon(DocumentTextOutline)
       },
@@ -627,7 +664,7 @@ const menuOptions: MenuOption[] = [
       }
     ]
   }
-]
+])
 
 function handleMenuClick(key: string) {
   if (key === 'dashboard') {
@@ -727,10 +764,25 @@ async function loadFamily() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('resize', handleResize)
   loadFamily()
   loadCustomShortcut()
+
+  // 初始加载审批徽章计数
+  if (userStore.isLoggedIn) {
+    await approvalStore.fetchPendingCount()
+  }
+})
+
+// 路由变化时刷新审批计数
+watch(() => route.path, async (newPath, oldPath) => {
+  if (oldPath === '/approval' && userStore.isLoggedIn) {
+    // 从审批页面离开，延迟刷新计数
+    setTimeout(() => {
+      approvalStore.fetchPendingCount()
+    }, 300)
+  }
 })
 
 onUnmounted(() => {
@@ -963,6 +1015,23 @@ onUnmounted(() => {
 .tabbar-label {
   font-size: 11px;
   line-height: 1;
+}
+
+/* 移动端 tabbar 徽章 */
+.tabbar-badge {
+  position: absolute;
+  top: -4px;
+  right: -8px;
+  background: #f5222d;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+  line-height: 1.2;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 /* ============================================
