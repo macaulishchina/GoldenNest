@@ -22,6 +22,7 @@ from app.schemas.approval import (
 from app.schemas.common import TimeRange, get_time_range_filter
 from app.api.auth import get_current_user
 from app.services.approval import ApprovalService
+from app.services.notification import NotificationType, send_approval_notification
 
 router = APIRouter()
 
@@ -64,6 +65,14 @@ async def create_deposit_approval(
     )
     
     await db.commit()
+    
+    # 发送通知（多人家庭才需要通知）
+    member_count_result = await db.execute(
+        select(FamilyMember).where(FamilyMember.family_id == family_id)
+    )
+    if len(member_count_result.scalars().all()) > 1:
+        await send_approval_notification(db, NotificationType.APPROVAL_CREATED, request)
+    
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
@@ -130,6 +139,14 @@ async def create_expense_approval(
     )
     
     await db.commit()
+    
+    # 发送通知（多人家庭才需要通知）
+    member_count_result = await db.execute(
+        select(FamilyMember).where(FamilyMember.family_id == family_id)
+    )
+    if len(member_count_result.scalars().all()) > 1:
+        await send_approval_notification(db, NotificationType.APPROVAL_CREATED, request)
+    
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
@@ -164,6 +181,14 @@ async def create_investment_create_approval(
     )
     
     await db.commit()
+    
+    # 发送通知（多人家庭才需要通知）
+    member_count_result = await db.execute(
+        select(FamilyMember).where(FamilyMember.family_id == family_id)
+    )
+    if len(member_count_result.scalars().all()) > 1:
+        await send_approval_notification(db, NotificationType.APPROVAL_CREATED, request)
+    
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
@@ -276,6 +301,14 @@ async def approve_request(
     """同意申请"""
     try:
         service = ApprovalService(db)
+        
+        # 获取申请状态（用于判断是否状态变更）
+        pre_result = await db.execute(
+            select(ApprovalRequest).where(ApprovalRequest.id == request_id)
+        )
+        pre_request = pre_result.scalar_one_or_none()
+        pre_status = pre_request.status if pre_request else None
+        
         request = await service.approve_request(
             request_id=request_id,
             approver_id=current_user.id,
@@ -290,6 +323,15 @@ async def approve_request(
         requester = result.scalar_one()
         
         await db.commit()
+        
+        # 发送通知
+        if request.status == ApprovalRequestStatus.APPROVED and pre_status == ApprovalRequestStatus.PENDING:
+            # 申请已完成（全员同意）
+            await send_approval_notification(db, NotificationType.APPROVAL_COMPLETED, request)
+        else:
+            # 有人投了同意票
+            await send_approval_notification(db, NotificationType.APPROVAL_APPROVED, request, approver=current_user)
+        
         return await service.get_request_response(request, requester.nickname, requester.avatar_version or 0)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -323,6 +365,10 @@ async def reject_request(
         requester = result.scalar_one()
         
         await db.commit()
+        
+        # 发送拒绝通知
+        await send_approval_notification(db, NotificationType.APPROVAL_REJECTED, request, approver=current_user)
+        
         return await service.get_request_response(request, requester.nickname, requester.avatar_version or 0)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -340,9 +386,72 @@ async def cancel_request(
         request = await service.cancel_request(request_id, current_user.id)
         
         await db.commit()
+        
+        # 发送取消通知
+        await send_approval_notification(db, NotificationType.APPROVAL_CANCELLED, request)
+        
         return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+class ReminderResponse(BaseModel):
+    success: bool
+    message: str
+
+
+@router.post("/{request_id}/remind", response_model=ReminderResponse)
+async def remind_approval(
+    request_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    催促审核
+    向企业微信发送催促通知，提醒其他成员尽快审批
+    """
+    from app.services.notification import NotificationService
+    
+    family_id = await get_user_family_id(current_user.id, db)
+    
+    # 获取申请信息
+    result = await db.execute(
+        select(ApprovalRequest).where(
+            ApprovalRequest.id == request_id,
+            ApprovalRequest.family_id == family_id
+        )
+    )
+    request = result.scalar_one_or_none()
+    if not request:
+        raise HTTPException(status_code=404, detail="申请不存在")
+    
+    # 只有待处理的申请才能催促
+    if request.status != ApprovalRequestStatus.PENDING:
+        raise HTTPException(status_code=400, detail="只有待处理的申请才能催促")
+    
+    # 获取申请人信息
+    result = await db.execute(
+        select(User).where(User.id == request.requester_id)
+    )
+    requester = result.scalar_one_or_none()
+    if not requester:
+        raise HTTPException(status_code=404, detail="申请人信息不存在")
+    
+    # 获取家庭信息
+    result = await db.execute(
+        select(Family).where(Family.id == family_id)
+    )
+    family = result.scalar_one_or_none()
+    if not family:
+        raise HTTPException(status_code=404, detail="家庭信息不存在")
+    
+    # 发送催促通知
+    try:
+        service = NotificationService(db)
+        await service.notify_approval_reminder(request, family, requester, current_user)
+        return ReminderResponse(success=True, message="催促通知已发送")
+    except Exception as e:
+        return ReminderResponse(success=False, message=f"发送失败: {str(e)}")
 
 
 # ==================== 查询接口 ====================

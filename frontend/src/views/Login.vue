@@ -44,12 +44,13 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useMessage, type FormInst } from 'naive-ui'
 import { authApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
+const route = useRoute()
 const message = useMessage()
 const userStore = useUserStore()
 
@@ -80,7 +81,9 @@ async function handleLogin() {
     userStore.setToken(res.data.access_token)
     await userStore.fetchUser()
     message.success('欢迎回来！🎉')
-    router.push('/')
+    // 登录成功后跳转到原始页面或首页
+    const redirect = route.query.redirect as string || '/'
+    router.push(redirect)
   } catch (e: any) {
     message.error(e.response?.data?.detail || '登录失败')
   } finally {

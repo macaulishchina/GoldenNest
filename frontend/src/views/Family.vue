@@ -76,7 +76,7 @@
     </n-card>
 
     <template v-else>
-      <n-card class="card-hover" style="margin-bottom: 24px">
+      <n-card class="card-hover family-info-card">
         <div style="display: flex; justify-content: space-between; align-items: center">
           <div>
             <h2 style="margin: 0; font-size: 20px">{{ family?.name }}</h2>
@@ -85,6 +85,85 @@
           <n-button size="small" @click="copyInviteCode">复制邀请码</n-button>
         </div>
       </n-card>
+
+      <!-- 通知配置（仅管理员可见） -->
+      <n-collapse v-if="isCurrentUserAdmin" class="notification-collapse" :default-expanded-names="[]">
+        <n-collapse-item title="🔔 通知配置" name="notification">
+          <template #header-extra>
+            <n-tag v-if="notificationConfig.enabled && notificationConfig.hasWebhook" type="success" size="small">
+              已启用
+            </n-tag>
+            <n-tag v-else type="default" size="small">
+              未配置
+            </n-tag>
+          </template>
+          <n-spin :show="notificationLoading">
+            <div class="notification-config-compact">
+              <div class="config-row">
+                <span class="config-label">启用通知</span>
+                <n-switch 
+                  v-model:value="notificationConfig.enabled" 
+                  :loading="notificationSaving"
+                  size="small"
+                  @update:value="handleNotificationToggle"
+                >
+                  <template #checked>开</template>
+                  <template #unchecked>关</template>
+                </n-switch>
+              </div>
+              
+              <div class="config-row">
+                <span class="config-label">外网地址</span>
+                <div class="config-value">
+                  <n-input 
+                    v-model:value="externalUrlForm.url" 
+                    placeholder="http://localhost:8000"
+                    size="small"
+                    style="width: 200px;"
+                    @blur="handleSaveExternalUrl"
+                    @keyup.enter="handleSaveExternalUrl"
+                  />
+                  <span class="hint-text-inline">用于通知链接</span>
+                </div>
+              </div>
+              
+              <div class="config-row">
+                <span class="config-label">企业微信机器人</span>
+                <div class="config-value">
+                  <template v-if="notificationConfig.hasWebhook">
+                    <n-tag type="success" size="small">已配置</n-tag>
+                    <span class="webhook-url-masked">{{ notificationConfig.maskedUrl }}</span>
+                    <n-button size="tiny" quaternary @click="showWebhookModal = true">修改</n-button>
+                    <n-popconfirm @positive-click="handleDeleteWebhook">
+                      <template #trigger>
+                        <n-button size="tiny" type="error" quaternary>删除</n-button>
+                      </template>
+                      确定删除 Webhook 配置吗？
+                    </n-popconfirm>
+                  </template>
+                  <template v-else>
+                    <n-button type="primary" size="tiny" @click="showWebhookModal = true">
+                      配置 Webhook
+                    </n-button>
+                    <span class="hint-text-inline">推送审批通知</span>
+                  </template>
+                </div>
+              </div>
+              
+              <div v-if="notificationConfig.hasWebhook" class="config-row">
+                <span class="config-label">测试</span>
+                <n-button 
+                  size="tiny" 
+                  :loading="testingNotification"
+                  @click="handleTestNotification"
+                >
+                  发送测试消息
+                </n-button>
+              </div>
+            </div>
+          </n-spin>
+        </n-collapse-item>
+      </n-collapse>
 
       <n-card title="家庭成员" class="card-hover">
         <n-list>
@@ -128,6 +207,38 @@
       </n-card>
     </template>
     
+    <!-- Webhook 配置弹窗 -->
+    <n-modal v-model:show="showWebhookModal" preset="dialog" title="配置企业微信机器人">
+      <template #default>
+        <div style="padding: 16px 0;">
+          <n-alert type="info" style="margin-bottom: 16px;">
+            <template #header>如何获取 Webhook URL？</template>
+            <ol style="margin: 8px 0 0; padding-left: 20px; line-height: 1.8;">
+              <li>在企业微信群聊中，点击右上角「...」</li>
+              <li>选择「群机器人」→「添加」</li>
+              <li>创建一个新机器人，复制 Webhook URL</li>
+            </ol>
+          </n-alert>
+          <n-form-item label="Webhook URL">
+            <n-input 
+              v-model:value="webhookForm.url" 
+              type="textarea"
+              placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
+              :rows="3"
+            />
+          </n-form-item>
+        </div>
+      </template>
+      <template #action>
+        <n-space>
+          <n-button @click="showWebhookModal = false">取消</n-button>
+          <n-button type="primary" :loading="webhookSaving" @click="handleSaveWebhook">
+            保存配置
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
     <!-- 剔除确认弹窗 -->
     <n-modal v-model:show="showRemoveModal" preset="dialog" title="确认剔除成员">
       <template #default>
@@ -202,6 +313,23 @@ const showRemoveModal = ref(false)
 const removingMember = ref<any>(null)
 const removeReason = ref('')
 const removingLoading = ref(false)
+
+// 通知配置相关状态
+const notificationLoading = ref(false)
+const notificationSaving = ref(false)
+const testingNotification = ref(false)
+const showWebhookModal = ref(false)
+const webhookForm = ref({ url: '' })
+const webhookSaving = ref(false)
+const notificationConfig = ref({
+  enabled: true,
+  hasWebhook: false,
+  maskedUrl: ''
+})
+
+// 外网地址配置
+const externalUrlForm = ref({ url: '' })
+const externalUrlSaving = ref(false)
 
 const createForm = ref({ name: '', savings_target: 2000000 })
 const joinForm = ref({ invite_code: '' })
@@ -393,7 +521,151 @@ function readFileAsBase64(file: File): Promise<string> {
   })
 }
 
-onMounted(loadData)
+// ========== 通知配置相关 ==========
+
+// 加载通知配置
+async function loadNotificationConfig() {
+  if (!hasFamily.value || !isCurrentUserAdmin.value) return
+  
+  notificationLoading.value = true
+  try {
+    const res = await familyApi.getNotificationConfig()
+    notificationConfig.value = {
+      enabled: res.data.notification_enabled,
+      hasWebhook: res.data.has_wechat_webhook,
+      maskedUrl: res.data.wechat_webhook_url || ''
+    }
+    // 加载外网地址配置
+    externalUrlForm.value.url = res.data.external_base_url || ''
+  } catch (e: any) {
+    console.error('Failed to load notification config:', e)
+  } finally {
+    notificationLoading.value = false
+  }
+}
+
+// 保存外网地址配置
+let lastSavedExternalUrl = ''
+async function handleSaveExternalUrl() {
+  const url = externalUrlForm.value.url.trim()
+  
+  // 如果没有变化，不保存
+  if (url === lastSavedExternalUrl) return
+  
+  // 如果为空，允许清空
+  if (!url) {
+    externalUrlSaving.value = true
+    try {
+      await familyApi.updateNotificationConfig({ external_base_url: '' })
+      lastSavedExternalUrl = ''
+      message.success('外网地址已清除')
+    } catch (e: any) {
+      message.error(e.response?.data?.detail || '保存失败')
+    } finally {
+      externalUrlSaving.value = false
+    }
+    return
+  }
+  
+  // 验证 URL 格式
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    message.warning('请输入有效的 URL（需以 http:// 或 https:// 开头）')
+    return
+  }
+  
+  externalUrlSaving.value = true
+  try {
+    await familyApi.updateNotificationConfig({ external_base_url: url })
+    lastSavedExternalUrl = url
+    message.success('外网地址已保存')
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    externalUrlSaving.value = false
+  }
+}
+
+// 切换通知开关
+async function handleNotificationToggle(enabled: boolean) {
+  notificationSaving.value = true
+  try {
+    await familyApi.updateNotificationConfig({ notification_enabled: enabled })
+    message.success(enabled ? '已开启通知' : '已关闭通知')
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '保存失败')
+    // 恢复原值
+    notificationConfig.value.enabled = !enabled
+  } finally {
+    notificationSaving.value = false
+  }
+}
+
+// 保存 Webhook 配置
+async function handleSaveWebhook() {
+  if (!webhookForm.value.url) {
+    message.warning('请输入 Webhook URL')
+    return
+  }
+  
+  if (!webhookForm.value.url.startsWith('https://qyapi.weixin.qq.com/')) {
+    message.warning('请输入有效的企业微信 Webhook URL')
+    return
+  }
+  
+  webhookSaving.value = true
+  try {
+    const res = await familyApi.updateNotificationConfig({ 
+      wechat_webhook_url: webhookForm.value.url 
+    })
+    notificationConfig.value = {
+      ...notificationConfig.value,
+      hasWebhook: res.data.has_wechat_webhook,
+      maskedUrl: res.data.wechat_webhook_url || ''
+    }
+    showWebhookModal.value = false
+    webhookForm.value.url = ''
+    message.success('Webhook 配置已保存')
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    webhookSaving.value = false
+  }
+}
+
+// 删除 Webhook 配置
+async function handleDeleteWebhook() {
+  try {
+    await familyApi.deleteWebhook()
+    notificationConfig.value.hasWebhook = false
+    notificationConfig.value.maskedUrl = ''
+    message.success('Webhook 配置已删除')
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '删除失败')
+  }
+}
+
+// 测试通知
+async function handleTestNotification() {
+  testingNotification.value = true
+  try {
+    const res = await familyApi.testNotification()
+    if (res.data.success) {
+      message.success(res.data.message || '测试消息发送成功')
+    } else {
+      message.warning(res.data.message || '发送失败')
+    }
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '测试失败')
+  } finally {
+    testingNotification.value = false
+  }
+}
+
+onMounted(async () => {
+  await loadData()
+  // 加载完家庭数据后再加载通知配置
+  loadNotificationConfig()
+})
 </script>
 
 <style scoped>
@@ -476,6 +748,101 @@ onMounted(loadData)
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 通知配置区域 */
+.notification-config {
+  min-height: 100px;
+}
+
+.webhook-config {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.webhook-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.webhook-url-masked {
+  font-size: 12px;
+  color: #64748b;
+  word-break: break-all;
+  max-width: 300px;
+}
+
+.hint-text {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-left: 8px;
+}
+
+/* 家庭信息卡片 */
+.family-info-card {
+  margin-bottom: 16px;
+}
+
+/* 通知配置折叠面板 */
+.notification-collapse {
+  margin-bottom: 16px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.notification-collapse :deep(.n-collapse-item) {
+  margin-top: 0 !important;
+}
+
+.notification-collapse :deep(.n-collapse-item__header) {
+  padding: 12px 16px !important;
+  font-weight: 500;
+}
+
+.notification-collapse :deep(.n-collapse-item__header-main) {
+  padding-top: 0 !important;
+}
+
+.notification-collapse :deep(.n-collapse-item__content-inner) {
+  padding: 12px 16px 16px;
+}
+
+/* 紧凑配置行样式 */
+.notification-config-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.config-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
+}
+
+.config-label {
+  flex-shrink: 0;
+  width: 100px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.config-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.hint-text-inline {
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 /* 移动端响应式 */

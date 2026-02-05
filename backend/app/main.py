@@ -2,12 +2,14 @@
 小金库 (Golden Nest) - FastAPI 主入口
 """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
 from app.core.database import init_db
 from app.api import auth, family, deposit, equity, investment, transaction, achievement, gift, vote, pet, announcement, report, approval, todo, calendar
+from app.services.notification import set_external_base_url, detect_external_url_from_headers
 
 
 @asynccontextmanager
@@ -31,6 +33,38 @@ app = FastAPI(
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json"
 )
+
+# 外网地址检测中间件
+class ExternalUrlMiddleware(BaseHTTPMiddleware):
+    """
+    自动检测外网地址并存储到请求上下文中
+    
+    支持的请求头：
+    - Origin: 浏览器发送的源地址（最可靠）
+    - X-Forwarded-Host: 反向代理转发的主机名
+    - X-Forwarded-Proto: 反向代理转发的协议
+    - Host: 直接访问时的主机名
+    """
+    
+    async def dispatch(self, request: Request, call_next):
+        # 从请求头检测外网地址
+        external_url = detect_external_url_from_headers(
+            host=request.headers.get("host"),
+            forwarded_host=request.headers.get("x-forwarded-host"),
+            forwarded_proto=request.headers.get("x-forwarded-proto"),
+            x_original_host=request.headers.get("x-original-host"),
+            origin=request.headers.get("origin"),
+        )
+        
+        if external_url:
+            set_external_base_url(external_url)
+        
+        response = await call_next(request)
+        return response
+
+
+# 添加中间件（注意顺序：后添加的先执行）
+app.add_middleware(ExternalUrlMiddleware)
 
 # 配置CORS
 app.add_middleware(

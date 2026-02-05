@@ -12,6 +12,12 @@ const router = createRouter({
       meta: { requiresAuth: false }
     },
     {
+      path: '/register',
+      name: 'Register',
+      component: () => import('@/views/Login.vue'),
+      meta: { requiresAuth: false }
+    },
+    {
       path: '/',
       component: () => import('@/views/Layout.vue'),
       meta: { requiresAuth: true },
@@ -87,6 +93,10 @@ const router = createRouter({
           component: () => import('@/views/Approval.vue')
         },
         {
+          path: 'approvals',
+          redirect: '/approval'
+        },
+        {
           path: 'todo',
           name: 'Todo',
           component: () => import('@/views/Todo.vue')
@@ -97,6 +107,11 @@ const router = createRouter({
           component: () => import('@/views/Calendar.vue')
         }
       ]
+    },
+    // 404 捕获 - 所有未匹配的路由重定向到首页
+    {
+      path: '/:pathMatch(.*)*',
+      redirect: '/'
     }
   ]
 })
@@ -106,8 +121,13 @@ router.beforeEach((to, _from, next) => {
   const userStore = useUserStore()
   
   if (to.meta.requiresAuth && !userStore.isLoggedIn) {
-    next('/login')
+    // 未登录访问需要认证的页面，跳转到登录页并保存原始路径
+    next({
+      path: '/login',
+      query: { redirect: to.fullPath }
+    })
   } else if (!to.meta.requiresAuth && userStore.isLoggedIn && (to.name === 'Login' || to.name === 'Register')) {
+    // 已登录用户访问登录/注册页，重定向到首页
     next('/')
   } else {
     next()

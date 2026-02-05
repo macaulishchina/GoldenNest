@@ -77,6 +77,11 @@ class Family(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # 通知配置
+    wechat_webhook_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # 企业微信机器人 Webhook URL
+    notification_enabled: Mapped[bool] = mapped_column(default=True)  # 是否启用通知
+    external_base_url: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # 外网访问地址，用于通知中的链接
+    
     # 关联关系
     members: Mapped[List["FamilyMember"]] = relationship(back_populates="family")
     deposits: Mapped[List["Deposit"]] = relationship(back_populates="family")

@@ -158,6 +158,9 @@ docker logs -f golden-nest-frontend
 docker-compose logs --tail=100 backend
 docker-compose logs --tail=100 frontend
 
+# 数据库升级
+cd backend
+alembic upgrade head
 # 访问 http://localhost
 ```
 

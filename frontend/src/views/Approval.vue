@@ -148,9 +148,20 @@
             <span class="type-badge" :class="getTypeClass(item.request_type)">
               {{ getTypeLabel(item.request_type) }}
             </span>
-            <span class="status-badge" :class="item.status">
-              {{ getStatusLabel(item.status) }}
-            </span>
+            <div class="header-right">
+              <span class="status-badge" :class="item.status">
+                {{ getStatusLabel(item.status) }}
+              </span>
+              <button 
+                v-if="item.status === 'pending'"
+                @click.stop="handleRemind(item.id)" 
+                class="btn-remind-small"
+                :disabled="remindingId === item.id"
+                :title="'发送催促通知'"
+              >
+                {{ remindingId === item.id ? '⏳' : '⏰ 催促' }}
+              </button>
+            </div>
           </div>
           <div class="card-body">
             <h3>{{ item.title }}</h3>
@@ -201,8 +212,12 @@
               </div>
             </div>
           </div>
-          <div class="card-actions" v-if="item.status === 'pending' && item.requester_id === currentUserId">
-            <button @click="handleCancel(item.id)" class="btn-cancel">
+          <div class="card-actions" v-if="item.status === 'pending'">
+            <button 
+              v-if="item.requester_id === currentUserId"
+              @click="handleCancel(item.id)" 
+              class="btn-cancel"
+            >
               🚫 取消申请
             </button>
           </div>
@@ -384,6 +399,7 @@ const filterType = ref('')
 const filterStatus = ref('')
 const timeRange = ref('month')
 const processingApprovalId = ref<number | null>(null)  // 防重复点击：当前正在处理的审批ID
+const remindingId = ref<number | null>(null)  // 催促中的申请ID
 
 interface ApprovalRecord {
   id: number
@@ -679,6 +695,25 @@ const handleCancel = async (id: number) => {
       }
     }
   })
+}
+
+const handleRemind = async (id: number) => {
+  if (remindingId.value !== null) return
+  
+  remindingId.value = id
+  try {
+    const response = await approvalApi.remind(id)
+    if (response.data.success) {
+      message.success('催促通知已发送到企业微信')
+    } else {
+      message.warning(response.data.message || '发送失败')
+    }
+  } catch (error: unknown) {
+    const errMsg = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '催促失败'
+    message.error(errMsg)
+  } finally {
+    remindingId.value = null
+  }
 }
 
 const submitCreate = async () => {
@@ -1021,6 +1056,36 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-remind-small {
+  padding: 4px 10px;
+  background: #f59e0b;
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-remind-small:hover {
+  background: #d97706;
+  transform: scale(1.02);
+}
+
+.btn-remind-small:disabled {
+  background: #fcd34d;
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
 .type-badge {
   padding: 4px 12px;
   border-radius: 20px;
@@ -1322,6 +1387,29 @@ onMounted(() => {
 }
 
 .btn-cancel:hover { background: #e5e7eb; }
+
+.btn-remind {
+  padding: 6px 12px;
+  background: #f59e0b;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-remind:hover { background: #d97706; }
+
+.btn-remind:disabled {
+  background: #fcd34d;
+  cursor: not-allowed;
+  opacity: 0.8;
+}
 
 /* 区块标题 */
 .all-approvals h2 {

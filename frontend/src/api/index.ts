@@ -58,7 +58,15 @@ export const familyApi = {
   getMy: () => api.get('/family/my'),
   update: (data: { name?: string; savings_target?: number; equity_rate?: number }) =>
     api.put('/family/update', data),
-  refreshInviteCode: () => api.post('/family/refresh-invite-code')
+  refreshInviteCode: () => api.post('/family/refresh-invite-code'),
+  
+  // 通知配置
+  getNotificationConfig: () => api.get('/family/notification/config'),
+  updateNotificationConfig: (data: { notification_enabled?: boolean; wechat_webhook_url?: string; external_base_url?: string }) =>
+    api.put('/family/notification/config', data),
+  testNotification: (webhook_url?: string) => 
+    api.post('/family/notification/test', { webhook_url }),
+  deleteWebhook: () => api.delete('/family/notification/webhook')
 }
 
 export const depositApi = {
@@ -207,5 +215,8 @@ export const approvalApi = {
     api.post(`/approval/${id}/reject`, { reason }),
   
   // 取消申请
-  cancel: (id: number) => api.post(`/approval/${id}/cancel`)
+  cancel: (id: number) => api.post(`/approval/${id}/cancel`),
+  
+  // 催促审核
+  remind: (id: number) => api.post(`/approval/${id}/remind`)
 }

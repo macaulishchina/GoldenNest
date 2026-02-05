@@ -9,7 +9,10 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.models.models import Family, FamilyMember, User
-from app.schemas.family import FamilyCreate, FamilyUpdate, FamilyResponse, FamilyMemberResponse, JoinFamilyRequest
+from app.schemas.family import (
+    FamilyCreate, FamilyUpdate, FamilyResponse, FamilyMemberResponse, JoinFamilyRequest,
+    NotificationConfigResponse, NotificationConfigUpdate, NotificationTestRequest
+)
 from app.api.auth import get_current_user
 from app.services.achievement import AchievementService
 
@@ -272,3 +275,207 @@ async def get_family_with_members(family_id: int, db: AsyncSession) -> dict:
         created_at=family.created_at,
         members=members
     )
+
+
+# ==================== 通知配置 API ====================
+
+def mask_webhook_url(url: str) -> str:
+    """对 Webhook URL 进行脱敏处理"""
+    if not url:
+        return ""
+    # 保留前缀和最后8个字符
+    if len(url) > 50:
+        return url[:40] + "****" + url[-8:]
+    return url[:20] + "****"
+
+
+@router.get("/notification/config", response_model=NotificationConfigResponse)
+async def get_notification_config(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取通知配置"""
+    # 获取用户的家庭
+    result = await db.execute(
+        select(FamilyMember).where(FamilyMember.user_id == current_user.id)
+    )
+    membership = result.scalar_one_or_none()
+    if not membership:
+        raise HTTPException(status_code=404, detail="您还没有加入任何家庭")
+    
+    # 获取家庭信息
+    result = await db.execute(
+        select(Family).where(Family.id == membership.family_id)
+    )
+    family = result.scalar_one()
+    
+    return NotificationConfigResponse(
+        notification_enabled=family.notification_enabled,
+        wechat_webhook_url=mask_webhook_url(family.wechat_webhook_url) if family.wechat_webhook_url else None,
+        has_wechat_webhook=bool(family.wechat_webhook_url),
+        external_base_url=family.external_base_url
+    )
+
+
+@router.put("/notification/config", response_model=NotificationConfigResponse)
+async def update_notification_config(
+    config_data: NotificationConfigUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """更新通知配置（仅管理员）"""
+    # 获取用户的家庭成员记录
+    result = await db.execute(
+        select(FamilyMember).where(FamilyMember.user_id == current_user.id)
+    )
+    membership = result.scalar_one_or_none()
+    if not membership:
+        raise HTTPException(status_code=404, detail="您还没有加入任何家庭")
+    
+    if membership.role != "admin":
+        raise HTTPException(status_code=403, detail="只有管理员可以修改通知配置")
+    
+    # 获取家庭
+    result = await db.execute(
+        select(Family).where(Family.id == membership.family_id)
+    )
+    family = result.scalar_one()
+    
+    # 更新配置
+    if config_data.notification_enabled is not None:
+        family.notification_enabled = config_data.notification_enabled
+    
+    if config_data.wechat_webhook_url is not None:
+        # 验证 Webhook URL 格式
+        if config_data.wechat_webhook_url:
+            if not config_data.wechat_webhook_url.startswith("https://qyapi.weixin.qq.com/"):
+                raise HTTPException(
+                    status_code=400, 
+                    detail="无效的企业微信 Webhook URL，必须以 https://qyapi.weixin.qq.com/ 开头"
+                )
+        family.wechat_webhook_url = config_data.wechat_webhook_url or None
+    
+    if config_data.external_base_url is not None:
+        # 验证外网地址格式（必须以 http:// 或 https:// 开头）
+        if config_data.external_base_url:
+            url = config_data.external_base_url.rstrip("/")
+            if not (url.startswith("http://") or url.startswith("https://")):
+                raise HTTPException(
+                    status_code=400,
+                    detail="无效的外网地址，必须以 http:// 或 https:// 开头"
+                )
+            family.external_base_url = url
+        else:
+            family.external_base_url = None
+    
+    await db.commit()
+    
+    return NotificationConfigResponse(
+        notification_enabled=family.notification_enabled,
+        wechat_webhook_url=mask_webhook_url(family.wechat_webhook_url) if family.wechat_webhook_url else None,
+        has_wechat_webhook=bool(family.wechat_webhook_url),
+        external_base_url=family.external_base_url
+    )
+
+
+@router.post("/notification/test")
+async def test_notification(
+    test_data: NotificationTestRequest = NotificationTestRequest(),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    测试通知功能
+    发送一条测试消息到配置的 Webhook
+    """
+    import httpx
+    
+    # 获取用户的家庭
+    result = await db.execute(
+        select(FamilyMember).where(FamilyMember.user_id == current_user.id)
+    )
+    membership = result.scalar_one_or_none()
+    if not membership:
+        raise HTTPException(status_code=404, detail="您还没有加入任何家庭")
+    
+    # 获取家庭信息
+    result = await db.execute(
+        select(Family).where(Family.id == membership.family_id)
+    )
+    family = result.scalar_one()
+    
+    # 确定使用的 Webhook URL
+    webhook_url = test_data.webhook_url or family.wechat_webhook_url
+    
+    if not webhook_url:
+        raise HTTPException(status_code=400, detail="未配置企业微信 Webhook URL")
+    
+    if not webhook_url.startswith("https://qyapi.weixin.qq.com/"):
+        raise HTTPException(status_code=400, detail="无效的企业微信 Webhook URL")
+    
+    # 构建测试消息
+    test_message = {
+        "msgtype": "markdown",
+        "markdown": {
+            "content": f"""### 🧪 小金库通知测试
+
+**测试消息**
+
+> 家庭：{family.name}
+> 测试人：{current_user.nickname}
+> 时间：收到此消息表示配置成功
+
+<font color="info">恭喜！您的企业微信通知已配置成功</font>"""
+        }
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(webhook_url, json=test_message)
+            response.raise_for_status()
+            
+            result = response.json()
+            if result.get("errcode") == 0:
+                return {
+                    "success": True,
+                    "message": "测试消息发送成功，请检查您的企业微信群"
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"发送失败: {result.get('errmsg', '未知错误')}"
+                }
+                
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=500, detail=f"请求失败: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"发送失败: {str(e)}")
+
+
+@router.delete("/notification/webhook")
+async def delete_webhook(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """删除企业微信 Webhook 配置（仅管理员）"""
+    # 获取用户的家庭成员记录
+    result = await db.execute(
+        select(FamilyMember).where(FamilyMember.user_id == current_user.id)
+    )
+    membership = result.scalar_one_or_none()
+    if not membership:
+        raise HTTPException(status_code=404, detail="您还没有加入任何家庭")
+    
+    if membership.role != "admin":
+        raise HTTPException(status_code=403, detail="只有管理员可以删除 Webhook 配置")
+    
+    # 获取家庭并清除配置
+    result = await db.execute(
+        select(Family).where(Family.id == membership.family_id)
+    )
+    family = result.scalar_one()
+    family.wechat_webhook_url = None
+    
+    await db.commit()
+    
+    return {"success": True, "message": "Webhook 配置已删除"}

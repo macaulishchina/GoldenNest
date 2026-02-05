@@ -15,6 +15,7 @@ from app.models.models import (
 )
 from app.schemas.approval import ApprovalRequestResponse, ApprovalRecordResponse
 from app.services.calendar import calendar_service
+from app.services.notification import NotificationService, NotificationType, send_approval_notification
 
 
 class ApprovalService:

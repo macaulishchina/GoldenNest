@@ -51,3 +51,28 @@ class FamilyResponse(BaseModel):
 class JoinFamilyRequest(BaseModel):
     """加入家庭请求"""
     invite_code: str = Field(..., description="邀请码")
+
+
+# ==================== 通知配置 ====================
+
+class NotificationConfigResponse(BaseModel):
+    """通知配置响应"""
+    notification_enabled: bool = Field(default=True, description="是否启用通知")
+    wechat_webhook_url: Optional[str] = Field(None, description="企业微信机器人 Webhook URL（脱敏显示）")
+    has_wechat_webhook: bool = Field(default=False, description="是否已配置企业微信 Webhook")
+    external_base_url: Optional[str] = Field(None, description="外网访问地址，用于通知中的链接")
+    
+    class Config:
+        from_attributes = True
+
+
+class NotificationConfigUpdate(BaseModel):
+    """更新通知配置请求"""
+    notification_enabled: Optional[bool] = Field(None, description="是否启用通知")
+    wechat_webhook_url: Optional[str] = Field(None, max_length=500, description="企业微信机器人 Webhook URL")
+    external_base_url: Optional[str] = Field(None, max_length=200, description="外网访问地址（如 http://192.168.1.100:8000）")
+
+
+class NotificationTestRequest(BaseModel):
+    """测试通知请求"""
+    webhook_url: Optional[str] = Field(None, description="要测试的 Webhook URL（可选，不填则使用当前配置）")
