@@ -19,7 +19,7 @@ from contextvars import ContextVar
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.models.models import ApprovalRequest, ApprovalRequestType, ApprovalRequestStatus, User, Family
+from app.models.models import ApprovalRequest, ApprovalRequestType, ApprovalRequestStatus, User, Family, EquityGift
 
 
 # ==================== 外网地址上下文 ====================
@@ -92,6 +92,12 @@ class NotificationType(str, Enum):
     APPROVAL_CANCELLED = "approval_cancelled"    # 申请被取消
     APPROVAL_REMINDER = "approval_reminder"      # 催促审核提醒
     
+    # 股权赠送相关
+    GIFT_SENT = "gift_sent"                      # 收到股权赠送
+    GIFT_ACCEPTED = "gift_accepted"              # 赠送被接受
+    GIFT_REJECTED = "gift_rejected"              # 赠送被拒绝
+    GIFT_CANCELLED = "gift_cancelled"            # 赠送被取消
+    
     # 其他通知类型（预留扩展）
     MEMBER_JOINED = "member_joined"              # 新成员加入
     MEMBER_REMOVED = "member_removed"            # 成员被移除
@@ -109,11 +115,12 @@ class NotificationContext:
     title: str
     content: str
     amount: Optional[float] = None
-    requester_name: Optional[str] = None
-    approver_name: Optional[str] = None
+    requester_name: Optional[str] = None   # 发送者/申请人
+    approver_name: Optional[str] = None    # 接收者/审批人
     request_type: Optional[str] = None
-    request_id: Optional[int] = None  # 审批请求 ID，用于生成详情链接
-    base_url: Optional[str] = None    # 外网基础 URL
+    request_id: Optional[int] = None       # 审批请求 ID，用于生成详情链接
+    gift_id: Optional[int] = None          # 股权赠送 ID，用于生成详情链接
+    base_url: Optional[str] = None         # 外网基础 URL
     extra_data: Optional[Dict[str, Any]] = None
     
     def get_approval_url(self) -> Optional[str]:
@@ -121,6 +128,15 @@ class NotificationContext:
         if self.base_url and self.request_id:
             # 前端路由：/approvals?id=xxx 或 /approvals#id=xxx
             return f"{self.base_url}/approvals?highlight={self.request_id}"
+        return None
+    
+    def get_gift_url(self) -> Optional[str]:
+        """获取股权赠送页面 URL"""
+        if self.base_url:
+            # 前端路由：/gift 或 /gift?id=xxx
+            if self.gift_id:
+                return f"{self.base_url}/gift?highlight={self.gift_id}"
+            return f"{self.base_url}/gift"
         return None
 
 
@@ -173,6 +189,11 @@ class WeChatWorkChannel(NotificationChannel):
         NotificationType.APPROVAL_COMPLETED: "🎉 已完成",
         NotificationType.APPROVAL_CANCELLED: "🚫 已取消",
         NotificationType.APPROVAL_REMINDER: "⏰ 催促审核",
+        # 股权赠送
+        NotificationType.GIFT_SENT: "🎁 股权赠送",
+        NotificationType.GIFT_ACCEPTED: "✅ 赠送已接受",
+        NotificationType.GIFT_REJECTED: "❌ 赠送被拒绝",
+        NotificationType.GIFT_CANCELLED: "🚫 赠送已取消",
     }
     
     def is_configured(self, config: Dict[str, Any]) -> bool:
@@ -224,6 +245,81 @@ class WeChatWorkChannel(NotificationChannel):
     
     def _build_markdown_message(self, context: NotificationContext) -> str:
         """构建企业微信 Markdown 格式消息"""
+        # 判断是否为股权赠送通知
+        gift_types = {
+            NotificationType.GIFT_SENT,
+            NotificationType.GIFT_ACCEPTED,
+            NotificationType.GIFT_REJECTED,
+            NotificationType.GIFT_CANCELLED,
+        }
+        
+        if context.notification_type in gift_types:
+            return self._build_gift_markdown(context)
+        else:
+            return self._build_approval_markdown(context)
+    
+    def _build_gift_markdown(self, context: NotificationContext) -> str:
+        """构建股权赠送通知的 Markdown 消息"""
+        status_label = self.STATUS_LABELS.get(context.notification_type, "🎁 股权赠送")
+        amount_percent = context.extra_data.get("amount_percent", 0) if context.extra_data else 0
+        
+        # 基础消息头
+        lines = [
+            f"### {status_label}",
+            f"**{context.title}**",
+            "",
+        ]
+        
+        # 家庭信息
+        lines.append(f"> 家庭：{context.family_name}")
+        
+        # 赠送比例（高亮显示）
+        lines.append(f"> 比例：<font color=\"warning\">{amount_percent:.2f}%</font>")
+        
+        # 根据通知类型显示不同的人员信息
+        if context.notification_type == NotificationType.GIFT_SENT:
+            # 收到赠送：显示发送者
+            lines.append(f"> 赠送人：<font color=\"info\">{context.requester_name}</font>")
+            lines.append(f"> 接收人：{context.approver_name}")
+        elif context.notification_type == NotificationType.GIFT_ACCEPTED:
+            # 赠送被接受：显示接受者
+            lines.append(f"> 赠送人：{context.requester_name}")
+            lines.append(f"> 接收人：<font color=\"info\">{context.approver_name}</font> ✅")
+        elif context.notification_type == NotificationType.GIFT_REJECTED:
+            # 赠送被拒绝：显示拒绝者
+            lines.append(f"> 赠送人：{context.requester_name}")
+            lines.append(f"> 接收人：<font color=\"warning\">{context.approver_name}</font> ❌")
+        elif context.notification_type == NotificationType.GIFT_CANCELLED:
+            # 赠送被取消：显示取消者
+            lines.append(f"> 赠送人：<font color=\"warning\">{context.requester_name}</font>")
+            lines.append(f"> 接收人：{context.approver_name}")
+        
+        # 添加内容（祝福语等）
+        if context.content:
+            lines.append("")
+            lines.append(context.content)
+        
+        # 添加详情链接
+        gift_url = context.get_gift_url()
+        if gift_url:
+            lines.append("")
+            lines.append(f"📎 [查看详情]({gift_url})")
+        
+        # 额外提示
+        if context.notification_type == NotificationType.GIFT_SENT:
+            lines.append("")
+            if gift_url:
+                lines.append("<font color=\"info\">点击上方链接接受或拒绝赠送</font>")
+            else:
+                lines.append("<font color=\"info\">请登录小金库处理此赠送</font>")
+        elif context.notification_type == NotificationType.GIFT_ACCEPTED:
+            lines.append("")
+            lines.append("<font color=\"info\">股权已自动转移</font>")
+        
+        return "\n".join(lines)
+    
+    def _build_approval_markdown(self, context: NotificationContext) -> str:
+        """构建审批通知的 Markdown 消息"""
         status_label = self.STATUS_LABELS.get(context.notification_type, "📋 通知")
         
         # 基础消息头
@@ -456,6 +552,96 @@ class NotificationService:
         )
         await self._send_to_all_channels(context)
     
+    # ==================== 股权赠送通知 ====================
+    
+    async def notify_gift_sent(
+        self,
+        gift: EquityGift,
+        from_user: User,
+        to_user: User,
+        family: Family
+    ) -> None:
+        """通知：收到股权赠送"""
+        context = NotificationContext(
+            notification_type=NotificationType.GIFT_SENT,
+            family_id=family.id,
+            family_name=family.name,
+            title=f"🎁 收到股权赠送",
+            content=f"祝福语：{gift.message}" if gift.message else "",
+            requester_name=from_user.nickname,
+            approver_name=to_user.nickname,
+            gift_id=gift.id,
+            base_url=get_external_base_url(),
+            extra_data={"amount_percent": gift.amount * 100},
+        )
+        await self._send_to_all_channels(context)
+    
+    async def notify_gift_accepted(
+        self,
+        gift: EquityGift,
+        from_user: User,
+        to_user: User,
+        family: Family
+    ) -> None:
+        """通知：股权赠送被接受"""
+        context = NotificationContext(
+            notification_type=NotificationType.GIFT_ACCEPTED,
+            family_id=family.id,
+            family_name=family.name,
+            title=f"✅ 股权赠送已被接受",
+            content="股权转移已完成",
+            requester_name=from_user.nickname,
+            approver_name=to_user.nickname,
+            gift_id=gift.id,
+            base_url=get_external_base_url(),
+            extra_data={"amount_percent": gift.amount * 100},
+        )
+        await self._send_to_all_channels(context)
+    
+    async def notify_gift_rejected(
+        self,
+        gift: EquityGift,
+        from_user: User,
+        to_user: User,
+        family: Family
+    ) -> None:
+        """通知：股权赠送被拒绝"""
+        context = NotificationContext(
+            notification_type=NotificationType.GIFT_REJECTED,
+            family_id=family.id,
+            family_name=family.name,
+            title=f"❌ 股权赠送被拒绝",
+            content="股权未发生变化",
+            requester_name=from_user.nickname,
+            approver_name=to_user.nickname,
+            gift_id=gift.id,
+            base_url=get_external_base_url(),
+            extra_data={"amount_percent": gift.amount * 100},
+        )
+        await self._send_to_all_channels(context)
+    
+    async def notify_gift_cancelled(
+        self,
+        gift: EquityGift,
+        from_user: User,
+        to_user: User,
+        family: Family
+    ) -> None:
+        """通知：股权赠送被取消"""
+        context = NotificationContext(
+            notification_type=NotificationType.GIFT_CANCELLED,
+            family_id=family.id,
+            family_name=family.name,
+            title=f"🚫 股权赠送已取消",
+            content="",
+            requester_name=from_user.nickname,
+            approver_name=to_user.nickname,
+            gift_id=gift.id,
+            base_url=get_external_base_url(),
+            extra_data={"amount_percent": gift.amount * 100},
+        )
+        await self._send_to_all_channels(context)
+    
     async def _send_to_all_channels(self, context: NotificationContext) -> None:
         """
         向所有已配置的渠道发送通知
@@ -551,3 +737,60 @@ async def send_approval_notification(
             
     except Exception as e:
         logging.error(f"Failed to send approval notification: {e}")
+
+
+async def send_gift_notification(
+    db: AsyncSession,
+    notification_type: NotificationType,
+    gift: EquityGift,
+) -> None:
+    """
+    发送股权赠送相关通知的便捷函数
+    
+    Args:
+        db: 数据库会话
+        notification_type: 通知类型 (GIFT_SENT, GIFT_ACCEPTED, GIFT_REJECTED, GIFT_CANCELLED)
+        gift: 股权赠送记录
+    """
+    try:
+        # 获取发送者信息
+        result = await db.execute(
+            select(User).where(User.id == gift.from_user_id)
+        )
+        from_user = result.scalar_one_or_none()
+        if not from_user:
+            logging.warning(f"From user not found for gift {gift.id}")
+            return
+        
+        # 获取接收者信息
+        result = await db.execute(
+            select(User).where(User.id == gift.to_user_id)
+        )
+        to_user = result.scalar_one_or_none()
+        if not to_user:
+            logging.warning(f"To user not found for gift {gift.id}")
+            return
+        
+        # 获取家庭信息
+        result = await db.execute(
+            select(Family).where(Family.id == gift.family_id)
+        )
+        family = result.scalar_one_or_none()
+        if not family:
+            logging.warning(f"Family not found for gift {gift.id}")
+            return
+        
+        # 创建通知服务并发送
+        service = NotificationService(db)
+        
+        if notification_type == NotificationType.GIFT_SENT:
+            await service.notify_gift_sent(gift, from_user, to_user, family)
+        elif notification_type == NotificationType.GIFT_ACCEPTED:
+            await service.notify_gift_accepted(gift, from_user, to_user, family)
+        elif notification_type == NotificationType.GIFT_REJECTED:
+            await service.notify_gift_rejected(gift, from_user, to_user, family)
+        elif notification_type == NotificationType.GIFT_CANCELLED:
+            await service.notify_gift_cancelled(gift, from_user, to_user, family)
+            
+    except Exception as e:
+        logging.error(f"Failed to send gift notification: {e}")

@@ -20,6 +20,7 @@ from app.schemas.gift import (
 )
 from app.schemas.common import TimeRange, get_time_range_filter
 from app.services.calendar import calendar_service
+from app.services.notification import send_gift_notification, NotificationType
 
 router = APIRouter(prefix="/api/gift", tags=["股权赠与"])
 
@@ -170,6 +171,13 @@ async def send_gift(
     
     await db.commit()
     
+    # 发送企业微信通知：通知接收者有新的股权赠送
+    try:
+        await send_gift_notification(db, NotificationType.GIFT_SENT, new_gift)
+        logging.info(f"Gift notification sent for gift {new_gift.id}")
+    except Exception as e:
+        logging.warning(f"Gift notification failed after gift send: {e}")
+    
     return await build_gift_response(db, new_gift)
 
 
@@ -307,6 +315,14 @@ async def respond_to_gift(
     await db.commit()
     await db.refresh(gift)
     
+    # 发送企业微信通知：通知发送者赠送被接受或拒绝
+    try:
+        notification_type = NotificationType.GIFT_ACCEPTED if response_data.accept else NotificationType.GIFT_REJECTED
+        await send_gift_notification(db, notification_type, gift)
+        logging.info(f"Gift response notification sent for gift {gift.id}, accepted={response_data.accept}")
+    except Exception as e:
+        logging.warning(f"Gift response notification failed: {e}")
+    
     return await build_gift_response(db, gift)
 
 
@@ -333,6 +349,13 @@ async def cancel_gift(
     
     if gift.status != EquityGiftStatus.PENDING:
         raise HTTPException(status_code=400, detail="只能取消待处理的赠与")
+    
+    # 发送企业微信通知：通知接收者赠送被取消（在删除前发送）
+    try:
+        await send_gift_notification(db, NotificationType.GIFT_CANCELLED, gift)
+        logging.info(f"Gift cancel notification sent for gift {gift.id}")
+    except Exception as e:
+        logging.warning(f"Gift cancel notification failed: {e}")
     
     # 删除日历提醒
     try:
