@@ -27,11 +27,6 @@
         @update:value="handleMenuClick"
       />
       
-      <div class="sider-footer" v-show="!collapsed">
-        <n-button text @click="handleLogout">
-          退出登录
-        </n-button>
-      </div>
     </n-layout-sider>
     
     <!-- 主内容区 -->
@@ -249,14 +244,10 @@
             </div>
           </div>
           
-          <!-- 🏡 家庭事务 -->
+          <!-- �️ 家庭治理 -->
           <div class="drawer-section">
-            <div class="drawer-section-title">� 家庭事务</div>
+            <div class="drawer-section-title">🏛️ 家庭治理</div>
             <div class="drawer-menu-items">
-              <div class="drawer-menu-item" @click="navigateAndClose('/family')">
-                <n-icon :size="20"><PeopleOutline /></n-icon>
-                <span>家庭管理</span>
-              </div>
               <div class="drawer-menu-item" @click="navigateAndClose('/equity')">
                 <n-icon :size="20"><PieChartOutline /></n-icon>
                 <span>股权结构</span>
@@ -269,10 +260,17 @@
                 <n-icon :size="20"><CheckboxOutline /></n-icon>
                 <span>股东大会</span>
               </div>
-              <div class="drawer-menu-item" @click="navigateAndClose('/pet')">
-                <n-icon :size="20"><PawOutline /></n-icon>
-                <span>家庭宠物</span>
+              <div class="drawer-menu-item" @click="navigateAndClose('/family')">
+                <n-icon :size="20"><PeopleOutline /></n-icon>
+                <span>家庭管理</span>
               </div>
+            </div>
+          </div>
+          
+          <!-- 🌟 生活协作 -->
+          <div class="drawer-section">
+            <div class="drawer-section-title">🌟 生活协作</div>
+            <div class="drawer-menu-items">
               <div class="drawer-menu-item" @click="navigateAndClose('/todo')">
                 <n-icon :size="20"><ClipboardOutline /></n-icon>
                 <span>家庭清单</span>
@@ -284,6 +282,10 @@
               <div class="drawer-menu-item" @click="navigateAndClose('/announcement')">
                 <n-icon :size="20"><MegaphoneOutline /></n-icon>
                 <span>家庭公告</span>
+              </div>
+              <div class="drawer-menu-item" @click="navigateAndClose('/pet')">
+                <n-icon :size="20"><PawOutline /></n-icon>
+                <span>家庭宠物</span>
               </div>
               <div class="drawer-menu-item" @click="navigateAndClose('/achievement')">
                 <n-icon :size="20"><TrophyOutline /></n-icon>
@@ -548,7 +550,7 @@ function renderApprovalLabel() {
   )
 }
 
-// 菜单选项 - 3大分类:财务管理、家庭事务、系统设置
+// 菜单选项 - 方案B三分类: 财务管理、家庭治理、生活协作
 const menuOptions = computed<MenuOption[]>(() => [
   {
     label: '仪表盘',
@@ -597,15 +599,10 @@ const menuOptions = computed<MenuOption[]>(() => [
     ]
   },
   {
-    label: '家庭事务',
-    key: 'family-group',
-    icon: renderIcon(PeopleOutline),
+    label: '家庭治理',
+    key: 'governance-group',
+    icon: renderIcon(PieChartOutline),
     children: [
-      {
-        label: '家庭管理',
-        key: 'family',
-        icon: renderIcon(PeopleOutline)
-      },
       {
         label: '股权结构',
         key: 'equity',
@@ -622,10 +619,17 @@ const menuOptions = computed<MenuOption[]>(() => [
         icon: renderIcon(CheckboxOutline)
       },
       {
-        label: '家庭宠物',
-        key: 'pet',
-        icon: renderIcon(PawOutline)
-      },
+        label: '家庭管理',
+        key: 'family',
+        icon: renderIcon(PeopleOutline)
+      }
+    ]
+  },
+  {
+    label: '生活协作',
+    key: 'life-group',
+    icon: renderIcon(CalendarOutline),
+    children: [
       {
         label: '家庭清单',
         key: 'todo',
@@ -640,6 +644,11 @@ const menuOptions = computed<MenuOption[]>(() => [
         label: '家庭公告',
         key: 'announcement',
         icon: renderIcon(MegaphoneOutline)
+      },
+      {
+        label: '家庭宠物',
+        key: 'pet',
+        icon: renderIcon(PawOutline)
       },
       {
         label: '成就殿堂',
