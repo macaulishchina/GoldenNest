@@ -1,9 +1,19 @@
 """
 宠物养成系统 API - 可升级进化的家庭虚拟宠物
+
+特性：
+- 心情系统：心情值影响EXP倍率，每日无互动衰减
+- 差异化喂食：三种食物不同效果/冷却/日限
+- 小游戏：记忆翻牌、迷你炒股、宠物探险RPG、扫雷（多步骤会话制）
+- 里程碑：年龄/经验里程碑奖励
+- 进化庆典：进化时奖励EXP + 企业微信通知
 """
 from datetime import datetime, date, timedelta
 from typing import Optional
+import json
 import math
+import random
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -15,6 +25,7 @@ from app.api.auth import get_current_user
 from app.models.models import User, FamilyMember, FamilyPet, PetExpLog
 
 router = APIRouter(prefix="/pet", tags=["pet"])
+logger = logging.getLogger(__name__)
 
 
 # ==================== 进化配置 ====================
@@ -85,6 +96,86 @@ EXP_CONFIG = {
     "calendar_sync_per_event": 2,    # 每同步一个事件额外奖励
 }
 
+# ==================== 喂食配置 ====================
+
+FOOD_CONFIG = {
+    "basic": {
+        "name": "普通饲料",
+        "emoji": "🌾",
+        "happiness": 10,
+        "exp": 3,
+        "daily_limit": None,  # 无限
+        "cooldown_hours": 2,
+    },
+    "premium": {
+        "name": "高级饲料",
+        "emoji": "🌽",
+        "happiness": 25,
+        "exp": 8,
+        "daily_limit": 3,
+        "cooldown_hours": 4,
+    },
+    "luxury": {
+        "name": "豪华大餐",
+        "emoji": "🍖",
+        "happiness": 50,
+        "exp": 20,
+        "daily_limit": 1,
+        "cooldown_hours": 4,
+    },
+}
+
+# ==================== 心情系统配置 ====================
+
+# 心情值 → EXP倍率
+HAPPINESS_MULTIPLIERS = [
+    (80, 1.2),   # happiness >= 80
+    (50, 1.0),   # happiness 50-79
+    (20, 0.8),   # happiness 20-49
+    (0, 0.5),    # happiness < 20
+]
+
+# 每日无互动心情衰减值
+HAPPINESS_DECAY_PER_DAY = 10
+
+# ==================== 小游戏配置 ====================
+
+GAME_CONFIG = {
+    "memory":      {"name": "记忆翻牌", "icon": "🃏", "description": "翻开卡牌找到配对", "exp_range": "15~1000"},
+    "stock":       {"name": "迷你炒股", "icon": "📈", "description": "虚拟炒股低买高卖", "exp_range": "5~1000"},
+    "adventure":   {"name": "宠物探险", "icon": "⚔️", "description": "地牢探险战胜怪物", "exp_range": "5~1000"},
+    "minesweeper": {"name": "扫雷", "icon": "💣", "description": "排除地雷考验逻辑", "exp_range": "20~1000"},
+}
+
+DAILY_GAME_LIMIT = 10  # 每人每天总游戏次数
+
+# ==================== 里程碑配置 ====================
+
+AGE_MILESTONES = {
+    "age_7": {"days": 7, "bonus_exp": 50, "label": "7天纪念"},
+    "age_30": {"days": 30, "bonus_exp": 100, "label": "满月纪念"},
+    "age_100": {"days": 100, "bonus_exp": 300, "label": "百日纪念"},
+    "age_365": {"days": 365, "bonus_exp": 1000, "label": "周年纪念"},
+}
+
+EXP_MILESTONES = {
+    "exp_1000": {"total_exp": 1000, "bonus_happiness": 20, "label": "千里之行"},
+    "exp_5000": {"total_exp": 5000, "bonus_happiness": 20, "label": "五千大关"},
+    "exp_10000": {"total_exp": 10000, "bonus_happiness": 20, "label": "万里长征"},
+    "exp_50000": {"total_exp": 50000, "bonus_happiness": 20, "label": "传说经验"},
+}
+
+# 进化奖励EXP
+EVOLUTION_BONUS = {
+    "golden_chick": 50,
+    "golden_bird": 100,
+    "golden_phoenix": 200,
+    "golden_dragon": 500,
+}
+
+
+# ==================== 工具函数 ====================
+
 def get_level_exp(level: int) -> int:
     """计算升级到下一级所需经验值"""
     return int(100 * (1.2 ** (level - 1)))
@@ -97,6 +188,52 @@ def get_pet_type_for_level(level: int) -> str:
     return "golden_dragon"  # 超过100级都是神龙
 
 
+def calculate_current_happiness(pet: FamilyPet) -> int:
+    """实时计算当前心情值（含衰减）"""
+    base_happiness = pet.happiness
+    last_interaction = pet.last_interaction_at or pet.last_fed_at or pet.last_checkin_at
+    if not last_interaction:
+        return base_happiness
+    days_since = (datetime.utcnow() - last_interaction).total_seconds() / 86400.0
+    if days_since < 1:
+        return base_happiness
+    decay = int(days_since) * HAPPINESS_DECAY_PER_DAY
+    return max(0, base_happiness - decay)
+
+
+def get_happiness_multiplier(happiness: int) -> float:
+    """根据心情值获取EXP倍率"""
+    for threshold, multiplier in HAPPINESS_MULTIPLIERS:
+        if happiness >= threshold:
+            return multiplier
+    return 0.5
+
+
+def get_mood_state(happiness: int) -> dict:
+    """根据心情值返回心情状态描述"""
+    if happiness >= 80:
+        return {"state": "ecstatic", "label": "兴高采烈", "emoji": "🤩", "color": "#FFD700"}
+    elif happiness >= 50:
+        return {"state": "happy", "label": "开心", "emoji": "😊", "color": "#4CAF50"}
+    elif happiness >= 20:
+        return {"state": "neutral", "label": "一般", "emoji": "😐", "color": "#FFA726"}
+    else:
+        return {"state": "sad", "label": "难过", "emoji": "😢", "color": "#F44336"}
+
+
+def get_daily_counts(json_str: str | None) -> dict:
+    """解析每日计数JSON，跨日自动重置"""
+    today = date.today().isoformat()
+    if json_str:
+        try:
+            data = json.loads(json_str)
+            if data.get("date") == today:
+                return data
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return {"date": today}
+
+
 # ==================== Schema ====================
 
 class PetCreate(BaseModel):
@@ -104,6 +241,20 @@ class PetCreate(BaseModel):
 
 class PetRename(BaseModel):
     name: str
+
+class FeedRequest(BaseModel):
+    food_type: str = "basic"  # basic, premium, luxury
+
+class GameStartRequest(BaseModel):
+    game_type: str  # "memory", "stock", "adventure", "minesweeper"
+    difficulty: str = "easy"  # "easy"|"medium"|"hard"|"expert"
+
+class GameActionRequest(BaseModel):
+    game_type: str
+    action: dict
+
+class MilestoneClaimRequest(BaseModel):
+    milestone_key: str
 
 class PetResponse(BaseModel):
     id: int
@@ -143,7 +294,7 @@ async def get_or_create_pet(db: AsyncSession, family_id: int) -> FamilyPet:
         select(FamilyPet).where(FamilyPet.family_id == family_id)
     )
     pet = result.scalar_one_or_none()
-    
+
     if not pet:
         pet = FamilyPet(
             family_id=family_id,
@@ -158,31 +309,43 @@ async def get_or_create_pet(db: AsyncSession, family_id: int) -> FamilyPet:
         db.add(pet)
         await db.commit()
         await db.refresh(pet)
-    
+
     return pet
 
 
-def build_pet_response(pet: FamilyPet) -> dict:
-    """构建宠物响应"""
+def build_pet_response(pet: FamilyPet, user: User = None) -> dict:
+    """构建宠物响应（含心情衰减、喂食/游戏状态、里程碑）"""
     pet_config = PET_EVOLUTION.get(pet.pet_type, PET_EVOLUTION["golden_egg"])
     exp_to_next = get_level_exp(pet.level)
-    
-    # 检查是否可以签到（每天只能签到一次）
+
+    # 实时计算心情值（含衰减）
+    current_happiness = calculate_current_happiness(pet)
+    happiness_multiplier = get_happiness_multiplier(current_happiness)
+    mood = get_mood_state(current_happiness)
+
+    # 检查是否可以签到（每用户每天只能签到一次）
     can_checkin = True
     checked_in_today = False
-    if pet.last_checkin_at:
+    checkin_streak = 0
+    if user:
+        checkin_streak = user.pet_checkin_streak or 0
+        if user.pet_last_checkin_at:
+            last_checkin_date = user.pet_last_checkin_at.date()
+            today = date.today()
+            can_checkin = last_checkin_date < today
+            checked_in_today = last_checkin_date >= today
+    elif pet.last_checkin_at:
+        checkin_streak = pet.checkin_streak
         last_checkin_date = pet.last_checkin_at.date()
         today = date.today()
         can_checkin = last_checkin_date < today
         checked_in_today = last_checkin_date >= today
-    
+
     # 检查是否可以进化
     can_evolve = False
     next_evolution = None
-    current_type = pet.pet_type
     for pet_type, config in PET_EVOLUTION.items():
         if config["min_level"] > pet_config["max_level"]:
-            # 找到下一个进化形态
             if pet.level >= config["min_level"]:
                 can_evolve = True
             next_evolution = {
@@ -192,7 +355,76 @@ def build_pet_response(pet: FamilyPet) -> dict:
                 "required_level": config["min_level"]
             }
             break
-    
+
+    # 宠物年龄
+    pet_age_days = (datetime.utcnow() - pet.created_at).days if pet.created_at else 0
+
+    # 喂食状态（使用用户独立计数）
+    feed_source = user.pet_daily_feed_counts if user else pet.daily_feed_counts
+    feed_counts = get_daily_counts(feed_source)
+    feed_status = {}
+    for food_type, cfg in FOOD_CONFIG.items():
+        used = feed_counts.get(food_type, 0)
+        can_feed_type = True
+        remaining_cooldown = 0
+
+        # 检查日限
+        if cfg["daily_limit"] is not None and used >= cfg["daily_limit"]:
+            can_feed_type = False
+
+        # 检查冷却
+        if pet.last_fed_at:
+            elapsed = (datetime.utcnow() - pet.last_fed_at).total_seconds()
+            cooldown_secs = cfg["cooldown_hours"] * 3600
+            if elapsed < cooldown_secs:
+                remaining_cooldown = int(cooldown_secs - elapsed)
+                can_feed_type = False
+
+        feed_status[food_type] = {
+            "name": cfg["name"],
+            "emoji": cfg["emoji"],
+            "happiness": cfg["happiness"],
+            "exp": cfg["exp"],
+            "used_today": used,
+            "daily_limit": cfg["daily_limit"],
+            "can_feed": can_feed_type,
+            "cooldown_remaining": remaining_cooldown,
+        }
+
+    # 游戏状态（使用用户独立计数 + 全局次数限制）
+    game_source = user.pet_daily_game_counts if user else pet.daily_game_counts
+    game_counts = get_daily_counts(game_source)
+    total_games_used = sum(v for k, v in game_counts.items() if k != "date" and isinstance(v, int))
+    game_status = {}
+    for game_type, cfg in GAME_CONFIG.items():
+        used = game_counts.get(game_type, 0)
+        has_active = get_active_session(pet, game_type) is not None
+        game_status[game_type] = {
+            "name": cfg["name"],
+            "icon": cfg["icon"],
+            "description": cfg["description"],
+            "exp_range": cfg["exp_range"],
+            "used_today": used,
+            "can_play": total_games_used < DAILY_GAME_LIMIT or has_active,
+            "has_active_session": has_active,
+        }
+
+    # 可领取的里程碑
+    claimed = []
+    if pet.claimed_milestones:
+        try:
+            claimed = json.loads(pet.claimed_milestones)
+        except (json.JSONDecodeError, TypeError):
+            claimed = []
+
+    available_milestones = []
+    for key, ms in AGE_MILESTONES.items():
+        if key not in claimed and pet_age_days >= ms["days"]:
+            available_milestones.append({"key": key, "type": "age", **ms})
+    for key, ms in EXP_MILESTONES.items():
+        if key not in claimed and pet.total_exp >= ms["total_exp"]:
+            available_milestones.append({"key": key, "type": "exp", **ms})
+
     return {
         "id": pet.id,
         "name": pet.name,
@@ -205,13 +437,21 @@ def build_pet_response(pet: FamilyPet) -> dict:
         "current_exp": pet.exp,  # 前端使用的字段名
         "exp_to_next": exp_to_next,
         "exp_progress": round((pet.exp / exp_to_next) * 100, 1) if exp_to_next > 0 else 100,
-        "happiness": pet.happiness,
+        "happiness": current_happiness,
+        "happiness_multiplier": happiness_multiplier,
+        "mood": mood,
         "total_exp": pet.total_exp,
-        "checkin_streak": pet.checkin_streak,
+        "checkin_streak": checkin_streak,
         "can_checkin": can_checkin,
-        "checked_in_today": checked_in_today,  # 前端使用的字段名
+        "checked_in_today": checked_in_today,
         "can_evolve": can_evolve,
         "next_evolution": next_evolution,
+        "pet_age_days": pet_age_days,
+        "feed_status": feed_status,
+        "game_status": game_status,
+        "daily_game_limit": DAILY_GAME_LIMIT,
+        "total_games_used": total_games_used,
+        "available_milestones": available_milestones,
         "created_at": pet.created_at.isoformat() if pet.created_at else None
     }
 
@@ -220,6 +460,9 @@ def build_pet_response(pet: FamilyPet) -> dict:
 EXP_SOURCE_NAMES = {
     "daily_checkin": "每日签到",
     "feed": "喂食宠物",
+    "feed_basic": "喂食普通饲料",
+    "feed_premium": "喂食高级饲料",
+    "feed_luxury": "喂食豪华大餐",
     "deposit": "存款操作",
     "investment": "理财收益",
     "vote": "参与投票",
@@ -228,6 +471,13 @@ EXP_SOURCE_NAMES = {
     "gift": "赠送股权",
     "gift_sent": "赠送股权",
     "achievement_unlock": "解锁成就",
+    "game_memory": "记忆翻牌",
+    "game_stock": "迷你炒股",
+    "game_adventure": "宠物探险",
+    "game_minesweeper": "扫雷",
+    "milestone_age": "陪伴里程碑",
+    "milestone_exp": "经验里程碑",
+    "evolution_bonus": "进化奖励",
     # ========== Todo 待办任务相关 ==========
     "todo_complete_low": "完成低优先级任务",
     "todo_complete_medium": "完成中优先级任务",
@@ -247,37 +497,36 @@ EXP_SOURCE_NAMES = {
 }
 
 
-async def add_exp(db: AsyncSession, pet: FamilyPet, exp_amount: int, source: str, source_detail: str = None, operator_id: int = None) -> dict:
-    """为宠物增加经验值
-    
-    Args:
-        db: 数据库会话
-        pet: 宠物对象
-        exp_amount: 经验值数量
-        source: 来源类型
-        source_detail: 来源详情
-        operator_id: 操作者用户ID
-    """
+async def add_exp(db: AsyncSession, pet: FamilyPet, exp_amount: int, source: str,
+                  source_detail: str = None, operator_id: int = None,
+                  apply_happiness_multiplier: bool = True) -> dict:
+    """为宠物增加经验值（含心情倍率和进化奖励）"""
+    # 应用心情倍率
+    if apply_happiness_multiplier:
+        current_happiness = calculate_current_happiness(pet)
+        multiplier = get_happiness_multiplier(current_happiness)
+        exp_amount = max(1, int(exp_amount * multiplier))
+
     pet.exp += exp_amount
     pet.total_exp += exp_amount
-    
+
     leveled_up = False
     evolved = False
     old_type = pet.pet_type
     old_level = pet.level
-    
+
     # 检查升级
     while pet.exp >= get_level_exp(pet.level):
         pet.exp -= get_level_exp(pet.level)
         pet.level += 1
         leveled_up = True
-    
+
     # 检查进化
     new_type = get_pet_type_for_level(pet.level)
     if new_type != pet.pet_type:
         pet.pet_type = new_type
         evolved = True
-    
+
     # 记录经验获取日志
     exp_log = PetExpLog(
         family_id=pet.family_id,
@@ -287,28 +536,882 @@ async def add_exp(db: AsyncSession, pet: FamilyPet, exp_amount: int, source: str
         source_detail=source_detail or EXP_SOURCE_NAMES.get(source, source)
     )
     db.add(exp_log)
-    
-    await db.commit()
-    await db.refresh(pet)
-    
+
     result = {
         "exp_gained": exp_amount,
         "source": source,
         "leveled_up": leveled_up,
         "evolved": evolved
     }
-    
+
     if leveled_up:
         result["new_level"] = pet.level
         result["old_level"] = old_level
-    
+
     if evolved:
         result["old_type"] = old_type
         result["new_type"] = new_type
         result["new_type_name"] = PET_EVOLUTION[new_type]["name"]
         result["new_emoji"] = PET_EVOLUTION[new_type]["emoji"]
-    
+
+        # 进化奖励EXP
+        bonus = EVOLUTION_BONUS.get(new_type, 0)
+        if bonus > 0:
+            pet.exp += bonus
+            pet.total_exp += bonus
+            # 奖励EXP也可能触发升级
+            while pet.exp >= get_level_exp(pet.level):
+                pet.exp -= get_level_exp(pet.level)
+                pet.level += 1
+            bonus_log = PetExpLog(
+                family_id=pet.family_id,
+                operator_id=operator_id,
+                exp_amount=bonus,
+                source="evolution_bonus",
+                source_detail=f"进化为{PET_EVOLUTION[new_type]['name']}奖励"
+            )
+            db.add(bonus_log)
+            result["evolution_bonus_exp"] = bonus
+
+        # 发送企业微信进化通知（fail-safe）
+        try:
+            from app.services.notification import send_pet_evolved_notification
+            await send_pet_evolved_notification(db, pet.family_id, pet.name, new_type)
+        except Exception as e:
+            logger.warning(f"发送进化通知失败: {e}")
+
     return result
+
+
+# ==================== 游戏会话管理 ====================
+
+def get_game_sessions(pet: FamilyPet) -> dict:
+    """获取所有游戏会话"""
+    if pet.game_sessions:
+        try:
+            return json.loads(pet.game_sessions)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return {}
+
+
+def get_active_session(pet: FamilyPet, game_type: str) -> dict | None:
+    """获取指定游戏的活跃会话（30分钟超时）"""
+    sessions = get_game_sessions(pet)
+    session = sessions.get(game_type)
+    if not session:
+        return None
+    started_at = datetime.fromisoformat(session["started_at"])
+    if (datetime.utcnow() - started_at).total_seconds() > 1800:
+        del sessions[game_type]
+        pet.game_sessions = json.dumps(sessions) if sessions else None
+        return None
+    return session
+
+
+def save_game_session(pet: FamilyPet, game_type: str, session: dict):
+    """保存游戏会话"""
+    sessions = get_game_sessions(pet)
+    sessions[game_type] = session
+    pet.game_sessions = json.dumps(sessions)
+
+
+def clear_game_session(pet: FamilyPet, game_type: str):
+    """清除游戏会话"""
+    sessions = get_game_sessions(pet)
+    sessions.pop(game_type, None)
+    pet.game_sessions = json.dumps(sessions) if sessions else None
+
+
+# ==================== 状态脱敏 ====================
+
+def sanitize_state(game_type: str, session: dict) -> dict:
+    """清除服务端秘密，返回客户端安全的状态"""
+    if game_type == "memory":
+        board_display = []
+        for i in range(len(session["board"])):
+            if session["revealed"][i]:
+                board_display.append(session["board"][i])
+            else:
+                board_display.append(None)
+        result = {
+            "board": board_display,
+            "flips": session["flips"],
+            "matched_pairs": session["matched_pairs"],
+            "total_pairs": session["total_pairs"],
+            "rows": session.get("rows", 3),
+            "cols": session.get("cols", 4),
+            "difficulty": session.get("difficulty", "easy"),
+            "first_flip": session.get("first_flip"),
+            "last_flip_result": session.get("last_flip_result"),
+            "completed": session.get("completed", False),
+        }
+        if session.get("completed"):
+            result["exp_earned"] = session.get("exp_earned", 0)
+        return result
+
+    elif game_type == "stock":
+        visible_prices = session["prices"][:session["current_round"] + 1]
+        total_rounds = session.get("total_rounds", 10)
+        initial_cash = session.get("initial_cash", 10000)
+        result = {
+            "prices": visible_prices,
+            "current_round": session["current_round"],
+            "total_rounds": total_rounds,
+            "initial_cash": initial_cash,
+            "difficulty": session.get("difficulty", "easy"),
+            "cash": round(session["cash"], 2),
+            "shares": session["shares"],
+            "portfolio_value": round(session["cash"] + session["shares"] * visible_prices[-1], 2),
+            "history": session["history"],
+            "completed": session.get("completed", False),
+        }
+        if session.get("completed"):
+            result["exp_earned"] = session.get("exp_earned", 0)
+            result["final_value"] = session.get("final_value")
+            result["profit_pct"] = session.get("profit_pct")
+        return result
+
+    elif game_type == "adventure":
+        state = {
+            "floor": session["floor"],
+            "max_floor": session["max_floor"],
+            "difficulty": session.get("difficulty", "easy"),
+            "hp": session["hp"],
+            "max_hp": session["max_hp"],
+            "attack": session["attack"],
+            "defense": session["defense"],
+            "potions": session["potions"],
+            "exp_earned": session["exp_earned"],
+            "log": session["log"][-10:],  # 只返回最近10条日志
+            "floors_cleared": session["floors_cleared"],
+            "game_over": session.get("game_over", False),
+            "encounter_resolved": session.get("encounter_resolved", False),
+        }
+        enc = session.get("encounter")
+        if enc:
+            if not session.get("encounter_resolved"):
+                safe_enc = {"type": enc["type"], "name": enc["name"]}
+                if enc["type"] in ("monster", "boss"):
+                    safe_enc["monster_hp"] = enc["monster_hp"]
+                    safe_enc["monster_max_hp"] = enc["monster_max_hp"]
+                    safe_enc["monster_attack"] = enc["monster_attack"]
+                elif enc["type"] == "shop":
+                    safe_enc["items"] = enc.get("items", [])
+                state["encounter"] = safe_enc
+            else:
+                state["encounter"] = {"type": enc["type"], "name": enc["name"], "resolved": True}
+        return state
+
+    elif game_type == "minesweeper":
+        rows = session["rows"]
+        cols = session["cols"]
+        completed = session.get("completed", False)
+        # 构建脱敏棋盘：已翻开的格子显示数字，未翻开的显示 None
+        visible_board = []
+        for r in range(rows):
+            row_data = []
+            for c in range(cols):
+                if session["revealed"][r][c]:
+                    row_data.append(session["board"][r][c])
+                elif completed:
+                    # 游戏结束后显示所有格子
+                    row_data.append(session["board"][r][c])
+                else:
+                    row_data.append(None)
+            visible_board.append(row_data)
+        return {
+            "difficulty": session["difficulty"],
+            "rows": rows,
+            "cols": cols,
+            "mine_count": session["mine_count"],
+            "board": visible_board,
+            "revealed": session["revealed"],
+            "flagged": session["flagged"],
+            "first_click": session.get("first_click", False),
+            "completed": completed,
+            "won": session.get("won", False),
+            "cells_revealed": session.get("cells_revealed", 0),
+            "total_safe": session.get("total_safe", rows * cols - session["mine_count"]),
+            "exp_earned": session.get("exp_earned", 0) if completed else 0,
+        }
+
+    return {}
+
+
+# ==================== 游戏创建 ====================
+
+MEMORY_SYMBOLS = ["💰", "💎", "📈", "🏦", "🎁", "⭐", "🔥", "🌙", "🎯", "🍀", "👑", "🎪", "🚀", "🌈", "🎭", "🎵", "🎲", "🧲"]
+
+MEMORY_DIFFICULTIES = {
+    "easy":   {"pairs": 6,  "cols": 4, "rows": 3, "exp_perfect": 30,  "exp_good": 20,  "exp_ok": 15},
+    "medium": {"pairs": 8,  "cols": 4, "rows": 4, "exp_perfect": 60,  "exp_good": 45,  "exp_ok": 30},
+    "hard":   {"pairs": 10, "cols": 5, "rows": 4, "exp_perfect": 120, "exp_good": 90,  "exp_ok": 60},
+    "expert": {"pairs": 18, "cols": 6, "rows": 6, "exp_perfect": 1000,"exp_good": 600, "exp_ok": 300},
+}
+
+
+def create_memory_session(difficulty: str = "easy") -> dict:
+    cfg = MEMORY_DIFFICULTIES.get(difficulty, MEMORY_DIFFICULTIES["easy"])
+    pairs = cfg["pairs"]
+    symbols = MEMORY_SYMBOLS[:pairs]
+    board = symbols * 2
+    random.shuffle(board)
+    total_cards = pairs * 2
+    return {
+        "started_at": datetime.utcnow().isoformat(),
+        "difficulty": difficulty,
+        "board": board,
+        "revealed": [False] * total_cards,
+        "flips": 0,
+        "first_flip": None,
+        "matched_pairs": 0,
+        "total_pairs": pairs,
+        "cols": cfg["cols"],
+        "rows": cfg["rows"],
+        "last_flip_result": None,
+    }
+
+
+STOCK_DIFFICULTIES = {
+    "easy":   {"rounds": 5,  "volatility": 0.08, "initial_cash": 10000,
+               "exp_tiers": [(50, 40), (30, 30), (10, 20), (0, 10), (-999, 5)]},
+    "medium": {"rounds": 10, "volatility": 0.15, "initial_cash": 10000,
+               "exp_tiers": [(50, 80), (30, 50), (10, 30), (0, 15), (-999, 5)]},
+    "hard":   {"rounds": 15, "volatility": 0.22, "initial_cash": 10000,
+               "exp_tiers": [(50, 200), (30, 120), (10, 60), (0, 30), (-999, 10)]},
+    "expert": {"rounds": 20, "volatility": 0.35, "initial_cash": 10000,
+               "exp_tiers": [(100, 1000), (50, 500), (20, 200), (0, 80), (-999, 20)]},
+}
+
+
+def create_stock_session(difficulty: str = "easy") -> dict:
+    cfg = STOCK_DIFFICULTIES.get(difficulty, STOCK_DIFFICULTIES["easy"])
+    rounds = cfg["rounds"]
+    volatility = cfg["volatility"]
+    initial_cash = cfg["initial_cash"]
+    prices = [100.0]
+    for _ in range(rounds):
+        change = random.uniform(-volatility, volatility)
+        new_price = round(prices[-1] * (1 + change), 2)
+        new_price = max(20, min(300, new_price))
+        prices.append(new_price)
+    return {
+        "started_at": datetime.utcnow().isoformat(),
+        "difficulty": difficulty,
+        "prices": prices,
+        "current_round": 0,
+        "total_rounds": rounds,
+        "cash": float(initial_cash),
+        "initial_cash": float(initial_cash),
+        "shares": 0,
+        "history": [],
+    }
+
+
+ADVENTURE_MONSTERS = [
+    {"name": "小偷鼠", "hp": 20, "attack": 5},
+    {"name": "贪婪蛇", "hp": 30, "attack": 8},
+    {"name": "税务怪", "hp": 35, "attack": 10},
+    {"name": "通胀兽", "hp": 45, "attack": 12},
+]
+
+ADVENTURE_DIFFICULTIES = {
+    "easy":   {
+        "max_floor": 3, "player_hp": 120, "atk_bonus": 5,
+        "monster_hp_mult": 0.7, "monster_atk_mult": 0.7,
+        "floor_exp": [0, 5, 10, 20],
+        "boss": {"name": "小贪官", "hp": 40, "attack": 8},
+    },
+    "medium": {
+        "max_floor": 5, "player_hp": 100, "atk_bonus": 0,
+        "monster_hp_mult": 1.0, "monster_atk_mult": 1.0,
+        "floor_exp": [0, 5, 12, 20, 35, 60],
+        "boss": {"name": "金融危机龙", "hp": 80, "attack": 15},
+    },
+    "hard":   {
+        "max_floor": 8, "player_hp": 100, "atk_bonus": 0,
+        "monster_hp_mult": 1.5, "monster_atk_mult": 1.3,
+        "floor_exp": [0, 8, 15, 25, 35, 45, 55, 65, 80],
+        "boss": {"name": "黑天鹅巨兽", "hp": 150, "attack": 22},
+    },
+    "expert": {
+        "max_floor": 12, "player_hp": 80, "atk_bonus": -3,
+        "monster_hp_mult": 2.0, "monster_atk_mult": 1.8,
+        "floor_exp": [0, 10, 18, 28, 40, 55, 70, 85, 100, 120, 140, 160, 200],
+        "boss": {"name": "末日收割者", "hp": 300, "attack": 35},
+    },
+}
+
+
+def _generate_encounter(floor: int, difficulty: str = "medium") -> dict:
+    cfg = ADVENTURE_DIFFICULTIES.get(difficulty, ADVENTURE_DIFFICULTIES["medium"])
+    if floor >= cfg["max_floor"]:
+        b = cfg["boss"]
+        return {"type": "boss", "name": b["name"],
+                "monster_hp": b["hp"], "monster_max_hp": b["hp"],
+                "monster_attack": b["attack"]}
+    enc_type = random.choices(
+        ["monster", "chest", "trap", "shop"],
+        weights=[40, 20, 20, 20], k=1
+    )[0]
+    if enc_type == "monster":
+        m = random.choice(ADVENTURE_MONSTERS)
+        hp = int(m["hp"] * cfg["monster_hp_mult"])
+        atk = int(m["attack"] * cfg["monster_atk_mult"])
+        return {"type": "monster", "name": m["name"],
+                "monster_hp": hp, "monster_max_hp": hp,
+                "monster_attack": atk}
+    elif enc_type == "chest":
+        return {"type": "chest", "name": "宝箱", "reward_exp": random.randint(5, 15)}
+    elif enc_type == "trap":
+        trap_dmg = random.randint(10, 25)
+        if difficulty == "hard":
+            trap_dmg = random.randint(15, 35)
+        elif difficulty == "expert":
+            trap_dmg = random.randint(20, 45)
+        return {"type": "trap", "name": "陷阱", "damage": trap_dmg}
+    else:
+        return {"type": "shop", "name": "商店", "items": [
+            {"id": "potion", "name": "生命药水", "cost": 8, "effect": "恢复30HP"},
+            {"id": "shield", "name": "防御护盾", "cost": 12, "effect": "防御+3"},
+        ]}
+
+
+def create_adventure_session(pet_level: int, difficulty: str = "easy") -> dict:
+    cfg = ADVENTURE_DIFFICULTIES.get(difficulty, ADVENTURE_DIFFICULTIES["easy"])
+    encounter = _generate_encounter(1, difficulty)
+    return {
+        "started_at": datetime.utcnow().isoformat(),
+        "difficulty": difficulty,
+        "floor": 1,
+        "max_floor": cfg["max_floor"],
+        "hp": cfg["player_hp"],
+        "max_hp": cfg["player_hp"],
+        "attack": 10 + pet_level + cfg["atk_bonus"],
+        "defense": 0,
+        "potions": 0,
+        "exp_earned": 0,
+        "encounter": encounter,
+        "encounter_resolved": False,
+        "floors_cleared": 0,
+        "log": [f"📍 进入第1层，遭遇了{encounter['name']}！"],
+        "game_over": False,
+    }
+
+
+MINESWEEPER_DIFFICULTIES = {
+    "easy":   {"rows": 6,  "cols": 6,  "mines": 5,  "exp": 20,  "label": "入门"},
+    "medium": {"rows": 9,  "cols": 9,  "mines": 12, "exp": 50,  "label": "进阶"},
+    "hard":   {"rows": 12, "cols": 12, "mines": 30, "exp": 120, "label": "困难"},
+    "expert": {"rows": 16, "cols": 16, "mines": 55, "exp": 1000, "label": "地狱"},
+}
+
+
+def create_minesweeper_session(difficulty: str) -> dict:
+    cfg = MINESWEEPER_DIFFICULTIES[difficulty]
+    rows, cols = cfg["rows"], cfg["cols"]
+    return {
+        "started_at": datetime.utcnow().isoformat(),
+        "difficulty": difficulty,
+        "rows": rows,
+        "cols": cols,
+        "mine_count": cfg["mines"],
+        "board": [[0] * cols for _ in range(rows)],
+        "revealed": [[False] * cols for _ in range(rows)],
+        "flagged": [[False] * cols for _ in range(rows)],
+        "first_click": True,
+        "completed": False,
+        "won": False,
+        "cells_revealed": 0,
+        "total_safe": rows * cols - cfg["mines"],
+        "exp_earned": 0,
+    }
+
+
+def _place_mines(session: dict, safe_row: int, safe_col: int):
+    """首次点击后放置地雷，确保点击位置及周围无雷"""
+    rows, cols = session["rows"], session["cols"]
+    mine_count = session["mine_count"]
+    # 安全区域：点击位置及其8个邻居
+    safe_cells = set()
+    for dr in range(-1, 2):
+        for dc in range(-1, 2):
+            nr, nc = safe_row + dr, safe_col + dc
+            if 0 <= nr < rows and 0 <= nc < cols:
+                safe_cells.add((nr, nc))
+    # 可放雷的位置
+    candidates = [(r, c) for r in range(rows) for c in range(cols) if (r, c) not in safe_cells]
+    # 如果可用位置不够（极小棋盘），放宽安全区域
+    if len(candidates) < mine_count:
+        candidates = [(r, c) for r in range(rows) for c in range(cols) if (r, c) != (safe_row, safe_col)]
+    mines = random.sample(candidates, mine_count)
+    board = [[0] * cols for _ in range(rows)]
+    for mr, mc in mines:
+        board[mr][mc] = -1
+    # 计算数字
+    for r in range(rows):
+        for c in range(cols):
+            if board[r][c] == -1:
+                continue
+            count = 0
+            for dr in range(-1, 2):
+                for dc in range(-1, 2):
+                    if dr == 0 and dc == 0:
+                        continue
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < rows and 0 <= nc < cols and board[nr][nc] == -1:
+                        count += 1
+            board[r][c] = count
+    session["board"] = board
+
+
+def _flood_fill(session: dict, row: int, col: int):
+    """翻开空格时递归展开相邻的0格"""
+    rows, cols = session["rows"], session["cols"]
+    stack = [(row, col)]
+    while stack:
+        r, c = stack.pop()
+        if session["revealed"][r][c]:
+            continue
+        session["revealed"][r][c] = True
+        session["cells_revealed"] += 1
+        # 如果是0，展开周围
+        if session["board"][r][c] == 0:
+            for dr in range(-1, 2):
+                for dc in range(-1, 2):
+                    if dr == 0 and dc == 0:
+                        continue
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < rows and 0 <= nc < cols and not session["revealed"][nr][nc] and not session["flagged"][nr][nc]:
+                        stack.append((nr, nc))
+
+
+# ==================== 游戏逻辑处理 ====================
+
+def process_memory_action(session: dict, action: dict) -> dict:
+    """处理记忆翻牌操作"""
+    # 处理放弃
+    if action.get("action") == "abandon":
+        session["completed"] = True
+        session["exp_earned"] = 0
+        session["abandoned"] = True
+        return {"completed": True, "exp_earned": 0, "abandoned": True}
+    
+    # 处理超时
+    if action.get("timeout"):
+        session["completed"] = True
+        session["exp_earned"] = 0
+        session["timeout"] = True
+        return {"completed": True, "exp_earned": 0, "timeout": True}
+    
+    pos = action.get("position")
+    total_cards = session["total_pairs"] * 2
+    if pos is None or not (0 <= pos < total_cards):
+        raise HTTPException(status_code=400, detail="无效的翻牌位置")
+    if session["revealed"][pos]:
+        raise HTTPException(status_code=400, detail="该卡牌已被翻开")
+
+    if session["first_flip"] is None:
+        # 翻第一张牌
+        session["first_flip"] = pos
+        session["last_flip_result"] = {
+            "action": "first_flip",
+            "position": pos,
+            "symbol": session["board"][pos],
+        }
+    else:
+        # 翻第二张牌
+        first_pos = session["first_flip"]
+        if pos == first_pos:
+            raise HTTPException(status_code=400, detail="不能翻同一张牌")
+        session["flips"] += 1
+        first_symbol = session["board"][first_pos]
+        second_symbol = session["board"][pos]
+
+        if first_symbol == second_symbol:
+            session["revealed"][first_pos] = True
+            session["revealed"][pos] = True
+            session["matched_pairs"] += 1
+            session["last_flip_result"] = {
+                "action": "match",
+                "positions": [first_pos, pos],
+                "symbol": first_symbol,
+            }
+        else:
+            session["last_flip_result"] = {
+                "action": "no_match",
+                "positions": [first_pos, pos],
+                "symbols": [first_symbol, second_symbol],
+            }
+        session["first_flip"] = None
+
+    # 检查完成
+    total_pairs = session["total_pairs"]
+    completed = session["matched_pairs"] >= total_pairs
+    exp_earned = 0
+    if completed:
+        flips = session["flips"]
+        difficulty = session.get("difficulty", "easy")
+        cfg = MEMORY_DIFFICULTIES.get(difficulty, MEMORY_DIFFICULTIES["easy"])
+        # 根据翻牌效率计算经验：完美(翻牌数<=对数)、良好(<=对数*1.5)、一般
+        if flips <= total_pairs:
+            exp_earned = cfg["exp_perfect"]
+        elif flips <= int(total_pairs * 1.5):
+            exp_earned = cfg["exp_good"]
+        else:
+            exp_earned = cfg["exp_ok"]
+        session["completed"] = True
+        session["exp_earned"] = exp_earned
+
+    return {"completed": completed, "exp_earned": exp_earned}
+
+
+def process_stock_action(session: dict, action: dict) -> dict:
+    """处理迷你炒股操作"""
+    act = action.get("action")
+    
+    # 处理放弃
+    if act == "abandon":
+        session["completed"] = True
+        session["exp_earned"] = 0
+        session["abandoned"] = True
+        initial_cash = session.get("initial_cash", 10000)
+        session["final_value"] = round(session["cash"] + session["shares"] * session["prices"][session["current_round"]], 2)
+        session["profit_pct"] = round((session["final_value"] - initial_cash) / initial_cash * 100, 2)
+        return {"completed": True, "exp_earned": 0, "abandoned": True}
+    
+    if act not in ("buy", "sell", "hold"):
+        raise HTTPException(status_code=400, detail="操作必须是 buy、sell 或 hold")
+
+    total_rounds = session["total_rounds"]
+    round_idx = session["current_round"]
+    if round_idx >= total_rounds:
+        raise HTTPException(status_code=400, detail="游戏已结束")
+
+    price = session["prices"][round_idx]
+    quantity = int(action.get("quantity", 0))
+
+    if act == "buy":
+        if quantity <= 0:
+            raise HTTPException(status_code=400, detail="买入数量必须大于0")
+        cost = quantity * price
+        if cost > session["cash"]:
+            raise HTTPException(status_code=400, detail="资金不足")
+        session["cash"] -= cost
+        session["shares"] += quantity
+    elif act == "sell":
+        if quantity <= 0:
+            raise HTTPException(status_code=400, detail="卖出数量必须大于0")
+        if quantity > session["shares"]:
+            raise HTTPException(status_code=400, detail="持股不足")
+        session["cash"] += quantity * price
+        session["shares"] -= quantity
+
+    session["history"].append({
+        "round": round_idx,
+        "action": act,
+        "quantity": quantity if act != "hold" else 0,
+        "price": price,
+        "cash": round(session["cash"], 2),
+        "shares": session["shares"],
+    })
+    session["current_round"] += 1
+
+    completed = session["current_round"] >= total_rounds
+    exp_earned = 0
+    if completed:
+        final_price = session["prices"][total_rounds]
+        session["cash"] += session["shares"] * final_price
+        session["cash"] = round(session["cash"], 2)
+        session["shares"] = 0
+        initial_cash = session.get("initial_cash", 10000)
+        profit_pct = (session["cash"] - initial_cash) / initial_cash * 100
+        # 根据难度配置获取经验奖励
+        difficulty = session.get("difficulty", "easy")
+        cfg = STOCK_DIFFICULTIES.get(difficulty, STOCK_DIFFICULTIES["easy"])
+        exp_tiers = cfg["exp_tiers"]
+        for threshold, exp in exp_tiers:
+            if profit_pct >= threshold:
+                exp_earned = exp
+                break
+        session["completed"] = True
+        session["exp_earned"] = exp_earned
+        session["final_value"] = session["cash"]
+        session["profit_pct"] = round(profit_pct, 2)
+
+    return {"completed": completed, "exp_earned": exp_earned}
+
+
+def process_adventure_action(session: dict, action: dict) -> dict:
+    """处理宠物探险操作"""
+    act = action.get("action")
+    
+    # 处理放弃
+    if act == "abandon":
+        session["game_over"] = True
+        session["completed"] = True
+        session["abandoned"] = True
+        session["exp_earned"] = 0  # 放弃不获得任何经验
+        session["log"].append("🏳️ 你放弃了探险...")
+        return {"completed": True, "exp_earned": 0, "abandoned": True}
+    
+    if session.get("game_over"):
+        raise HTTPException(status_code=400, detail="探险已结束")
+
+    enc = session["encounter"]
+    log = session["log"]
+
+    # 遭遇已解决 → 只允许进入下一层
+    if session.get("encounter_resolved"):
+        if act != "next_floor":
+            raise HTTPException(status_code=400, detail="请进入下一层")
+        if session["floor"] >= session["max_floor"]:
+            session["game_over"] = True
+            session["completed"] = True
+            log.append("🏆 恭喜通关全部楼层！")
+            return {"completed": True, "exp_earned": session["exp_earned"]}
+        session["floor"] += 1
+        difficulty = session.get("difficulty", "easy")
+        new_enc = _generate_encounter(session["floor"], difficulty)
+        session["encounter"] = new_enc
+        session["encounter_resolved"] = False
+        log.append(f"📍 进入第{session['floor']}层，遭遇了{new_enc['name']}！")
+        return {"completed": False, "exp_earned": 0, "new_floor": session["floor"]}
+
+    enc_type = enc["type"]
+
+    if enc_type in ("monster", "boss"):
+        if act == "fight":
+            dmg_to_monster = max(1, session["attack"])
+            enc["monster_hp"] -= dmg_to_monster
+            log.append(f"⚔️ 你对{enc['name']}造成{dmg_to_monster}点伤害！")
+            if enc["monster_hp"] <= 0:
+                # 根据难度配置获取楼层经验
+                difficulty = session.get("difficulty", "easy")
+                cfg = ADVENTURE_DIFFICULTIES.get(difficulty, ADVENTURE_DIFFICULTIES["easy"])
+                floor_exp_list = cfg["floor_exp"]
+                floor = session["floor"]
+                earned = floor_exp_list[min(floor, len(floor_exp_list) - 1)]
+                session["exp_earned"] += earned
+                session["floors_cleared"] += 1
+                session["encounter_resolved"] = True
+                log.append(f"🎉 击败了{enc['name']}！获得{earned}EXP")
+                return {"completed": False, "exp_earned": 0, "battle_result": "victory"}
+            monster_dmg = max(1, enc["monster_attack"] - session["defense"])
+            session["hp"] -= monster_dmg
+            log.append(f"💥 {enc['name']}造成{monster_dmg}点伤害！(HP: {session['hp']}/{session['max_hp']})")
+            if session["hp"] <= 0:
+                session["hp"] = 0
+                session["game_over"] = True
+                session["completed"] = True
+                log.append("💀 你被击败了...探险结束")
+                return {"completed": True, "exp_earned": session["exp_earned"]}
+            return {"completed": False, "exp_earned": 0, "battle_result": "continue"}
+
+        elif act == "use_potion":
+            if session["potions"] <= 0:
+                raise HTTPException(status_code=400, detail="没有药水了")
+            session["potions"] -= 1
+            heal = 30
+            session["hp"] = min(session["max_hp"], session["hp"] + heal)
+            log.append(f"🧪 使用药水恢复{heal}HP！(HP: {session['hp']}/{session['max_hp']})")
+            return {"completed": False, "exp_earned": 0}
+
+        elif act == "flee":
+            if random.random() < 0.5:
+                session["encounter_resolved"] = True
+                session["floors_cleared"] += 1
+                log.append(f"🏃 成功逃离了{enc['name']}！")
+                return {"completed": False, "exp_earned": 0, "battle_result": "fled"}
+            monster_dmg = max(1, enc["monster_attack"] - session["defense"])
+            session["hp"] -= monster_dmg
+            log.append(f"🏃 逃跑失败！受到{monster_dmg}点伤害！(HP: {session['hp']}/{session['max_hp']})")
+            if session["hp"] <= 0:
+                session["hp"] = 0
+                session["game_over"] = True
+                session["completed"] = True
+                log.append("💀 你被击败了...探险结束")
+                return {"completed": True, "exp_earned": session["exp_earned"]}
+            return {"completed": False, "exp_earned": 0, "battle_result": "flee_failed"}
+        else:
+            raise HTTPException(status_code=400, detail="怪物遭遇只能 fight、use_potion 或 flee")
+
+    elif enc_type == "chest":
+        reward = enc["reward_exp"]
+        session["exp_earned"] += reward
+        session["encounter_resolved"] = True
+        session["floors_cleared"] += 1
+        log.append(f"🎁 打开宝箱获得{reward}EXP！")
+        return {"completed": False, "exp_earned": 0}
+
+    elif enc_type == "trap":
+        if act == "disarm":
+            if random.random() < 0.6:
+                session["encounter_resolved"] = True
+                session["floors_cleared"] += 1
+                bonus = 8
+                session["exp_earned"] += bonus
+                log.append(f"🔧 成功拆除陷阱！获得{bonus}EXP")
+            else:
+                dmg = enc["damage"]
+                session["hp"] -= dmg
+                session["encounter_resolved"] = True
+                session["floors_cleared"] += 1
+                log.append(f"💥 拆除失败！受到{dmg}点伤害 (HP: {session['hp']}/{session['max_hp']})")
+                if session["hp"] <= 0:
+                    session["hp"] = 0
+                    session["game_over"] = True
+                    session["completed"] = True
+                    log.append("💀 你被陷阱击败了...探险结束")
+                    return {"completed": True, "exp_earned": session["exp_earned"]}
+            return {"completed": False, "exp_earned": 0}
+        elif act == "bypass":
+            session["encounter_resolved"] = True
+            session["floors_cleared"] += 1
+            log.append("🚶 小心翼翼地绕过了陷阱")
+            return {"completed": False, "exp_earned": 0}
+        else:
+            raise HTTPException(status_code=400, detail="陷阱遭遇只能 disarm 或 bypass")
+
+    elif enc_type == "shop":
+        if act == "buy_potion":
+            cost = 8
+            if session["exp_earned"] < cost:
+                raise HTTPException(status_code=400, detail="经验值不足")
+            session["exp_earned"] -= cost
+            session["potions"] += 1
+            log.append(f"🧪 购买了生命药水（花费{cost}EXP）")
+            return {"completed": False, "exp_earned": 0}
+        elif act == "buy_shield":
+            cost = 12
+            if session["exp_earned"] < cost:
+                raise HTTPException(status_code=400, detail="经验值不足")
+            session["exp_earned"] -= cost
+            session["defense"] += 3
+            log.append(f"🛡️ 购买了防御护盾（防御+3，花费{cost}EXP）")
+            return {"completed": False, "exp_earned": 0}
+        elif act == "skip":
+            session["encounter_resolved"] = True
+            session["floors_cleared"] += 1
+            log.append("🚶 离开了商店")
+            return {"completed": False, "exp_earned": 0}
+        else:
+            raise HTTPException(status_code=400, detail="商店遭遇只能 buy_potion、buy_shield 或 skip")
+
+    raise HTTPException(status_code=400, detail="未知遭遇类型")
+
+
+def process_minesweeper_action(session: dict, action: dict) -> dict:
+    """处理扫雷操作"""
+    act = action.get("action")
+    
+    # 处理放弃
+    if act == "abandon":
+        session["completed"] = True
+        session["exp_earned"] = 0
+        session["abandoned"] = True
+        session["game_won"] = False
+        return {"completed": True, "exp_earned": 0, "abandoned": True}
+    
+    if session.get("completed"):
+        raise HTTPException(status_code=400, detail="游戏已结束")
+
+    row = action.get("row")
+    col = action.get("col")
+    rows, cols = session["rows"], session["cols"]
+
+    if row is None or col is None or not (0 <= row < rows and 0 <= col < cols):
+        raise HTTPException(status_code=400, detail="无效的坐标")
+
+    if act == "flag":
+        if session["revealed"][row][col]:
+            raise HTTPException(status_code=400, detail="不能标记已翻开的格子")
+        session["flagged"][row][col] = not session["flagged"][row][col]
+        return {"completed": False, "exp_earned": 0}
+
+    elif act == "reveal":
+        if session["revealed"][row][col]:
+            raise HTTPException(status_code=400, detail="该格已翻开")
+        if session["flagged"][row][col]:
+            raise HTTPException(status_code=400, detail="请先取消标旗")
+
+        # 首次点击：放置地雷
+        if session.get("first_click"):
+            _place_mines(session, row, col)
+            session["first_click"] = False
+
+        # 踩雷
+        if session["board"][row][col] == -1:
+            session["completed"] = True
+            session["won"] = False
+            session["exp_earned"] = 0
+            session["revealed"][row][col] = True
+            return {"completed": True, "exp_earned": 0, "won": False}
+
+        # 翻开（含 flood fill）
+        _flood_fill(session, row, col)
+
+        # 检查是否胜利
+        if session["cells_revealed"] >= session["total_safe"]:
+            session["completed"] = True
+            session["won"] = True
+            exp = MINESWEEPER_DIFFICULTIES[session["difficulty"]]["exp"]
+            session["exp_earned"] = exp
+            return {"completed": True, "exp_earned": exp, "won": True}
+
+        return {"completed": False, "exp_earned": 0}
+
+    elif act == "chord":
+        if not session["revealed"][row][col]:
+            raise HTTPException(status_code=400, detail="只能对已翻开的格子使用快速翻开")
+        num = session["board"][row][col]
+        if num <= 0:
+            raise HTTPException(status_code=400, detail="该格不是数字格")
+
+        # 计算周围旗数
+        flag_count = 0
+        unrevealed = []
+        for dr in range(-1, 2):
+            for dc in range(-1, 2):
+                if dr == 0 and dc == 0:
+                    continue
+                nr, nc = row + dr, col + dc
+                if 0 <= nr < rows and 0 <= nc < cols:
+                    if session["flagged"][nr][nc]:
+                        flag_count += 1
+                    elif not session["revealed"][nr][nc]:
+                        unrevealed.append((nr, nc))
+
+        if flag_count != num:
+            raise HTTPException(status_code=400, detail=f"周围旗数({flag_count})不等于数字({num})")
+
+        # 翻开所有未翻开未标旗的邻居
+        hit_mine = False
+        for nr, nc in unrevealed:
+            if session["board"][nr][nc] == -1:
+                hit_mine = True
+                session["revealed"][nr][nc] = True
+            else:
+                _flood_fill(session, nr, nc)
+
+        if hit_mine:
+            session["completed"] = True
+            session["won"] = False
+            session["exp_earned"] = 0
+            return {"completed": True, "exp_earned": 0, "won": False}
+
+        if session["cells_revealed"] >= session["total_safe"]:
+            session["completed"] = True
+            session["won"] = True
+            exp = MINESWEEPER_DIFFICULTIES[session["difficulty"]]["exp"]
+            session["exp_earned"] = exp
+            return {"completed": True, "exp_earned": exp, "won": True}
+
+        return {"completed": False, "exp_earned": 0}
+
+    else:
+        raise HTTPException(status_code=400, detail="操作必须是 reveal、flag 或 chord")
 
 
 # ==================== API ====================
@@ -321,7 +1424,7 @@ async def get_pet(
     """获取家庭宠物信息"""
     family_id = await get_user_family_id(current_user.id, db)
     pet = await get_or_create_pet(db, family_id)
-    return build_pet_response(pet)
+    return build_pet_response(pet, current_user)
 
 
 @router.put("", response_model=dict)
@@ -333,20 +1436,20 @@ async def update_pet(
     """更新宠物信息（重命名）"""
     family_id = await get_user_family_id(current_user.id, db)
     pet = await get_or_create_pet(db, family_id)
-    
+
     if len(data.name) < 1 or len(data.name) > 20:
         raise HTTPException(status_code=400, detail="昵称长度应在1-20个字符之间")
-    
+
     old_name = pet.name
     pet.name = data.name
     await db.commit()
-    
+
     return {
         "success": True,
         "message": f"宠物已改名为「{data.name}」",
         "old_name": old_name,
         "new_name": data.name,
-        "pet": build_pet_response(pet)
+        "pet": build_pet_response(pet, current_user)
     }
 
 
@@ -359,14 +1462,14 @@ async def rename_pet(
     """重命名宠物"""
     family_id = await get_user_family_id(current_user.id, db)
     pet = await get_or_create_pet(db, family_id)
-    
+
     if len(data.name) < 1 or len(data.name) > 20:
         raise HTTPException(status_code=400, detail="昵称长度应在1-20个字符之间")
-    
+
     old_name = pet.name
     pet.name = data.name
     await db.commit()
-    
+
     return {
         "success": True,
         "message": f"宠物已改名为「{data.name}」",
@@ -383,89 +1486,324 @@ async def daily_checkin(
     """每日签到"""
     family_id = await get_user_family_id(current_user.id, db)
     pet = await get_or_create_pet(db, family_id)
-    
+
     today = date.today()
-    
-    # 检查是否已签到
-    if pet.last_checkin_at:
-        last_checkin_date = pet.last_checkin_at.date()
+
+    # 检查是否已签到（用户独立）
+    if current_user.pet_last_checkin_at:
+        last_checkin_date = current_user.pet_last_checkin_at.date()
         if last_checkin_date >= today:
             raise HTTPException(status_code=400, detail="今天已经签到过了")
-        
+
         # 检查连续签到
         yesterday = today - timedelta(days=1)
         if last_checkin_date == yesterday:
-            pet.checkin_streak += 1
+            current_user.pet_checkin_streak = (current_user.pet_checkin_streak or 0) + 1
         else:
-            pet.checkin_streak = 1
+            current_user.pet_checkin_streak = 1
     else:
-        pet.checkin_streak = 1
-    
-    pet.last_checkin_at = datetime.utcnow()
-    
+        current_user.pet_checkin_streak = 1
+
+    now = datetime.utcnow()
+    current_user.pet_last_checkin_at = now
+    pet.last_interaction_at = now
+
     # 计算经验值
     base_exp = EXP_CONFIG["daily_checkin"]
-    streak_bonus = min(pet.checkin_streak, 7) * EXP_CONFIG["streak_bonus"]  # 最多7天额外奖励
+    streak_bonus = min(current_user.pet_checkin_streak, 7) * EXP_CONFIG["streak_bonus"]  # 最多7天额外奖励
     total_exp = base_exp + streak_bonus
-    
-    # 增加经验（记录操作者）
+
+    # 增加经验（含心情倍率）
     exp_result = await add_exp(db, pet, total_exp, "daily_checkin", operator_id=current_user.id)
-    
-    # 增加心情值
-    pet.happiness = min(100, pet.happiness + 5)
+
+    # 增加心情值（基于衰减后的值）
+    current_happiness = calculate_current_happiness(pet)
+    pet.happiness = min(100, current_happiness + 5)
     await db.commit()
-    
+
     return {
         "success": True,
-        "message": f"签到成功！连续签到 {pet.checkin_streak} 天",
-        "checkin_streak": pet.checkin_streak,
+        "message": f"签到成功！连续签到 {current_user.pet_checkin_streak} 天",
+        "checkin_streak": current_user.pet_checkin_streak,
         "base_exp": base_exp,
         "streak_bonus": streak_bonus,
         "total_exp": total_exp,
         **exp_result,
-        "pet": build_pet_response(pet)
+        "pet": build_pet_response(pet, current_user)
     }
 
 
 @router.post("/feed", response_model=dict)
 async def feed_pet(
+    data: FeedRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """喂食宠物（增加心情值）"""
+    """喂食宠物（差异化食物类型）"""
+    if data.food_type not in FOOD_CONFIG:
+        raise HTTPException(status_code=400, detail="无效的食物类型")
+
     family_id = await get_user_family_id(current_user.id, db)
     pet = await get_or_create_pet(db, family_id)
-    
-    # 检查是否可以喂食（每4小时一次）
+    cfg = FOOD_CONFIG[data.food_type]
+
+    # 检查每日限制（用户独立）
+    feed_counts = get_daily_counts(current_user.pet_daily_feed_counts)
+    used = feed_counts.get(data.food_type, 0)
+    if cfg["daily_limit"] is not None and used >= cfg["daily_limit"]:
+        raise HTTPException(status_code=400, detail=f"{cfg['name']}今日已用完")
+
+    # 检查冷却时间
     if pet.last_fed_at:
-        time_since_feed = datetime.utcnow() - pet.last_fed_at
-        if time_since_feed < timedelta(hours=4):
-            remaining = timedelta(hours=4) - time_since_feed
-            hours = int(remaining.total_seconds() // 3600)
-            minutes = int((remaining.total_seconds() % 3600) // 60)
+        elapsed = (datetime.utcnow() - pet.last_fed_at).total_seconds()
+        cooldown = cfg["cooldown_hours"] * 3600
+        if elapsed < cooldown:
+            remaining = cooldown - elapsed
+            hours = int(remaining // 3600)
+            minutes = int((remaining % 3600) // 60)
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"宠物还不饿，{hours}小时{minutes}分钟后再来喂食吧"
             )
-    
-    pet.last_fed_at = datetime.utcnow()
-    old_happiness = pet.happiness
-    pet.happiness = min(100, pet.happiness + 20)
-    
-    # 喂食也给少量经验（记录操作者）
-    exp_result = await add_exp(db, pet, 5, "feed", operator_id=current_user.id)
-    
+
+    # 计算心情变化（基于衰减后的值）
+    current_happiness = calculate_current_happiness(pet)
+    old_happiness = current_happiness
+    new_happiness = min(100, current_happiness + cfg["happiness"])
+    pet.happiness = new_happiness
+
+    # 更新时间戳
+    now = datetime.utcnow()
+    pet.last_fed_at = now
+    pet.last_interaction_at = now
+
+    # 更新用户每日喂食计数
+    feed_counts[data.food_type] = used + 1
+    current_user.pet_daily_feed_counts = json.dumps(feed_counts)
+
+    # 增加EXP（含心情倍率）
+    source = f"feed_{data.food_type}"
+    exp_result = await add_exp(db, pet, cfg["exp"], source,
+                               operator_id=current_user.id,
+                               source_detail=f"喂食{cfg['name']}")
+
     await db.commit()
-    
+
     return {
         "success": True,
-        "message": f"喂食成功！{pet.name}很开心！",
+        "message": f"喂食{cfg['name']}成功！{pet.name}很开心！",
+        "food_type": data.food_type,
         "happiness_before": old_happiness,
-        "happiness_after": pet.happiness,
+        "happiness_after": new_happiness,
+        "happiness_gained": new_happiness - old_happiness,
         **exp_result,
-        "pet": build_pet_response(pet)
+        "pet": build_pet_response(pet, current_user)
     }
 
+
+# ==================== 小游戏 ====================
+
+@router.post("/game/start", response_model=dict)
+async def start_game(
+    data: GameStartRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """开始一局小游戏"""
+    if data.game_type not in GAME_CONFIG:
+        raise HTTPException(status_code=400, detail="无效的游戏类型")
+
+    family_id = await get_user_family_id(current_user.id, db)
+    pet = await get_or_create_pet(db, family_id)
+    cfg = GAME_CONFIG[data.game_type]
+
+    # 检查是否有正在进行的会话（可恢复）
+    existing = get_active_session(pet, data.game_type)
+    if existing:
+        return {
+            "success": True,
+            "resumed": True,
+            "game_type": data.game_type,
+            "game_name": cfg["name"],
+            "state": sanitize_state(data.game_type, existing),
+        }
+
+    # 检查每日总次数限制（用户独立）
+    game_counts = get_daily_counts(current_user.pet_daily_game_counts)
+    total_used = sum(v for k, v in game_counts.items() if k != "date" and isinstance(v, int))
+    if total_used >= DAILY_GAME_LIMIT:
+        raise HTTPException(status_code=400, detail=f"今日游戏次数已用完（{DAILY_GAME_LIMIT}次）")
+
+    # 创建新会话 - 所有游戏都需要选择难度
+    difficulty = data.difficulty or "easy"
+    valid_difficulties = ["easy", "medium", "hard", "expert"]
+    if difficulty not in valid_difficulties:
+        raise HTTPException(status_code=400, detail=f"无效的难度，请选择: {', '.join(valid_difficulties)}")
+    
+    if data.game_type == "memory":
+        session = create_memory_session(difficulty)
+    elif data.game_type == "stock":
+        session = create_stock_session(difficulty)
+    elif data.game_type == "adventure":
+        session = create_adventure_session(pet.level, difficulty)
+    elif data.game_type == "minesweeper":
+        session = create_minesweeper_session(difficulty)
+    else:
+        raise HTTPException(status_code=400, detail="无效的游戏类型")
+
+    save_game_session(pet, data.game_type, session)
+    pet.last_interaction_at = datetime.utcnow()
+    await db.commit()
+
+    return {
+        "success": True,
+        "resumed": False,
+        "game_type": data.game_type,
+        "game_name": cfg["name"],
+        "state": sanitize_state(data.game_type, session),
+    }
+
+
+@router.post("/game/action", response_model=dict)
+async def game_action(
+    data: GameActionRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """发送游戏操作"""
+    if data.game_type not in GAME_CONFIG:
+        raise HTTPException(status_code=400, detail="无效的游戏类型")
+
+    family_id = await get_user_family_id(current_user.id, db)
+    pet = await get_or_create_pet(db, family_id)
+
+    session = get_active_session(pet, data.game_type)
+    if not session:
+        raise HTTPException(status_code=400, detail="没有进行中的游戏会话，请先开始游戏")
+
+    # 处理操作
+    if data.game_type == "memory":
+        result = process_memory_action(session, data.action)
+    elif data.game_type == "stock":
+        result = process_stock_action(session, data.action)
+    elif data.game_type == "adventure":
+        result = process_adventure_action(session, data.action)
+    elif data.game_type == "minesweeper":
+        result = process_minesweeper_action(session, data.action)
+    else:
+        raise HTTPException(status_code=400, detail="无效的游戏类型")
+
+    # 游戏完成 → 结算EXP + 清除会话
+    exp_result = {}
+    if result.get("completed"):
+        exp_earned = session.get("exp_earned", 0)
+        if exp_earned > 0:
+            source = f"game_{data.game_type}"
+            exp_result = await add_exp(db, pet, exp_earned, source,
+                                       operator_id=current_user.id,
+                                       source_detail=f"{GAME_CONFIG[data.game_type]['name']}完成")
+
+        # 更新用户每日游戏计数
+        game_counts = get_daily_counts(current_user.pet_daily_game_counts)
+        game_counts[data.game_type] = game_counts.get(data.game_type, 0) + 1
+        current_user.pet_daily_game_counts = json.dumps(game_counts)
+
+        # 清除会话
+        clear_game_session(pet, data.game_type)
+
+        # 增加心情
+        current_happiness = calculate_current_happiness(pet)
+        pet.happiness = min(100, current_happiness + 3)
+    else:
+        save_game_session(pet, data.game_type, session)
+
+    pet.last_interaction_at = datetime.utcnow()
+    await db.commit()
+
+    response = {
+        "success": True,
+        "game_type": data.game_type,
+        "result": result,
+        "state": sanitize_state(data.game_type, session),
+        **exp_result,
+    }
+    if result.get("completed"):
+        response["pet"] = build_pet_response(pet, current_user)
+    return response
+
+
+# ==================== 里程碑 ====================
+
+@router.post("/milestone/claim", response_model=dict)
+async def claim_milestone(
+    data: MilestoneClaimRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """领取里程碑奖励"""
+    family_id = await get_user_family_id(current_user.id, db)
+    pet = await get_or_create_pet(db, family_id)
+
+    key = data.milestone_key
+    claimed = []
+    if pet.claimed_milestones:
+        try:
+            claimed = json.loads(pet.claimed_milestones)
+        except (json.JSONDecodeError, TypeError):
+            claimed = []
+
+    if key in claimed:
+        raise HTTPException(status_code=400, detail="该里程碑已领取")
+
+    pet_age_days = (datetime.utcnow() - pet.created_at).days if pet.created_at else 0
+
+    exp_result = {}
+    if key in AGE_MILESTONES:
+        ms = AGE_MILESTONES[key]
+        if pet_age_days < ms["days"]:
+            raise HTTPException(status_code=400, detail="尚未达到该里程碑")
+        label = ms["label"]
+        # 年龄里程碑给EXP
+        exp_result = await add_exp(db, pet, ms["bonus_exp"], "milestone_age",
+                                   operator_id=current_user.id,
+                                   source_detail=f"里程碑: {label}",
+                                   apply_happiness_multiplier=False)
+    elif key in EXP_MILESTONES:
+        ms = EXP_MILESTONES[key]
+        if pet.total_exp < ms["total_exp"]:
+            raise HTTPException(status_code=400, detail="尚未达到该里程碑")
+        label = ms["label"]
+        # 经验里程碑给心情
+        current_happiness = calculate_current_happiness(pet)
+        pet.happiness = min(100, current_happiness + ms["bonus_happiness"])
+    else:
+        raise HTTPException(status_code=400, detail="无效的里程碑")
+
+    # 标记已领取
+    claimed.append(key)
+    pet.claimed_milestones = json.dumps(claimed)
+    pet.last_interaction_at = datetime.utcnow()
+
+    await db.commit()
+
+    # 触发成就检测
+    try:
+        from app.services.achievement import detect_user_achievements
+        await detect_user_achievements(current_user.id, family_id, db)
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "milestone_key": key,
+        "label": label,
+        "message": f"恭喜达成里程碑「{label}」！",
+        **exp_result,
+        "pet": build_pet_response(pet, current_user)
+    }
+
+
+# ==================== 其他API ====================
 
 @router.get("/evolution-preview", response_model=dict)
 async def get_evolution_preview(
@@ -475,12 +1813,12 @@ async def get_evolution_preview(
     """获取所有进化形态预览"""
     family_id = await get_user_family_id(current_user.id, db)
     pet = await get_or_create_pet(db, family_id)
-    
+
     evolutions = []
     for pet_type, config in PET_EVOLUTION.items():
         is_current = pet.pet_type == pet_type
         is_unlocked = pet.level >= config["min_level"]
-        
+
         evolutions.append({
             "type": pet_type,
             "name": config["name"],
@@ -491,7 +1829,7 @@ async def get_evolution_preview(
             "is_current": is_current,
             "is_unlocked": is_unlocked
         })
-    
+
     return {
         "current_level": pet.level,
         "evolutions": evolutions
@@ -506,7 +1844,13 @@ async def get_exp_sources():
             # 基础操作
             {"key": "daily_checkin", "name": "每日签到", "exp": EXP_CONFIG["daily_checkin"], "category": "基础"},
             {"key": "streak_bonus", "name": "连续签到奖励", "exp": f"+{EXP_CONFIG['streak_bonus']}/天 (最多7天)", "category": "基础"},
-            {"key": "feed", "name": "喂食宠物", "exp": 5, "category": "基础"},
+            {"key": "feed_basic", "name": "喂食普通饲料", "exp": FOOD_CONFIG["basic"]["exp"], "category": "基础"},
+            {"key": "feed_premium", "name": "喂食高级饲料", "exp": FOOD_CONFIG["premium"]["exp"], "category": "基础"},
+            {"key": "feed_luxury", "name": "喂食豪华大餐", "exp": FOOD_CONFIG["luxury"]["exp"], "category": "基础"},
+            {"key": "game_memory", "name": "记忆翻牌", "exp": GAME_CONFIG["memory"]["exp_range"], "category": "小游戏"},
+            {"key": "game_stock", "name": "迷你炒股", "exp": GAME_CONFIG["stock"]["exp_range"], "category": "小游戏"},
+            {"key": "game_adventure", "name": "宠物探险", "exp": GAME_CONFIG["adventure"]["exp_range"], "category": "小游戏"},
+            {"key": "game_minesweeper", "name": "扫雷", "exp": GAME_CONFIG["minesweeper"]["exp_range"], "category": "小游戏"},
             # 财务操作
             {"key": "deposit", "name": "存款操作", "exp": EXP_CONFIG["deposit"], "category": "财务"},
             {"key": "investment", "name": "理财操作", "exp": EXP_CONFIG["investment"], "category": "财务"},
@@ -545,26 +1889,25 @@ async def get_exp_logs(
 ):
     """获取宠物经验获取记录（支持时间范围筛选，默认最近一天）"""
     family_id = await get_user_family_id(current_user.id, db)
-    
+
     # 时间范围筛选
     start_time = get_time_range_filter(time_range)
-    
+
     # 构建基础查询条件
     base_conditions = [PetExpLog.family_id == family_id]
     if start_time:
         base_conditions.append(PetExpLog.created_at >= start_time)
-    
+
     # 查询记录总数
     count_result = await db.execute(
         select(func.count()).select_from(PetExpLog).where(*base_conditions)
     )
     total = count_result.scalar()
-    
+
     # 查询记录列表（按时间倒序），联表查询操作者信息
-    # 使用 outerjoin 因为 operator_id 可能为空（历史记录）
     from sqlalchemy.orm import aliased
     OperatorUser = aliased(User)
-    
+
     result = await db.execute(
         select(PetExpLog, OperatorUser.nickname)
         .outerjoin(OperatorUser, PetExpLog.operator_id == OperatorUser.id)
@@ -574,13 +1917,13 @@ async def get_exp_logs(
         .offset(offset)
     )
     rows = result.all()
-    
+
     # 构建响应
     log_list = []
     for row in rows:
         log = row[0]  # PetExpLog 对象
         operator_nickname = row[1]  # 操作者昵称（可能为 None）
-        
+
         log_list.append({
             "id": log.id,
             "exp_amount": log.exp_amount,
@@ -591,7 +1934,7 @@ async def get_exp_logs(
             "operator_nickname": operator_nickname or "系统",
             "created_at": log.created_at.isoformat() if log.created_at else None
         })
-    
+
     return {
         "total": total,
         "logs": log_list,
@@ -604,7 +1947,7 @@ async def get_exp_logs(
 async def grant_pet_exp(db: AsyncSession, family_id: int, source: str, multiplier: float = 1.0, operator_id: int = None, source_detail: str = None) -> dict:
     """
     为宠物增加经验值（供其他模块调用）
-    
+
     Args:
         db: 数据库会话
         family_id: 家庭ID
@@ -612,12 +1955,12 @@ async def grant_pet_exp(db: AsyncSession, family_id: int, source: str, multiplie
         multiplier: 经验倍数
         operator_id: 操作者用户ID
         source_detail: 来源详情描述
-    
+
     Returns:
         经验增加结果
     """
     pet = await get_or_create_pet(db, family_id)
     base_exp = EXP_CONFIG.get(source, 10)
     actual_exp = int(base_exp * multiplier)
-    
+
     return await add_exp(db, pet, actual_exp, source, source_detail=source_detail, operator_id=operator_id)

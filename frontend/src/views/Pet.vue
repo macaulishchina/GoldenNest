@@ -10,17 +10,23 @@
       <!-- 宠物展示区 -->
       <div class="pet-display">
         <div class="pet-stage">
-          <div class="pet-avatar" :class="pet.pet_type">
+          <div class="pet-avatar" :class="[pet.pet_type, 'mood-' + (pet.mood?.state || 'happy')]">
             <span class="pet-emoji">{{ getPetEmoji(pet.pet_type) }}</span>
+            <!-- 心情特效 -->
+            <span v-if="pet.mood?.state === 'ecstatic'" class="mood-sparkles">✨</span>
+            <span v-if="pet.mood?.state === 'sad'" class="mood-tear">💧</span>
           </div>
           <div class="pet-particles">
             <span v-for="n in 5" :key="n" class="particle"></span>
           </div>
         </div>
-        
-        <h1 class="pet-name">{{ pet.name }}</h1>
+
+        <h1 class="pet-name">
+          {{ pet.name }}
+          <span class="rename-icon" @click="showRenameModal = true" title="修改名字">✏️</span>
+        </h1>
         <p class="pet-type-label">{{ getPetTypeName(pet.pet_type) }}</p>
-        
+
         <!-- 等级和经验 -->
         <div class="level-info">
           <span class="level">Lv.{{ pet.level }}</span>
@@ -40,11 +46,16 @@
             <span class="stat-label">总经验</span>
           </div>
         </div>
-        <div class="stat-card">
-          <span class="stat-icon">❤️</span>
+        <div class="stat-card mood-card">
+          <span class="stat-icon">{{ pet.mood?.emoji || '❤️' }}</span>
           <div class="stat-info">
-            <span class="stat-value">{{ pet.happiness }}</span>
-            <span class="stat-label">心情值</span>
+            <div class="stat-value-row">
+              <span class="stat-value" :style="{ color: pet.mood?.color }">{{ pet.happiness }}</span>
+              <span class="multiplier-badge" :class="multiplierClass">
+                {{ pet.happiness_multiplier }}x
+              </span>
+            </div>
+            <span class="stat-label">{{ pet.mood?.label || '心情值' }}</span>
           </div>
         </div>
         <div class="stat-card">
@@ -57,17 +68,43 @@
         <div class="stat-card">
           <span class="stat-icon">🎂</span>
           <div class="stat-info">
-            <span class="stat-value">{{ formatAge(pet.created_at) }}</span>
+            <span class="stat-value">{{ pet.pet_age_days || formatAge(pet.created_at) }}天</span>
             <span class="stat-label">陪伴天数</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 可领取的里程碑 -->
+      <div v-if="pet.available_milestones?.length > 0" class="milestones-section">
+        <h2>🎯 可领取的里程碑</h2>
+        <div class="milestone-list">
+          <div
+            v-for="ms in pet.available_milestones"
+            :key="ms.key"
+            class="milestone-card"
+          >
+            <div class="milestone-icon">{{ ms.type === 'age' ? '📅' : '⭐' }}</div>
+            <div class="milestone-info">
+              <span class="milestone-name">{{ ms.label }}</span>
+              <span class="milestone-reward">
+                {{ ms.bonus_exp ? `+${ms.bonus_exp} EXP` : '' }}
+                {{ ms.bonus_happiness ? `+${ms.bonus_happiness} 心情` : '' }}
+              </span>
+            </div>
+            <button
+              class="milestone-claim-btn"
+              @click="claimMilestone(ms.key)"
+              :disabled="milestoneLoading"
+            >领取</button>
           </div>
         </div>
       </div>
 
       <!-- 操作按钮 -->
       <div class="action-buttons">
-        <button 
-          class="btn-action checkin" 
-          @click="checkin" 
+        <button
+          class="btn-action checkin"
+          @click="checkin"
           :disabled="checkinLoading || pet.checked_in_today"
         >
           <span class="btn-icon">📅</span>
@@ -75,8 +112,8 @@
           <span class="btn-reward" v-if="!pet.checked_in_today">+{{ getCheckinExp() }} EXP</span>
         </button>
 
-        <button 
-          class="btn-action feed" 
+        <button
+          class="btn-action feed"
           @click="showFeedModal = true"
           :disabled="feedLoading"
         >
@@ -84,21 +121,51 @@
           <span class="btn-text">投喂食物</span>
         </button>
 
-        <button 
-          class="btn-action rename" 
-          @click="showRenameModal = true"
+        <button
+          class="btn-action game"
+          @click="showGamePanel = !showGamePanel"
         >
-          <span class="btn-icon">✏️</span>
-          <span class="btn-text">修改名字</span>
+          <span class="btn-icon">🎮</span>
+          <span class="btn-text">小游戏</span>
+          <span class="btn-badge" v-if="totalGamePlaysLeft > 0">{{ totalGamePlaysLeft }}</span>
         </button>
+
+      </div>
+
+      <!-- 小游戏面板 -->
+      <div v-if="showGamePanel" class="game-panel">
+        <h2>🎮 小游戏 <span class="game-total-badge">剩余 {{ totalGamePlaysLeft }}/{{ pet.daily_game_limit || 10 }} 次</span></h2>
+        <div class="game-grid">
+          <div
+            v-for="(game, gameKey) in pet.game_status"
+            :key="gameKey"
+            class="game-card"
+            :class="{
+              disabled: !game.can_play || (hasActiveGame && hasActiveGame !== gameKey),
+              active: game.has_active_session
+            }"
+            @click="(game.can_play && (!hasActiveGame || hasActiveGame === gameKey)) && startGame(gameKey)"
+          >
+            <div class="game-card-top">
+              <span class="game-icon">{{ game.icon }}</span>
+              <span v-if="game.has_active_session" class="active-badge">进行中</span>
+            </div>
+            <div class="game-name">{{ game.name }}</div>
+            <div class="game-desc">{{ game.description }}</div>
+            <div class="game-footer">
+              <span class="game-exp">{{ game.exp_range }} EXP</span>
+              <span v-if="game.used_today" class="game-played">已玩{{ game.used_today }}次</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 进化路线 -->
       <div class="evolution-section">
         <h2>🌟 进化之路</h2>
         <div class="evolution-path">
-          <div 
-            v-for="(stage, key) in evolutionStages" 
+          <div
+            v-for="(stage, key) in evolutionStages"
             :key="key"
             class="evolution-stage"
             :class="{ active: pet.pet_type === key, unlocked: isStageUnlocked(key) }"
@@ -116,20 +183,21 @@
           <h3>📊 经验获取记录</h3>
           <span class="toggle-icon" :class="{ expanded: showExpLogs }">▼</span>
         </div>
-        
+
         <div v-if="showExpLogs" class="exp-logs-content">
           <!-- 经验获取方式说明 -->
           <div class="tips-box">
             <h4>💡 经验获取方式</h4>
             <ul>
-              <li>📅 每日签到: +10~60 EXP (连续签到加成)</li>
-              <li>💰 存款操作: 每100元 +1 EXP</li>
-              <li>📈 投资收益: 每10元收益 +1 EXP</li>
-              <li>🗳️ 参与投票: +20 EXP</li>
-              <li>🎁 赠送股权: +30 EXP</li>
+              <li>📅 每日签到: +10~45 EXP (连续签到加成)</li>
+              <li>🌾 普通饲料: +3 EXP | 🌽 高级饲料: +8 EXP | 🍖 豪华大餐: +20 EXP</li>
+              <li>🃏 记忆翻牌: 30~60 EXP | 📈 迷你炒股: 5~80 EXP</li>
+              <li>⚔️ 宠物探险: 5~60 EXP | 💣 扫雷: 20~1000 EXP</li>
+              <li>💰 存款/投资/投票等操作也可获得EXP</li>
+              <li>😊 心情越高EXP倍率越高 (最高1.2x)</li>
             </ul>
           </div>
-          
+
           <!-- 经验记录列表 -->
           <div class="exp-logs-list">
             <div v-if="expLogsLoading" class="loading-small">
@@ -137,9 +205,9 @@
               加载中...
             </div>
             <template v-else-if="expLogs.length > 0">
-              <div 
-                v-for="log in expLogs" 
-                :key="log.id" 
+              <div
+                v-for="log in expLogs"
+                :key="log.id"
                 class="exp-log-item"
               >
                 <div class="log-icon">{{ getSourceIcon(log.source) }}</div>
@@ -181,15 +249,31 @@
       <div class="modal-content">
         <h2>🍖 选择食物</h2>
         <div class="food-list">
-          <div 
-            v-for="food in foods" 
-            :key="food.type"
+          <div
+            v-for="(food, foodKey) in pet?.feed_status"
+            :key="foodKey"
             class="food-item"
-            @click="feed(food.type)"
+            :class="{ 'food-disabled': !food.can_feed }"
+            @click="food.can_feed && feed(foodKey)"
           >
-            <span class="food-icon">{{ food.icon }}</span>
-            <span class="food-name">{{ food.name }}</span>
-            <span class="food-effect">+{{ food.happiness }} 心情</span>
+            <span class="food-icon">{{ food.emoji }}</span>
+            <div class="food-detail">
+              <span class="food-name">{{ food.name }}</span>
+              <span class="food-effects">
+                +{{ food.happiness }} 心情 · +{{ food.exp }} EXP
+              </span>
+              <span v-if="!food.can_feed" class="food-unavailable">
+                <template v-if="food.cooldown_remaining > 0">
+                  冷却中 {{ formatCooldown(food.cooldown_remaining) }}
+                </template>
+                <template v-else-if="food.daily_limit && food.used_today >= food.daily_limit">
+                  今日已用完
+                </template>
+              </span>
+              <span v-else-if="food.daily_limit" class="food-remaining">
+                剩余 {{ food.daily_limit - food.used_today }}/{{ food.daily_limit }} 次
+              </span>
+            </div>
           </div>
         </div>
         <button class="btn-cancel" @click="showFeedModal = false">取消</button>
@@ -210,15 +294,98 @@
       </div>
     </div>
 
+    <!-- 难度选择弹窗（统一） -->
+    <div v-if="showDifficultyModal" class="modal-overlay" @click.self="cancelDifficultySelect">
+      <div class="modal-content difficulty-modal">
+        <h2>🎮 {{ difficultyModalTitle }}</h2>
+        <div class="difficulty-cards">
+          <div
+            v-for="diff in currentGameDifficulties"
+            :key="diff.key"
+            class="difficulty-card"
+            :class="diff.key"
+            @click="confirmDifficultySelect(diff.key)"
+          >
+            <div class="diff-label">{{ diff.label }}</div>
+            <div class="diff-desc">{{ diff.desc }}</div>
+            <div class="diff-exp">奖励: {{ diff.exp }}</div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="cancelDifficultySelect">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 游戏进行中弹窗 -->
+    <div v-if="activeGame" class="modal-overlay game-overlay" :class="{ 'fullscreen-active': gameFullscreen }">
+      <div class="modal-content game-modal" :class="{ fullscreen: gameFullscreen }">
+        <div class="game-modal-header">
+          <h2>{{ activeGameName }}</h2>
+          <button
+            v-if="activeGameState && !activeGameState.completed && !activeGameState.game_over"
+            class="game-abandon-btn"
+            @click="showAbandonConfirm = true"
+          >🏳️</button>
+          <div class="game-header-actions">
+            <button
+              v-if="activeGame === 'minesweeper' && activeGameState"
+              class="game-fullscreen-btn"
+              @click="gameFullscreen = !gameFullscreen"
+              :title="gameFullscreen ? '退出全屏' : '全屏模式'"
+            >{{ gameFullscreen ? '⬜' : '⛶' }}</button>
+            <button class="game-close-btn" @click="closeGame">✕</button>
+          </div>
+        </div>
+
+        <!-- 确认放弃弹窗 -->
+        <div v-if="showAbandonConfirm" class="abandon-confirm-overlay" @click.self="showAbandonConfirm = false">
+          <div class="abandon-confirm-dialog">
+            <div class="abandon-confirm-title">🏳️ 确认放弃</div>
+            <div class="abandon-confirm-message">确定要放弃本局游戏吗？<br>放弃后不会获得任何经验。</div>
+            <div class="abandon-confirm-actions">
+              <button class="abandon-confirm-btn cancel" @click="showAbandonConfirm = false">取消</button>
+              <button class="abandon-confirm-btn confirm" @click="doAbandonGame">确认放弃</button>
+            </div>
+          </div>
+        </div>
+        <MemoryGame v-if="activeGame === 'memory'" :state="activeGameState" @action="gameAction" />
+        <StockGame v-if="activeGame === 'stock'" :state="activeGameState" @action="gameAction" />
+        <AdventureGame v-if="activeGame === 'adventure'" :state="activeGameState" @action="gameAction" />
+        <MinesweeperGame v-if="activeGame === 'minesweeper'" :state="activeGameState" @action="gameAction" />
+        <div v-if="gameCompleted" class="game-done-actions">
+          <button class="btn-submit" @click="closeGame">关闭</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 升级动画 -->
-    <div v-if="showLevelUp" class="level-up-overlay" @click="showLevelUp = false">
+    <div v-if="showLevelUp && !levelUpInfo.evolved" class="level-up-overlay" @click="showLevelUp = false">
       <div class="level-up-content">
         <div class="level-up-icon">🎉</div>
         <h2>恭喜升级!</h2>
         <p class="new-level">Lv.{{ levelUpInfo.newLevel }}</p>
-        <p v-if="levelUpInfo.evolved" class="evolution-msg">
-          {{ getPetEmoji(levelUpInfo.newType) }} 进化为 {{ getPetTypeName(levelUpInfo.newType) }}!
+      </div>
+    </div>
+
+    <!-- 进化庆典全屏覆盖 -->
+    <div v-if="showEvolution" class="evolution-overlay" @click="showEvolution = false">
+      <!-- 烟花粒子 -->
+      <div class="fireworks">
+        <span v-for="n in 20" :key="n" class="firework-particle" :style="fireworkStyle(n)"></span>
+      </div>
+      <div class="evolution-celebration">
+        <div class="evolution-transform">
+          <span class="old-form">{{ getPetEmoji(levelUpInfo.oldType) }}</span>
+          <span class="evolution-arrow">➜</span>
+          <span class="new-form">{{ getPetEmoji(levelUpInfo.newType) }}</span>
+        </div>
+        <h2 class="evolution-title">进化成功!</h2>
+        <p class="evolution-new-name">{{ getPetTypeName(levelUpInfo.newType) }}</p>
+        <p v-if="levelUpInfo.bonusExp" class="evolution-bonus">
+          进化奖励 +{{ levelUpInfo.bonusExp }} EXP
         </p>
+        <p class="evolution-hint">点击任意处关闭</p>
       </div>
     </div>
   </div>
@@ -229,21 +396,93 @@ import { ref, computed, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { api } from '@/api'
 import { useUserStore } from '@/stores/user'
+import MemoryGame from '@/components/games/MemoryGame.vue'
+import StockGame from '@/components/games/StockGame.vue'
+import AdventureGame from '@/components/games/AdventureGame.vue'
+import MinesweeperGame from '@/components/games/MinesweeperGame.vue'
 
 const userStore = useUserStore()
 const message = useMessage()
 
 // 状态
 const loading = ref(false)
-const hasFamily = computed(() => !!userStore.user?.family_id)
 const checkinLoading = ref(false)
 const feedLoading = ref(false)
+const gameLoading = ref(false)
+const milestoneLoading = ref(false)
 const pet = ref(null)
 const showFeedModal = ref(false)
 const showRenameModal = ref(false)
 const showLevelUp = ref(false)
+const showEvolution = ref(false)
+const showGamePanel = ref(false)
 const newName = ref('')
 const levelUpInfo = ref({})
+
+// 游戏状态
+const activeGame = ref(null)      // 'memory' | 'stock' | 'adventure' | 'minesweeper' | null
+const activeGameState = ref({})
+const activeGameName = ref('')
+const gameCompleted = ref(false)
+const showAbandonConfirm = ref(false)
+
+const gameFullscreen = ref(false)
+
+// 难度选择状态
+const showDifficultyModal = ref(false)
+const pendingGameType = ref(null)  // 待开始的游戏类型
+
+// 各游戏的难度配置
+const GAME_DIFFICULTIES = {
+  memory: {
+    name: '记忆翻牌',
+    difficulties: [
+      { key: 'easy', label: '入门', desc: '3×4 (6对)', exp: '15~30 EXP' },
+      { key: 'medium', label: '普通', desc: '4×4 (8对)', exp: '30~60 EXP' },
+      { key: 'hard', label: '困难', desc: '4×5 (10对)', exp: '60~120 EXP' },
+      { key: 'expert', label: '地狱', desc: '6×6 (18对)', exp: '300~1000 EXP' },
+    ]
+  },
+  stock: {
+    name: '迷你炒股',
+    difficulties: [
+      { key: 'easy', label: '入门', desc: '5回合 低波动', exp: '10~50 EXP' },
+      { key: 'medium', label: '普通', desc: '10回合 中波动', exp: '20~100 EXP' },
+      { key: 'hard', label: '困难', desc: '15回合 高波动', exp: '50~200 EXP' },
+      { key: 'expert', label: '地狱', desc: '25回合 极端波动', exp: '200~1000 EXP' },
+    ]
+  },
+  adventure: {
+    name: '宠物探险',
+    difficulties: [
+      { key: 'easy', label: '入门', desc: '5层 低难度', exp: '30~50 EXP' },
+      { key: 'medium', label: '普通', desc: '10层 中难度', exp: '60~100 EXP' },
+      { key: 'hard', label: '困难', desc: '15层 高难度', exp: '150~250 EXP' },
+      { key: 'expert', label: '地狱', desc: '25层 极高难度', exp: '500~1000 EXP' },
+    ]
+  },
+  minesweeper: {
+    name: '扫雷',
+    difficulties: [
+      { key: 'easy', label: '入门', desc: '6×6 (5雷)', exp: '20 EXP' },
+      { key: 'medium', label: '普通', desc: '9×9 (12雷)', exp: '60 EXP' },
+      { key: 'hard', label: '困难', desc: '12×12 (30雷)', exp: '200 EXP' },
+      { key: 'expert', label: '地狱', desc: '16×16 (60雷)', exp: '1000 EXP' },
+    ]
+  }
+}
+
+// 计算当前游戏的难度列表
+const currentGameDifficulties = computed(() => {
+  if (!pendingGameType.value) return []
+  return GAME_DIFFICULTIES[pendingGameType.value]?.difficulties || []
+})
+
+// 难度选择弹窗标题
+const difficultyModalTitle = computed(() => {
+  if (!pendingGameType.value) return '选择难度'
+  return GAME_DIFFICULTIES[pendingGameType.value]?.name || '选择难度'
+})
 
 // 经验记录相关状态
 const showExpLogs = ref(false)
@@ -253,26 +492,45 @@ const expLogsLoading = ref(false)
 const expLogsOffset = ref(0)
 const EXP_LOGS_LIMIT = 20
 
-// 进化阶段
+// 进化阶段（已修复阈值）
 const evolutionStages = {
   golden_egg: { name: '金蛋', emoji: '🥚', minLevel: 1 },
   golden_chick: { name: '金雏鸡', emoji: '🐣', minLevel: 10 },
   golden_bird: { name: '金凤雏', emoji: '🐤', minLevel: 30 },
-  golden_phoenix: { name: '金凤凰', emoji: '🦅', minLevel: 50 },
-  golden_dragon: { name: '金龙', emoji: '🐉', minLevel: 80 }
+  golden_phoenix: { name: '金凤凰', emoji: '🦅', minLevel: 60 },
+  golden_dragon: { name: '金龙', emoji: '🐉', minLevel: 100 }
 }
-
-// 食物列表
-const foods = [
-  { type: 'normal', name: '普通饲料', icon: '🌾', happiness: 5 },
-  { type: 'premium', name: '高级饲料', icon: '🌽', happiness: 15 },
-  { type: 'luxury', name: '豪华大餐', icon: '🍖', happiness: 30 }
-]
 
 // 计算经验进度
 const expProgress = computed(() => {
   if (!pet.value) return 0
   return Math.min(100, (pet.value.current_exp / pet.value.exp_to_next) * 100)
+})
+
+// 心情倍率样式
+const multiplierClass = computed(() => {
+  const m = pet.value?.happiness_multiplier || 1.0
+  if (m >= 1.2) return 'multiplier-high'
+  if (m >= 1.0) return 'multiplier-normal'
+  if (m >= 0.8) return 'multiplier-low'
+  return 'multiplier-bad'
+})
+
+// 剩余游戏总次数
+const totalGamePlaysLeft = computed(() => {
+  if (!pet.value) return 0
+  const limit = pet.value.daily_game_limit || 10
+  const used = pet.value.total_games_used || 0
+  return Math.max(0, limit - used)
+})
+
+// 当前有进行中的游戏类型（null表示没有）
+const hasActiveGame = computed(() => {
+  if (!pet.value?.game_status) return null
+  for (const [key, game] of Object.entries(pet.value.game_status)) {
+    if (game && game.has_active_session) return key
+  }
+  return null
 })
 
 // 加载宠物信息
@@ -284,10 +542,29 @@ const loadPet = async () => {
     newName.value = res.data?.name || ''
   } catch (err) {
     console.error('获取宠物信息失败:', err)
-    // 任何错误都显示没有宠物状态
     pet.value = null
   } finally {
     loading.value = false
+  }
+}
+
+// 处理升级/进化结果
+const handleExpResult = (res, oldLevel) => {
+  if (res.data.evolved) {
+    levelUpInfo.value = {
+      newLevel: pet.value.level,
+      evolved: true,
+      oldType: res.data.old_type,
+      newType: res.data.new_type,
+      bonusExp: res.data.evolution_bonus_exp || 0
+    }
+    showEvolution.value = true
+  } else if (pet.value.level > oldLevel) {
+    levelUpInfo.value = {
+      newLevel: pet.value.level,
+      evolved: false
+    }
+    showLevelUp.value = true
   }
 }
 
@@ -295,20 +572,10 @@ const loadPet = async () => {
 const checkin = async () => {
   checkinLoading.value = true
   try {
-    const res = await api.post('/pet/checkin')
     const oldLevel = pet.value.level
+    const res = await api.post('/pet/checkin')
     await loadPet()
-    
-    // 检查是否升级
-    if (pet.value.level > oldLevel) {
-      levelUpInfo.value = {
-        newLevel: pet.value.level,
-        evolved: res.data.evolved,
-        newType: pet.value.pet_type
-      }
-      showLevelUp.value = true
-    }
-    
+    handleExpResult(res, oldLevel)
     message.success(`签到成功! +${res.data.exp_gained} EXP`)
   } catch (err) {
     message.error(err.response?.data?.detail || '签到失败')
@@ -325,21 +592,137 @@ const feed = async (foodType) => {
     const oldLevel = pet.value.level
     const res = await api.post('/pet/feed', { food_type: foodType })
     await loadPet()
-    
-    if (pet.value.level > oldLevel) {
-      levelUpInfo.value = {
-        newLevel: pet.value.level,
-        evolved: res.data.evolved,
-        newType: pet.value.pet_type
-      }
-      showLevelUp.value = true
-    }
-    
-    message.success(`喂食成功! 心情+${res.data.happiness_gained}`)
+    handleExpResult(res, oldLevel)
+    message.success(`喂食成功! 心情+${res.data.happiness_gained}, +${res.data.exp_gained} EXP`)
   } catch (err) {
     message.error(err.response?.data?.detail || '喂食失败')
   } finally {
     feedLoading.value = false
+  }
+}
+
+// 开始游戏
+const startGame = async (gameType, difficulty = null) => {
+  const gameStatus = pet.value?.game_status?.[gameType]
+
+  // 有进行中的游戏 → 直接恢复，不需要选难度
+  if (gameStatus?.has_active_session) {
+    gameLoading.value = true
+    gameCompleted.value = false
+    try {
+      const res = await api.post('/pet/game/start', { game_type: gameType })
+      activeGame.value = gameType
+      activeGameState.value = res.data.state
+      activeGameName.value = res.data.game_name
+      showGamePanel.value = false
+    } catch (err) {
+      message.error(err.response?.data?.detail || '启动游戏失败')
+    } finally {
+      gameLoading.value = false
+    }
+    return
+  }
+
+  // 所有游戏都需要选难度（如果没有传入难度）
+  if (!difficulty) {
+    pendingGameType.value = gameType
+    showDifficultyModal.value = true
+    showGamePanel.value = false
+    return
+  }
+
+  // 有难度参数，直接开始游戏
+  gameLoading.value = true
+  gameCompleted.value = false
+  try {
+    const payload = { game_type: gameType, difficulty }
+    const res = await api.post('/pet/game/start', payload)
+    activeGame.value = gameType
+    activeGameState.value = res.data.state
+    activeGameName.value = res.data.game_name
+    showGamePanel.value = false
+    showDifficultyModal.value = false
+  } catch (err) {
+    message.error(err.response?.data?.detail || '启动游戏失败')
+  } finally {
+    gameLoading.value = false
+  }
+}
+
+// 确认选择难度
+const confirmDifficultySelect = (difficulty) => {
+  if (!pendingGameType.value) return
+  startGame(pendingGameType.value, difficulty)
+}
+
+// 取消难度选择
+const cancelDifficultySelect = () => {
+  showDifficultyModal.value = false
+  pendingGameType.value = null
+}
+
+// 游戏操作
+const gameAction = async (action) => {
+  if (gameLoading.value) return
+  gameLoading.value = true
+  try {
+    const oldLevel = pet.value.level
+    const res = await api.post('/pet/game/action', {
+      game_type: activeGame.value,
+      action
+    })
+    activeGameState.value = res.data.state
+    if (res.data.result?.completed) {
+      gameCompleted.value = true
+      if (res.data.pet) {
+        pet.value = res.data.pet
+      }
+      if (res.data.exp_gained > 0) {
+        message.success(`游戏完成！+${res.data.exp_gained} EXP`)
+      }
+      handleExpResult(res, oldLevel)
+    }
+  } catch (err) {
+    message.error(err.response?.data?.detail || '操作失败')
+  } finally {
+    gameLoading.value = false
+  }
+}
+
+// 放弃游戏
+const doAbandonGame = async () => {
+  showAbandonConfirm.value = false
+  await gameAction({ action: 'abandon' })
+}
+
+// 关闭游戏
+const closeGame = () => {
+  gameFullscreen.value = false
+  if (gameCompleted.value) {
+    activeGame.value = null
+    activeGameState.value = {}
+    gameCompleted.value = false
+    loadPet()
+  } else {
+    // 游戏未完成，确认是否退出
+    activeGame.value = null
+    activeGameState.value = {}
+  }
+}
+
+// 领取里程碑
+const claimMilestone = async (milestoneKey) => {
+  milestoneLoading.value = true
+  try {
+    const oldLevel = pet.value.level
+    const res = await api.post('/pet/milestone/claim', { milestone_key: milestoneKey })
+    await loadPet()
+    handleExpResult(res, oldLevel)
+    message.success(res.data.message || '里程碑领取成功!')
+  } catch (err) {
+    message.error(err.response?.data?.detail || '领取失败')
+  } finally {
+    milestoneLoading.value = false
   }
 }
 
@@ -376,7 +759,7 @@ const isStageUnlocked = (stageKey) => {
 const getCheckinExp = () => {
   if (!pet.value) return 10
   const baseExp = 10
-  const streakBonus = Math.min(50, pet.value.checkin_streak * 5)
+  const streakBonus = Math.min(7, pet.value.checkin_streak) * 5
   return baseExp + streakBonus
 }
 
@@ -385,7 +768,31 @@ const formatAge = (dateStr) => {
   const created = new Date(dateStr)
   const now = new Date()
   const days = Math.floor((now - created) / (1000 * 60 * 60 * 24))
-  return days + '天'
+  return days
+}
+
+const formatCooldown = (seconds) => {
+  if (seconds <= 0) return ''
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (h > 0) return `${h}时${m}分`
+  return `${m}分钟`
+}
+
+const fireworkStyle = (n) => {
+  const angle = (n / 20) * 2 * Math.PI
+  const distance = 100 + Math.random() * 150
+  const delay = Math.random() * 1.5
+  const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#FF9A3C', '#A855F7', '#FF69B4']
+  const color = colors[n % colors.length]
+  const tx = Math.cos(angle) * distance
+  const ty = Math.sin(angle) * distance
+  return {
+    '--tx': tx + 'px',
+    '--ty': ty + 'px',
+    '--delay': delay + 's',
+    '--color': color
+  }
 }
 
 // 经验记录相关方法
@@ -433,6 +840,9 @@ const getSourceIcon = (source) => {
   const icons = {
     'daily_checkin': '📅',
     'feed': '🍖',
+    'feed_basic': '🌾',
+    'feed_premium': '🌽',
+    'feed_luxury': '🍖',
     'deposit': '💰',
     'investment': '📈',
     'vote': '🗳️',
@@ -440,26 +850,33 @@ const getSourceIcon = (source) => {
     'expense_approved': '💳',
     'gift': '🎁',
     'gift_sent': '🎁',
-    'achievement_unlock': '🏆'
+    'achievement_unlock': '🏆',
+    'game_memory': '🃏',
+    'game_stock': '📈',
+    'game_adventure': '⚔️',
+    'game_minesweeper': '💣',
+    'milestone_age': '📅',
+    'milestone_exp': '⭐',
+    'evolution_bonus': '🎊'
   }
   return icons[source] || '⭐'
 }
 
 const formatLogTime = (dateStr) => {
   if (!dateStr) return ''
-  const date = new Date(dateStr)
+  // 后端返回的是 UTC 时间，如果没有 Z 后缀需要添加
+  let normalizedStr = dateStr
+  if (!dateStr.endsWith('Z') && !dateStr.includes('+')) {
+    normalizedStr = dateStr + 'Z'
+  }
+  const date = new Date(normalizedStr)
   const now = new Date()
   const diff = now - date
-  
-  // 1分钟内
+
   if (diff < 60000) return '刚刚'
-  // 1小时内
   if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`
-  // 24小时内
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`
-  // 7天内
   if (diff < 604800000) return `${Math.floor(diff / 86400000)}天前`
-  // 更早
   return `${date.getMonth() + 1}/${date.getDate()}`
 }
 
@@ -498,7 +915,7 @@ onMounted(() => {
   100% { transform: rotate(360deg); }
 }
 
-/* 宠物展示区 */
+/* ==================== 宠物展示区 ==================== */
 .pet-display {
   text-align: center;
   padding: 30px 20px;
@@ -518,20 +935,138 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   box-shadow: 0 10px 30px rgba(255, 193, 7, 0.4);
-  animation: float 3s ease-in-out infinite;
+  position: relative;
+  overflow: visible;
 }
 
-.pet-avatar.golden_dragon {
-  background: linear-gradient(135deg, #ff6b6b 0%, #ffd93d 50%, #6bcb77 100%);
+/* ==================== 进化形态动画 ==================== */
+.pet-avatar.golden_egg {
+  animation: egg-wobble 2.5s ease-in-out infinite;
+}
+
+.pet-avatar.golden_chick {
+  animation: chick-peck 2s ease-in-out infinite;
+}
+
+.pet-avatar.golden_bird {
+  animation: bird-flap 2.5s ease-in-out infinite;
 }
 
 .pet-avatar.golden_phoenix {
   background: linear-gradient(135deg, #ff9a3c 0%, #ffce00 50%, #ff6f61 100%);
+  animation: phoenix-glow 3s ease-in-out infinite;
 }
 
-@keyframes float {
+.pet-avatar.golden_dragon {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ffd93d 50%, #6bcb77 100%);
+  animation: dragon-breathe 4s ease-in-out infinite;
+}
+
+@keyframes egg-wobble {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(5deg); }
+  75% { transform: rotate(-5deg); }
+}
+
+@keyframes chick-peck {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+  30% { transform: translateY(0); }
+  35% { transform: translateY(6px); }
+  40% { transform: translateY(0); }
+  45% { transform: translateY(6px); }
+  50% { transform: translateY(0); }
+}
+
+@keyframes bird-flap {
+  0%, 100% { transform: translateY(0) scaleX(1); }
+  25% { transform: translateY(-8px) scaleX(1.05); }
+  50% { transform: translateY(0) scaleX(1); }
+  75% { transform: translateY(-4px) scaleX(0.97); }
+}
+
+@keyframes phoenix-glow {
+  0%, 100% {
+    box-shadow: 0 10px 30px rgba(255, 154, 60, 0.4), 0 0 20px rgba(255, 206, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 10px 40px rgba(255, 154, 60, 0.7), 0 0 40px rgba(255, 206, 0, 0.5);
+  }
+}
+
+@keyframes dragon-breathe {
+  0%, 100% {
+    transform: scale(1);
+    filter: hue-rotate(0deg);
+  }
+  50% {
+    transform: scale(1.05);
+    filter: hue-rotate(30deg);
+  }
+}
+
+/* ==================== 心情状态动画（优先级高） ==================== */
+.pet-avatar.mood-ecstatic {
+  animation: mood-ecstatic 1.5s ease-in-out infinite !important;
+}
+
+.pet-avatar.mood-happy {
+  /* 使用进化动画即可，不覆盖 */
+}
+
+.pet-avatar.mood-neutral {
+  animation: mood-neutral 4s ease-in-out infinite !important;
+}
+
+.pet-avatar.mood-sad {
+  animation: mood-sad 3s ease-in-out infinite !important;
+  filter: saturate(0.6) brightness(0.85);
+}
+
+@keyframes mood-ecstatic {
+  0%, 100% { transform: translateY(0) scale(1); }
+  25% { transform: translateY(-12px) scale(1.05); }
+  50% { transform: translateY(0) scale(1); }
+  75% { transform: translateY(-8px) scale(1.02); }
+}
+
+@keyframes mood-neutral {
+  0%, 100% { transform: scale(1); opacity: 0.95; }
+  50% { transform: scale(0.98); opacity: 0.85; }
+}
+
+@keyframes mood-sad {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(5px); }
+}
+
+/* 心情特效 */
+.mood-sparkles {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  font-size: 24px;
+  animation: sparkle-float 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes sparkle-float {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 1; }
+  50% { transform: translateY(-8px) scale(1.2); opacity: 0.7; }
+}
+
+.mood-tear {
+  position: absolute;
+  bottom: 10px;
+  right: 20px;
+  font-size: 18px;
+  animation: tear-drop 2s ease-in infinite;
+  pointer-events: none;
+}
+
+@keyframes tear-drop {
+  0% { transform: translateY(0); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateY(30px); opacity: 0; }
 }
 
 .pet-emoji {
@@ -570,6 +1105,19 @@ onMounted(() => {
   font-size: 28px;
   margin: 20px 0 8px 0;
   color: #333;
+}
+
+.rename-icon {
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity 0.2s;
+  vertical-align: super;
+  margin-left: 2px;
+}
+
+.rename-icon:hover {
+  opacity: 0.8;
 }
 
 .pet-type-label {
@@ -613,7 +1161,7 @@ onMounted(() => {
   color: #888;
 }
 
-/* 属性卡片 */
+/* ==================== 属性卡片 ==================== */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -640,6 +1188,12 @@ onMounted(() => {
   flex-direction: column;
 }
 
+.stat-value-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .stat-value {
   font-size: 18px;
   font-weight: bold;
@@ -651,7 +1205,112 @@ onMounted(() => {
   color: #888;
 }
 
-/* 操作按钮 */
+.multiplier-badge {
+  font-size: 11px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 8px;
+  line-height: 1;
+}
+
+.multiplier-high {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.multiplier-normal {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.multiplier-low {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.multiplier-bad {
+  background: #ffebee;
+  color: #c62828;
+}
+
+/* ==================== 里程碑区域 ==================== */
+.milestones-section {
+  background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.2);
+  border: 1px solid #ffeeba;
+}
+
+.milestones-section h2 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  color: #856404;
+}
+
+.milestone-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.milestone-card {
+  display: flex;
+  align-items: center;
+  background: white;
+  padding: 14px 16px;
+  border-radius: 12px;
+  gap: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+.milestone-icon {
+  font-size: 28px;
+}
+
+.milestone-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.milestone-name {
+  font-weight: 600;
+  color: #333;
+  font-size: 15px;
+}
+
+.milestone-reward {
+  font-size: 13px;
+  color: #4caf50;
+  font-weight: 500;
+}
+
+.milestone-claim-btn {
+  background: linear-gradient(135deg, #ffc107, #ffca28);
+  border: none;
+  border-radius: 20px;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.milestone-claim-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.5);
+}
+
+.milestone-claim-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ==================== 操作按钮 ==================== */
 .action-buttons {
   display: flex;
   flex-direction: column;
@@ -685,8 +1344,8 @@ onMounted(() => {
   color: white;
 }
 
-.btn-action.rename {
-  background: linear-gradient(135deg, #2196f3 0%, #03a9f4 100%);
+.btn-action.game {
+  background: linear-gradient(135deg, #9c27b0 0%, #e040fb 100%);
   color: white;
 }
 
@@ -707,7 +1366,315 @@ onMounted(() => {
   font-size: 12px;
 }
 
-/* 进化路线 */
+.btn-badge {
+  background: rgba(255,255,255,0.3);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+/* ==================== 小游戏面板 ==================== */
+.game-panel {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  animation: slideDown 0.3s ease-out;
+}
+
+.game-panel h2 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+}
+
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.game-card {
+  background: #f8f8ff;
+  border-radius: 12px;
+  padding: 14px;
+  border: 1px solid #e8e8f0;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.game-card:hover:not(.disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  border-color: #c0c0ff;
+}
+
+.game-card.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.game-card.active {
+  border-color: #9c27b0;
+  background: #faf0ff;
+}
+
+.game-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.game-icon {
+  font-size: 28px;
+}
+
+.active-badge {
+  font-size: 10px;
+  background: #9c27b0;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-weight: bold;
+}
+
+.game-name {
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 4px;
+  color: #333;
+}
+
+.game-desc {
+  font-size: 12px;
+  color: #999;
+  margin: 0 0 8px 0;
+  line-height: 1.4;
+}
+
+.game-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.game-exp {
+  font-size: 11px;
+  color: #4caf50;
+  font-weight: 600;
+}
+
+.game-played {
+  font-size: 11px;
+  color: #888;
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+.game-total-badge {
+  font-size: 13px;
+  font-weight: normal;
+  color: #888;
+  margin-left: 8px;
+}
+
+/* ==================== 游戏弹窗 ==================== */
+.game-overlay {
+  z-index: 1500;
+}
+
+.game-overlay.fullscreen-active {
+  padding: 0;
+}
+
+.game-modal {
+  max-width: 420px;
+  max-height: 85vh;
+  height: 85vh;
+  overflow: hidden;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.game-modal.fullscreen {
+  max-width: 100vw;
+  max-height: 100vh;
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+  margin: 0;
+  padding: 12px;
+  padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.game-modal.fullscreen .minesweeper-game {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.game-modal.fullscreen .board-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.game-modal.fullscreen .board {
+  max-width: none;
+  width: auto;
+  height: auto;
+  max-height: 100%;
+}
+
+.game-modal.fullscreen .cell {
+  min-width: 28px;
+  min-height: 28px;
+}
+
+.game-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.game-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.game-abandon-btn {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-left: 12px;
+}
+.game-abandon-btn:hover {
+  background: #ffebee;
+  border-color: #ef9a9a;
+}
+
+/* 确认放弃弹窗 */
+.abandon-confirm-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  z-index: 100;
+}
+.abandon-confirm-dialog {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 280px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+.abandon-confirm-title {
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 12px;
+}
+.abandon-confirm-message {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.abandon-confirm-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+.abandon-confirm-btn {
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+.abandon-confirm-btn.cancel {
+  background: #f5f5f5;
+  color: #666;
+}
+.abandon-confirm-btn.cancel:hover {
+  background: #e0e0e0;
+}
+.abandon-confirm-btn.confirm {
+  background: #ef5350;
+  color: white;
+}
+.abandon-confirm-btn.confirm:hover {
+  background: #e53935;
+}
+
+.game-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.game-fullscreen-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: #f0f0f0;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.game-fullscreen-btn:hover {
+  background: #e0e0e0;
+}
+
+.game-close-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: #f0f0f0;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.game-close-btn:hover {
+  background: #e0e0e0;
+}
+
+.game-done-actions {
+  margin-top: 12px;
+}
+
+/* ==================== 进化路线 ==================== */
 .evolution-section {
   background: white;
   border-radius: 16px;
@@ -784,7 +1751,7 @@ onMounted(() => {
   color: #999;
 }
 
-/* 经验获取记录区域 */
+/* ==================== 经验获取记录 ==================== */
 .exp-logs-section {
   background: white;
   border-radius: 16px;
@@ -983,7 +1950,7 @@ onMounted(() => {
   font-size: 14px;
 }
 
-/* 无宠物状态 */
+/* ==================== 无宠物状态 ==================== */
 .no-pet {
   text-align: center;
   padding: 80px 20px;
@@ -1003,7 +1970,7 @@ onMounted(() => {
   color: #999;
 }
 
-/* Modal Styles */
+/* ==================== Modal 通用 ==================== */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -1024,6 +1991,12 @@ onMounted(() => {
   padding: 24px;
   max-width: 400px;
   width: 100%;
+  animation: modalIn 0.25s ease-out;
+}
+
+@keyframes modalIn {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 
 .modal-content h2 {
@@ -1032,6 +2005,7 @@ onMounted(() => {
   text-align: center;
 }
 
+/* ==================== 喂食弹窗 ==================== */
 .food-list {
   display: flex;
   flex-direction: column;
@@ -1047,26 +2021,50 @@ onMounted(() => {
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s;
+  gap: 14px;
 }
 
-.food-item:hover {
+.food-item:hover:not(.food-disabled) {
   background: #fff3e0;
   transform: translateX(4px);
 }
 
+.food-item.food-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .food-icon {
   font-size: 32px;
-  margin-right: 16px;
+  flex-shrink: 0;
+}
+
+.food-detail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .food-name {
-  flex: 1;
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 15px;
+  color: #333;
 }
 
-.food-effect {
+.food-effects {
+  font-size: 13px;
   color: #4caf50;
-  font-size: 14px;
+}
+
+.food-unavailable {
+  font-size: 12px;
+  color: #f44336;
+}
+
+.food-remaining {
+  font-size: 12px;
+  color: #888;
 }
 
 .form-group input {
@@ -1109,7 +2107,7 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-/* 升级动画 */
+/* ==================== 升级动画 ==================== */
 .level-up-overlay {
   position: fixed;
   top: 0;
@@ -1157,129 +2155,372 @@ onMounted(() => {
   margin: 0;
 }
 
-.evolution-msg {
-  color: #ffd700;
-  font-size: 24px;
-  margin-top: 16px;
+/* ==================== 进化庆典全屏 ==================== */
+.evolution-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(ellipse at center, #1a0533 0%, #0d0015 100%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 3000;
+  overflow: hidden;
 }
 
-/* 移动端响应式 */
+.fireworks {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.firework-particle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color);
+  animation: firework 2s var(--delay) ease-out infinite;
+}
+
+@keyframes firework {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--tx), var(--ty)) scale(0);
+    opacity: 0;
+  }
+}
+
+.evolution-celebration {
+  text-align: center;
+  z-index: 1;
+  animation: celebrationIn 0.8s ease-out;
+}
+
+@keyframes celebrationIn {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.evolution-transform {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.old-form {
+  font-size: 60px;
+  opacity: 0.6;
+  animation: fadeOld 2s ease-in-out infinite;
+}
+
+@keyframes fadeOld {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.3; }
+}
+
+.evolution-arrow {
+  font-size: 36px;
+  color: #ffd700;
+  animation: arrowPulse 1s ease-in-out infinite;
+}
+
+@keyframes arrowPulse {
+  0%, 100% { transform: translateX(0); opacity: 0.7; }
+  50% { transform: translateX(8px); opacity: 1; }
+}
+
+.new-form {
+  font-size: 80px;
+  animation: newFormGlow 1.5s ease-in-out infinite;
+}
+
+@keyframes newFormGlow {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.5));
+  }
+  50% {
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 25px rgba(255, 215, 0, 0.9));
+  }
+}
+
+.evolution-title {
+  color: #ffd700;
+  font-size: 36px;
+  margin: 0 0 8px 0;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+}
+
+.evolution-new-name {
+  color: white;
+  font-size: 24px;
+  margin: 0 0 16px 0;
+}
+
+.evolution-bonus {
+  color: #4caf50;
+  font-size: 20px;
+  font-weight: bold;
+  margin: 0 0 24px 0;
+  animation: bonusPop 0.5s ease-out 0.5s both;
+}
+
+@keyframes bonusPop {
+  0% { transform: scale(0); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.evolution-hint {
+  color: rgba(255,255,255,0.4);
+  font-size: 14px;
+  margin: 0;
+}
+
+/* ==================== 移动端响应式 ==================== */
 @media (max-width: 767px) {
   .pet-page {
     padding: 16px;
-    padding-bottom: 80px; /* 为底部导航留空间 */
+    padding-bottom: 80px;
   }
-  
+
   .pet-avatar {
     width: 120px;
     height: 120px;
   }
-  
+
   .pet-emoji {
     font-size: 55px;
   }
-  
+
   .pet-name {
     font-size: 24px;
   }
-  
-  /* 属性卡片保持2列 */
+
   .stats-grid {
     gap: 10px;
   }
-  
+
   .stat-card {
     padding: 12px;
   }
-  
+
   .stat-icon {
     font-size: 24px;
   }
-  
+
   .stat-value {
     font-size: 16px;
   }
-  
+
   .stat-label {
     font-size: 11px;
   }
-  
-  /* 操作按钮触控优化 */
+
   .btn-action {
     min-height: 52px;
     padding: 14px 16px;
     font-size: 15px;
   }
-  
+
   .btn-icon {
     font-size: 20px;
     margin-right: 10px;
   }
-  
-  /* 进化路线横向滚动 */
+
   .evolution-section {
     padding: 16px;
     overflow-x: auto;
   }
-  
+
   .evolution-path {
     min-width: max-content;
     padding: 0 10px;
   }
-  
+
   .stage-emoji {
     font-size: 28px;
     width: 44px;
     height: 44px;
   }
-  
+
   .stage-name {
     font-size: 10px;
   }
-  
+
   .stage-level {
     font-size: 9px;
   }
-  
-  /* 弹窗优化 */
+
   .modal-content {
     margin: 16px;
     padding: 20px;
     max-height: 80vh;
     overflow-y: auto;
   }
-  
+
   .food-item {
     min-height: 48px;
   }
-  
+
   .food-icon {
     font-size: 28px;
   }
-  
-  /* 输入框字号防止 iOS 缩放 */
+
   .form-group input {
     font-size: 16px;
     padding: 14px;
   }
-  
+
   .btn-cancel,
   .btn-submit {
     padding: 14px;
     font-size: 15px;
   }
+
+  /* 游戏面板移动端适配 */
+  .game-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .game-card {
+    padding: 12px;
+  }
+
+  .game-icon {
+    font-size: 24px;
+  }
+
+  .game-name {
+    font-size: 14px;
+  }
+
+  .game-modal {
+    max-height: 90vh;
+    margin: 8px;
+    padding: 12px;
+  }
+
+  /* 进化庆典移动端 */
+  .old-form {
+    font-size: 44px;
+  }
+
+  .new-form {
+    font-size: 60px;
+  }
+
+  .evolution-title {
+    font-size: 28px;
+  }
+
+  .evolution-arrow {
+    font-size: 28px;
+  }
+}
+
+/* ==================== 难度选择弹窗 ==================== */
+.difficulty-modal {
+  max-width: 400px;
+}
+
+.difficulty-modal h2 {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.difficulty-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.difficulty-card {
+  padding: 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.difficulty-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.difficulty-card.easy {
+  background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+  border-color: #81c784;
+}
+
+.difficulty-card.medium {
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+  border-color: #ffb74d;
+}
+
+.difficulty-card.hard {
+  background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+  border-color: #e57373;
+}
+
+.difficulty-card.expert {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border-color: #ff4757;
+  color: white;
+}
+
+.difficulty-card.expert .diff-desc {
+  color: #ccc;
+}
+
+.diff-label {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.diff-desc {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.diff-exp {
+  font-size: 12px;
+  color: #888;
+  font-weight: 500;
+}
+
+.difficulty-card.expert .diff-exp {
+  color: #ffd700;
+}
+
+@media (max-width: 480px) {
+  .difficulty-modal {
+    margin: 12px;
+  }
   
-  /* 提示区域 */
-  .tips-section {
+  .difficulty-card {
     padding: 14px;
   }
   
-  .tips-section h3 {
-    font-size: 15px;
-  }
-  
-  .tips-section li {
-    font-size: 13px;
+  .diff-label {
+    font-size: 16px;
   }
 }
 </style>

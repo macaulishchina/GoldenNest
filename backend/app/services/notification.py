@@ -102,6 +102,7 @@ class NotificationType(str, Enum):
     MEMBER_JOINED = "member_joined"              # 新成员加入
     MEMBER_REMOVED = "member_removed"            # 成员被移除
     INVESTMENT_MATURED = "investment_matured"    # 理财到期提醒
+    PET_EVOLVED = "pet_evolved"                  # 宠物进化
 
 
 # ==================== 通知数据模型 ====================
@@ -194,6 +195,8 @@ class WeChatWorkChannel(NotificationChannel):
         NotificationType.GIFT_ACCEPTED: "✅ 赠送已接受",
         NotificationType.GIFT_REJECTED: "❌ 赠送被拒绝",
         NotificationType.GIFT_CANCELLED: "🚫 赠送已取消",
+        # 宠物
+        NotificationType.PET_EVOLVED: "🎊 宠物进化",
     }
     
     def is_configured(self, config: Dict[str, Any]) -> bool:
@@ -794,3 +797,45 @@ async def send_gift_notification(
             
     except Exception as e:
         logging.error(f"Failed to send gift notification: {e}")
+
+
+async def send_pet_evolved_notification(
+    db: AsyncSession,
+    family_id: int,
+    pet_name: str,
+    new_type: str
+) -> None:
+    """
+    发送宠物进化通知的便捷函数
+    """
+    try:
+        result = await db.execute(
+            select(Family).where(Family.id == family_id)
+        )
+        family = result.scalar_one_or_none()
+        if not family:
+            return
+
+        # 进化形态信息
+        evolution_names = {
+            "golden_egg": ("🥚", "金色蛋"),
+            "golden_chick": ("🐣", "金色小鸡"),
+            "golden_bird": ("🐦", "金色小鸟"),
+            "golden_phoenix": ("🦅", "金色凤凰"),
+            "golden_dragon": ("🐲", "金色神龙"),
+        }
+        emoji, type_name = evolution_names.get(new_type, ("🌟", new_type))
+
+        service = NotificationService(db)
+        context = NotificationContext(
+            notification_type=NotificationType.PET_EVOLVED,
+            family_id=family.id,
+            family_name=family.name,
+            title=f"{emoji} 宠物进化啦！",
+            content=f"家庭宠物「{pet_name}」进化为 {emoji} {type_name}！",
+            base_url=get_external_base_url(),
+        )
+        await service._send_to_all_channels(context)
+
+    except Exception as e:
+        logging.error(f"Failed to send pet evolution notification: {e}")

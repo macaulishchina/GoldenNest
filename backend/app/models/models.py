@@ -62,6 +62,12 @@ class User(Base):
     expense_approvals: Mapped[List["ExpenseApproval"]] = relationship(back_populates="approver")
     achievements: Mapped[List["UserAchievement"]] = relationship(back_populates="user")
 
+    # 宠物互动统计（每用户独立）
+    pet_last_checkin_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    pet_checkin_streak: Mapped[int] = mapped_column(Integer, default=0)
+    pet_daily_game_counts: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pet_daily_feed_counts: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
 
 # ==================== 家庭模型 ====================
 
@@ -425,6 +431,12 @@ class FamilyPet(Base):
     last_checkin_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 上次签到时间
     checkin_streak: Mapped[int] = mapped_column(default=0)  # 连续签到天数
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # 宠物互动深化字段
+    daily_feed_counts: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)  # JSON: 每日喂食计数
+    daily_game_counts: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)  # JSON: 每日游戏计数
+    claimed_milestones: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)  # JSON: 已领取里程碑
+    last_interaction_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 最近互动时间
+    game_sessions: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)  # JSON: 游戏会话状态
 
 
 class PetExpLog(Base):

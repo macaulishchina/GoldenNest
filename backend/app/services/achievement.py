@@ -512,6 +512,15 @@ ACHIEVEMENT_DEFINITIONS = [
     {"code": "repeat_event_1", "name": "循环开始", "description": "创建第一个重复事件", "category": "calendar", "icon": "🔁", "rarity": "common", "points": 15, "is_hidden": False, "trigger_type": "calendar_repeat_event_count", "trigger_value": "1"},
     {"code": "repeat_event_5", "name": "规律生活", "description": "创建 5 个重复事件", "category": "calendar", "icon": "🔄", "rarity": "rare", "points": 40, "is_hidden": False, "trigger_type": "calendar_repeat_event_count", "trigger_value": "5"},
     {"code": "repeat_event_10", "name": "习惯养成师", "description": "创建 10 个重复事件", "category": "calendar", "icon": "♾️", "rarity": "epic", "points": 80, "is_hidden": False, "trigger_type": "calendar_repeat_event_count", "trigger_value": "10"},
+
+    # ==================== 宠物类成就 (PET) ====================
+    # 进化里程碑
+    {"code": "pet_first_evolution", "name": "初次进化", "description": "宠物首次进化（达到 Lv.10）", "category": "special", "icon": "🐣", "rarity": "common", "points": 20, "is_hidden": False, "trigger_type": "pet_level", "trigger_value": "10"},
+    {"code": "pet_bird", "name": "展翅高飞", "description": "宠物进化为金凤雏（达到 Lv.30）", "category": "special", "icon": "🐦", "rarity": "rare", "points": 50, "is_hidden": False, "trigger_type": "pet_level", "trigger_value": "30"},
+    {"code": "pet_phoenix", "name": "凤凰涅槃", "description": "宠物进化为金凤凰（达到 Lv.60）", "category": "special", "icon": "🦅", "rarity": "epic", "points": 150, "is_hidden": False, "trigger_type": "pet_level", "trigger_value": "60"},
+    {"code": "pet_dragon", "name": "龙腾四海", "description": "宠物进化为金龙（达到 Lv.100）", "category": "special", "icon": "🐉", "rarity": "legendary", "points": 500, "is_hidden": False, "trigger_type": "pet_level", "trigger_value": "100"},
+    # 陪伴时长
+    {"code": "pet_companion_365", "name": "忠实伙伴", "description": "宠物陪伴满 365 天", "category": "special", "icon": "💛", "rarity": "epic", "points": 200, "is_hidden": False, "trigger_type": "pet_age", "trigger_value": "365"},
 ]
 
 
@@ -1384,7 +1393,42 @@ class AchievementService:
             )
             count = result.scalar() or 0
             return count >= int(trigger_value)
-        
+
+        # 宠物等级检查
+        elif trigger_type == "pet_level":
+            from app.models.models import FamilyPet
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            pet_result = await self.db.execute(
+                select(FamilyPet.level).where(FamilyPet.family_id == family_id)
+            )
+            pet_level = pet_result.scalar()
+            if pet_level is None:
+                return False
+            return pet_level >= int(trigger_value)
+
+        # 宠物年龄检查
+        elif trigger_type == "pet_age":
+            from app.models.models import FamilyPet
+            fm_result = await self.db.execute(
+                select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
+            )
+            family_id = fm_result.scalar()
+            if not family_id:
+                return False
+            pet_result = await self.db.execute(
+                select(FamilyPet.created_at).where(FamilyPet.family_id == family_id)
+            )
+            created_at = pet_result.scalar()
+            if created_at is None:
+                return False
+            age_days = (datetime.now() - created_at).days
+            return age_days >= int(trigger_value)
+
         return False
     
     async def _calculate_deposit_days(self, user_id: int) -> int:
