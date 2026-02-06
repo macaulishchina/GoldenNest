@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Golden Nest (小金库) is a family wealth management web application using a "shareholding" model where family deposits become equity shares. The system uses time-weighted compound interest calculations to incentivize early deposits and includes gamification features like pets, achievements, and voting systems.
 
-**Tech Stack**: Vue 3 + TypeScript + Vite (frontend), FastAPI + SQLAlchemy 2.0 + SQLite (backend)
+**Tech Stack**: Vue 3 + TypeScript + Vite + Naive UI (frontend), FastAPI + SQLAlchemy 2.0 + SQLite (backend)
+
+**Key Frontend Libraries**: Naive UI (component library, `n-` prefix), ECharts + vue-echarts (data visualization), dayjs + lunar-javascript (date/lunar calendar utilities), Pinia (state), Axios (HTTP client)
 
 **Key Business Concepts**:
 - Family members deposit funds that convert to equity shares
@@ -76,10 +78,13 @@ SQLite Database
   - Auth, family, deposit, equity, investment, transaction
   - Approval (universal approval workflow), vote, gift
   - Pet, achievement, announcement, report, todo, calendar
+  - `expense.py`: **Deprecated** — functionality moved to universal approval workflow in `approval.py`
 - **Business Logic** (`app/services/`):
   - `equity.py`: Time-weighted compound interest calculation
   - `achievement.py`: 60+ achievement definitions with auto-detection logic
   - `calendar.py`: Recurring event generation
+  - `notification.py`: Enterprise WeChat (企业微信) notification integration
+  - `approval.py`: Approval workflow orchestration
 - **Database** (`app/models/models.py`):
   - 15+ tables with proper relationships
   - Async SQLAlchemy 2.0 with `AsyncSession`
@@ -161,6 +166,7 @@ Backend API
   - `userStore`: Auth token (localStorage), user profile, login/logout
   - `achievementStore`: Achievement notification queue
   - `privacyStore`: User privacy preferences
+  - `approvalStore`: Approval workflow state
 - **API Client** (`src/api/index.ts`):
   - Centralized Axios with `/api` base URL
   - Request interceptor: Attach `Authorization: Bearer ${token}`
@@ -282,18 +288,12 @@ Both calendar and todo support recurring patterns:
 
 ## Development Patterns
 
-### Backend
-- Always use async/await with `AsyncSession`
-- Validation via Pydantic schemas for request/response
-- HTTPException for errors with appropriate status codes
-- Service layer separation for business logic
-
-### Frontend
-- Vue 3 Composition API with `<script setup lang="ts">`
-- Reactive refs and computed properties
-- Proper TypeScript typing throughout
-- Mobile-responsive design with breakpoint detection
-- Lazy-loaded routes for code splitting
+### Gotchas
+- Frontend uses **snake_case** field names matching the backend (no auto camelCase conversion)
+- `get_db()` dependency auto-commits on success and rolls back on exception — do not manually commit
+- No linting or formatting tools configured (no eslint, prettier)
+- No migration framework — schema changes require manual data migration or DB recreation
+- Root-level `package.json` exists with `lunar-javascript` dependency (used for lunar calendar features)
 
 ### File Structure Overview
 
@@ -302,7 +302,7 @@ backend/app/
 ├── api/              # Route handlers (16 modules)
 │   ├── auth.py           # Login, register, avatar upload
 │   ├── family.py         # Create/join family, invite codes
-│   ├── deposit.py        # Record deposits (deprecated for approval flow)
+│   ├── deposit.py        # Record deposits
 │   ├── equity.py         # Calculate equity distribution
 │   ├── investment.py     # Portfolio management
 │   ├── transaction.py    # Financial audit trail
@@ -325,7 +325,9 @@ backend/app/
 └── services/         # Business logic layer
     ├── equity.py         # Time-weighted calculations
     ├── achievement.py    # Achievement definitions + detection
-    └── calendar.py       # Recurring event logic
+    ├── approval.py       # Approval workflow orchestration
+    ├── calendar.py       # Recurring event logic
+    └── notification.py   # Enterprise WeChat notifications
 
 frontend/src/
 ├── api/              # Axios API client modules
@@ -352,15 +354,22 @@ frontend/src/
 ├── stores/           # Pinia state management
 │   ├── user.ts           # Auth + user profile
 │   ├── achievement.ts    # Achievement notifications
+│   ├── approval.ts       # Approval workflow state
 │   └── privacy.ts        # Privacy settings
 ├── components/       # Reusable UI components
 │   ├── AchievementToast.vue
+│   ├── TimeRangeSelector.vue
 │   └── UserAvatar.vue
 ├── router/           # Vue Router configuration
 │   └── index.ts          # Routes + guards + achievement polling
 └── utils/            # Helper functions
-    └── achievement.ts    # Achievement polling logic
+    ├── achievement.ts    # Achievement polling logic
+    ├── avatar.ts         # Avatar handling utilities
+    ├── date.ts           # Date formatting utilities
+    └── holiday.ts        # Lunar calendar / Chinese holiday utilities
 ```
+
+**Note**: `frontend/src/thirdparty/GameZone/` contains an embedded open-source game collection (separate git repo). Not integrated into the main application workflow.
 
 ## Code Modification Guidelines
 
@@ -418,7 +427,7 @@ When working with this codebase:
 
 10. **Frontend-Backend Contract**:
     - API returns Pydantic schemas serialized as JSON
-    - Frontend expects camelCase but backend uses snake_case (no auto-conversion)
+    - Frontend uses snake_case matching the backend (no auto camelCase conversion)
     - Date/datetime fields serialized as ISO strings
     - Errors return `{"detail": "error message"}` with appropriate HTTP status
 
