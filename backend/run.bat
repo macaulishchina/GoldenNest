@@ -9,6 +9,13 @@ if not exist "app\main.py" (
     exit /b 1
 )
 
+REM Check Python version
+python --version 2>nul | findstr /R "Python 3\." >nul
+if errorlevel 1 (
+    echo ❌ Error: Python 3 is required. Please install Python 3.8 or higher.
+    exit /b 1
+)
+
 REM Check if virtual environment exists
 if not exist "venv" (
     echo ⚠️  Virtual environment not found. Creating one...
@@ -19,11 +26,23 @@ if not exist "venv" (
 REM Activate virtual environment
 call venv\Scripts\activate.bat
 
-REM Check if dependencies are installed
+REM Check if dependencies need to be installed or updated
+set DEPS_INSTALLED=true
+if not exist "venv\.deps_installed" set DEPS_INSTALLED=false
+if exist "requirements.txt" (
+    for /F %%i in ('dir /B /O:D "venv\.deps_installed" "requirements.txt" 2^>nul ^| find /C "requirements.txt"') do (
+        if %%i GTR 0 set DEPS_INSTALLED=false
+    )
+)
+
+REM Also check if uvicorn is actually installed
 python -c "import uvicorn" 2>nul
-if errorlevel 1 (
-    echo ⚠️  Dependencies not installed. Installing...
+if errorlevel 1 set DEPS_INSTALLED=false
+
+if "%DEPS_INSTALLED%"=="false" (
+    echo ⚠️  Dependencies need to be installed. Installing...
     pip install -r requirements.txt
+    type nul > venv\.deps_installed
     echo ✅ Dependencies installed
 )
 

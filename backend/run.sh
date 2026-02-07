@@ -9,20 +9,45 @@ if [ ! -f "app/main.py" ]; then
     exit 1
 fi
 
+# Determine Python command (prefer python3)
+if command -v python3 &> /dev/null; then
+    PYTHON_CMD="python3"
+elif command -v python &> /dev/null; then
+    PYTHON_CMD="python"
+else
+    echo "❌ Error: Python 3 is not installed"
+    exit 1
+fi
+
+# Verify Python version is 3.x
+PYTHON_VERSION=$($PYTHON_CMD --version 2>&1 | awk '{print $2}' | cut -d. -f1)
+if [ "$PYTHON_VERSION" != "3" ]; then
+    echo "❌ Error: Python 3 is required, but found Python $PYTHON_VERSION"
+    exit 1
+fi
+
 # Check if virtual environment exists
 if [ ! -d "venv" ]; then
     echo "⚠️  Virtual environment not found. Creating one..."
-    python -m venv venv
+    $PYTHON_CMD -m venv venv
     echo "✅ Virtual environment created"
 fi
 
 # Activate virtual environment
 source venv/bin/activate
 
-# Check if dependencies are installed
-if ! python -c "import uvicorn" 2>/dev/null; then
-    echo "⚠️  Dependencies not installed. Installing..."
+# Check if dependencies need to be installed or updated
+DEPS_INSTALLED=true
+if [ ! -f "venv/.deps_installed" ] || [ "requirements.txt" -nt "venv/.deps_installed" ]; then
+    DEPS_INSTALLED=false
+elif ! python -c "import uvicorn" 2>/dev/null; then
+    DEPS_INSTALLED=false
+fi
+
+if [ "$DEPS_INSTALLED" = false ]; then
+    echo "⚠️  Dependencies need to be installed. Installing..."
     pip install -r requirements.txt
+    touch venv/.deps_installed
     echo "✅ Dependencies installed"
 fi
 
