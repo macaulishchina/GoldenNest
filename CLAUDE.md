@@ -19,15 +19,31 @@ Golden Nest (小金库) is a family wealth management web application using a "s
 ## Development Commands
 
 ### Backend Development
+
+**⚠️ CRITICAL: Backend commands MUST be run from the `backend/` directory, not the repository root!**
+
 ```bash
+# Method 1: Using convenience scripts (recommended)
 cd backend
+./run.sh           # Linux/Mac - auto-creates venv, installs deps, starts server
+run.bat            # Windows - auto-creates venv, installs deps, starts server
+
+# Method 2: Manual startup
+cd backend  # ⚠️ MUST cd into backend/ first!
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000  # ⚠️ Must run from backend/ directory
+
 # Backend runs with SQL logging enabled (echo=True in database.py)
 # Database auto-initializes on startup via lifespan event
+# Server URLs:
+# - Main: http://localhost:8000
+# - API Docs: http://localhost:8000/api/docs
+# - Health: http://localhost:8000/api/health
 ```
+
+**Common Error**: Running `uvicorn app.main:app` from repository root will fail with `ModuleNotFoundError: No module named 'app'`. Always `cd backend` first!
 
 ### Frontend Development
 ```bash

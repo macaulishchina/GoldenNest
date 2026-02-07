@@ -199,7 +199,16 @@ docker info | grep -A 5 "Registry Mirrors"
 
 #### 后端
 
+**⚠️ 重要：后端服务必须从 `backend/` 目录启动**
+
 ```bash
+# 方式一：使用启动脚本（推荐）
+cd backend
+./run.sh           # Linux/Mac
+# 或
+run.bat            # Windows
+
+# 方式二：手动启动
 cd backend
 
 # 创建虚拟环境
@@ -209,9 +218,14 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 # 安装依赖
 pip install -r requirements.txt
 
-# 启动服务
+# ⚠️ 确保当前目录是 backend/，然后启动服务
 uvicorn app.main:app --reload --port 8000
 ```
+
+后端服务地址：
+- 主页：http://localhost:8000
+- API 文档：http://localhost:8000/api/docs
+- 健康检查：http://localhost:8000/api/health
 
 #### 前端
 
