@@ -131,13 +131,48 @@ async def calculate_dividend(
     # 获取股权信息
     equity_summary = await calculate_family_equity(family_id, db)
     
-    # 计算总收益
+    # 获取所有投资产品及其收益（支持新旧两种模式，排除已删除的）
     result = await db.execute(
-        select(func.sum(InvestmentIncome.amount))
-        .join(Investment, InvestmentIncome.investment_id == Investment.id)
-        .where(Investment.family_id == family_id)
+        select(Investment).where(
+            Investment.family_id == family_id,
+            Investment.is_deleted == False
+        )
     )
-    total_income = result.scalar() or 0
+    investments = result.scalars().all()
+    
+    # 按产品计算收益明细
+    breakdown = []
+    total_income = 0
+    
+    for inv in investments:
+        # 获取该产品的所有收益记录
+        result = await db.execute(
+            select(InvestmentIncome).where(
+                InvestmentIncome.investment_id == inv.id
+            )
+        )
+        incomes = result.scalars().all()
+        
+        # 计算该产品的总收益（支持新旧模式）
+        inv_total_income = sum(
+            inc.calculated_income if inc.calculated_income is not None else inc.amount
+            for inc in incomes
+        )
+        
+        if inv_total_income != 0:  # 只添加有收益的产品
+            from app.schemas.investment import DividendBreakdown
+            breakdown.append(DividendBreakdown(
+                investment_id=inv.id,
+                investment_name=inv.name,
+                total_income=inv_total_income,
+                percentage=0  # 占比稍后计算
+            ))
+            total_income += inv_total_income
+    
+    # 计算每个产品的收益占比
+    if total_income > 0:
+        for item in breakdown:
+            item.percentage = round(item.total_income / total_income * 100, 2)
     
     # 按股权比例计算分红
     members_dividend = []
@@ -153,5 +188,6 @@ async def calculate_dividend(
     return DividendCalculation(
         family_id=family_id,
         total_income=total_income,
-        members=members_dividend
+        members=members_dividend,
+        breakdown=breakdown
     )

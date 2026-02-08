@@ -2,6 +2,18 @@
   <div class="page-container">
     <h1 class="page-title"><span class="icon">📈</span> 理财配置</h1>
     
+    <!-- 家庭自由资金卡片 -->
+    <n-card class="card-hover" style="margin-bottom: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+      <n-statistic label="家庭自由资金" :value="currentBalance">
+        <template #prefix>¥</template>
+      </n-statistic>
+      <template #footer>
+        <n-text style="color: rgba(255,255,255,0.8); font-size: 12px">
+          💰 共享资金池 | <strong>外部资金</strong>=计入股权 | <strong>从自由资金扣除</strong>=不计股权
+        </n-text>
+      </template>
+    </n-card>
+    
     <n-card class="card-hover investment-form-card" style="margin-bottom: 24px">
       <template #header>
         <n-space align="center">
@@ -26,6 +38,12 @@
           <n-input-number v-model:value="formData.expected_rate" :min="0" :max="100" placeholder="%" style="width: 100px">
             <template #suffix>%</template>
           </n-input-number>
+        </n-form-item>
+        <n-form-item label="资金来源">
+          <n-radio-group v-model:value="formData.deduct_from_cash" size="small">
+            <n-radio :value="false">外部资金</n-radio>
+            <n-radio :value="true">从自由资金扣除</n-radio>
+          </n-radio-group>
         </n-form-item>
         <n-form-item>
           <n-button type="primary" :loading="submitting" @click="handleSubmit">
@@ -68,6 +86,16 @@
             </n-button>
           </div>
         </div>
+        <!-- 第三行：资金来源 -->
+        <div class="form-row" style="margin-top: 8px">
+          <div class="form-col" style="flex: 1">
+            <label>资金来源</label>
+            <n-radio-group v-model:value="formData.deduct_from_cash" size="small">
+              <n-radio :value="false">外部资金</n-radio>
+              <n-radio :value="true">从自由资金扣除</n-radio>
+            </n-radio-group>
+          </div>
+        </div>
       </div>
     </n-card>
 
@@ -105,11 +133,11 @@
       <div class="mobile-only">
         <n-spin :show="loading">
           <div class="investment-cards" v-if="investments.length > 0">
-            <div v-for="item in investments" :key="item.id" class="investment-card">
+            <div v-for="item in investments" :key="item.id" class="investment-card" :class="{ 'deleted': item.is_deleted }">
               <div class="card-header">
                 <span class="product-name">{{ item.name }}</span>
-                <n-tag :type="item.is_active ? 'success' : 'default'" size="small">
-                  {{ item.is_active ? '持有中' : '已结束' }}
+                <n-tag :type="item.is_deleted ? 'error' : (item.is_active ? 'success' : 'default')" size="small">
+                  {{ item.is_deleted ? '已删除' : (item.is_active ? '持有中' : '已结束') }}
                 </n-tag>
               </div>
               <div class="card-type">
@@ -117,23 +145,37 @@
               </div>
               <div class="card-stats">
                 <div class="stat-item">
-                  <span class="stat-label">投资本金</span>
+                  <span class="stat-label">初始本金</span>
                   <span class="stat-value">¥{{ formatMoney(item.principal) }}</span>
                 </div>
                 <div class="stat-item">
-                  <span class="stat-label">预期年化</span>
-                  <span class="stat-value">{{ (item.expected_rate * 100).toFixed(2) }}%</span>
+                  <span class="stat-label">当前持仓</span>
+                  <span class="stat-value">¥{{ formatMoney(item.current_principal || item.principal) }}</span>
                 </div>
                 <div class="stat-item">
-                  <span class="stat-label">累计收益</span>
-                  <span class="stat-value" :class="(item.total_income || 0) >= 0 ? 'profit' : 'loss'">
-                    ¥{{ formatMoney(item.total_income || 0) }}
+                  <span class="stat-label">总收益</span>
+                  <span class="stat-value" :class="(item.total_return || 0) >= 0 ? 'profit' : 'loss'">
+                    ¥{{ formatMoney(item.total_return || 0) }}
+                  </span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">ROI</span>
+                  <span class="stat-value" :class="(item.roi || 0) >= 0 ? 'profit' : 'loss'">
+                    {{ (item.roi || 0).toFixed(2) }}%
                   </span>
                 </div>
               </div>
-              <div class="card-footer">
+              <div class="card-footer" v-if="!item.is_deleted">
                 <span class="start-date">{{ formatLocalDate(item.start_date) }} 起</span>
-                <n-button size="small" type="primary" text @click="openIncomeModal(item)">登记收益</n-button>
+                <n-space size="small">
+                  <n-button size="small" type="primary" text @click="openIncomeModal(item)">更新价值</n-button>
+                  <n-button size="small" type="info" text @click="openIncreaseModal(item)">增持</n-button>
+                  <n-button size="small" type="warning" text @click="openDecreaseModal(item)">减持</n-button>
+                  <n-button size="small" type="error" text @click="handleDelete(item)">删除</n-button>
+                </n-space>
+              </div>
+              <div class="card-footer" v-else>
+                <span class="deleted-text">{{ item.deleted_at ? formatLocalDate(item.deleted_at) + ' 删除' : '已删除' }}</span>
               </div>
             </div>
           </div>
@@ -142,25 +184,86 @@
       </div>
     </n-card>
 
-    <!-- 登记收益弹窗 -->
-    <n-modal v-model:show="showIncomeModal" preset="dialog" title="登记收益" positive-text="提交申请" negative-text="取消" @positive-click="submitIncome">
-      <n-form :model="incomeForm" label-placement="left" label-width="80px">
+    <!-- 登记收益弹窗（改为更新价值） -->
+    <n-modal v-model:show="showIncomeModal" preset="dialog" title="更新投资价值" positive-text="提交申请" negative-text="取消" @positive-click="submitIncome">
+      <n-form :model="incomeForm" label-placement="left" label-width="90px">
         <n-form-item label="理财产品">
           <n-text>{{ selectedInvestment?.name }}</n-text>
         </n-form-item>
-        <n-form-item label="收益金额">
-          <n-input-number v-model:value="incomeForm.amount" style="width: 100%">
+        <n-form-item label="当前持仓">
+          <n-text type="info">¥{{ formatMoney(selectedInvestment?.current_principal || selectedInvestment?.principal || 0) }}</n-text>
+        </n-form-item>
+        <n-form-item label="当前总价值">
+          <n-input-number v-model:value="incomeForm.current_value" style="width: 100%" :min="0">
             <template #prefix>¥</template>
           </n-input-number>
           <n-text depth="3" style="font-size: 12px; margin-top: 4px; display: block">
-            可为负数（表示亏损）
+            输入投资产品的当前市场价值，系统将自动计算收益
           </n-text>
         </n-form-item>
-        <n-form-item label="收益日期">
+        <n-form-item label="计算收益" v-if="incomeForm.current_value">
+          <n-text :type="calculatedIncome >= 0 ? 'success' : 'error'" strong>
+            ¥{{ formatMoney(calculatedIncome) }}
+          </n-text>
+        </n-form-item>
+        <n-form-item label="更新日期">
           <n-date-picker v-model:value="incomeForm.income_date" type="date" style="width: 100%" />
         </n-form-item>
         <n-form-item label="备注">
           <n-input v-model:value="incomeForm.note" placeholder="可选" />
+        </n-form-item>
+      </n-form>
+    </n-modal>
+
+    <!-- 增持模态框 -->
+    <n-modal v-model:show="showIncreaseModal" preset="dialog" title="投资增持" positive-text="提交申请" negative-text="取消" @positive-click="submitIncrease">
+      <n-form :model="increaseForm" label-placement="left" label-width="90px">
+        <n-form-item label="理财产品">
+          <n-text>{{ selectedInvestment?.name }}</n-text>
+        </n-form-item>
+        <n-form-item label="当前持仓">
+          <n-text type="info">¥{{ formatMoney(selectedInvestment?.current_principal || 0) }}</n-text>
+        </n-form-item>
+        <n-form-item label="可用余额">
+          <n-text type="warning">¥{{ formatMoney(currentBalance) }}</n-text>
+        </n-form-item>
+        <n-form-item label="增持金额">
+          <n-input-number v-model:value="increaseForm.amount" style="width: 100%" :min="1" :max="currentBalance">
+            <template #prefix>¥</template>
+          </n-input-number>
+        </n-form-item>
+        <n-form-item label="增持日期">
+          <n-date-picker v-model:value="increaseForm.operation_date" type="date" style="width: 100%" />
+        </n-form-item>
+        <n-form-item label="备注">
+          <n-input v-model:value="increaseForm.note" placeholder="可选" />
+        </n-form-item>
+      </n-form>
+    </n-modal>
+
+    <!-- 减持模态框 -->
+    <n-modal v-model:show="showDecreaseModal" preset="dialog" title="投资减持" positive-text="提交申请" negative-text="取消" @positive-click="submitDecrease">
+      <n-form :model="decreaseForm" label-placement="left" label-width="90px">
+        <n-form-item label="理财产品">
+          <n-text>{{ selectedInvestment?.name }}</n-text>
+        </n-form-item>
+        <n-form-item label="当前持仓">
+          <n-text type="info">¥{{ formatMoney(selectedInvestment?.current_principal || 0) }}</n-text>
+        </n-form-item>
+        <n-form-item label="减持金额">
+          <n-input-number v-model:value="decreaseForm.amount" style="width: 100%" 
+            :min="1" :max="selectedInvestment?.current_principal || 0">
+            <template #prefix>¥</template>
+          </n-input-number>
+          <n-text depth="3" style="font-size: 12px; margin-top: 4px; display: block">
+            最多可减持 ¥{{ formatMoney(selectedInvestment?.current_principal || 0) }}
+          </n-text>
+        </n-form-item>
+        <n-form-item label="减持日期">
+          <n-date-picker v-model:value="decreaseForm.operation_date" type="date" style="width: 100%" />
+        </n-form-item>
+        <n-form-item label="备注">
+          <n-input v-model:value="decreaseForm.note" placeholder="可选" />
         </n-form-item>
       </n-form>
     </n-modal>
@@ -169,9 +272,9 @@
 
 <script setup lang="ts">
 import { ref, onMounted, h, computed } from 'vue'
-import { useMessage, useDialog, NButton, NTag, NSpace, NInput } from 'naive-ui'
+import { useMessage, useDialog, NButton, NTag, NSpace, NInput, NRadio, NRadioGroup } from 'naive-ui'
 import { storeToRefs } from 'pinia'
-import { investmentApi, approvalApi } from '@/api'
+import { investmentApi, approvalApi, transactionApi, assetApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { usePrivacyStore } from '@/stores/privacy'
 import { SendOutline } from '@vicons/ionicons5'
@@ -193,25 +296,50 @@ const investments = ref<any[]>([])
 const pendingApprovals = ref<any[]>([])
 const formData = ref({ 
   name: '', 
-  investment_type: 'fund' as 'fund' | 'stock' | 'bond' | 'deposit' | 'other',
+  investment_type: 'fund' as 'fund' | 'stock' | 'bond' | 'other',
   principal: null as number | null, 
-  expected_rate: null as number | null 
+  expected_rate: null as number | null,
+  deduct_from_cash: false
 })
 
 // 收益登记相关
 const showIncomeModal = ref(false)
 const selectedInvestment = ref<any>(null)
 const incomeForm = ref({
-  amount: null as number | null,
+  current_value: null as number | null,
   income_date: Date.now(),
   note: ''
+})
+
+// 增持/减持相关
+const showIncreaseModal = ref(false)
+const showDecreaseModal = ref(false)
+const increaseForm = ref({
+  amount: null as number | null,
+  operation_date: Date.now(),
+  note: ''
+})
+const decreaseForm = ref({
+  amount: null as number | null,
+  operation_date: Date.now(),
+  note: ''
+})
+
+// 当前余额（从transactions获取）
+const currentBalance = ref(0)
+
+// 计算收益（实时预览）
+const calculatedIncome = computed(() => {
+  if (!incomeForm.value.current_value || !selectedInvestment.value) return 0
+  const currentPrincipal = selectedInvestment.value.current_principal || selectedInvestment.value.principal || 0
+  const historicalIncome = selectedInvestment.value.total_return || 0
+  return incomeForm.value.current_value - currentPrincipal - historicalIncome
 })
 
 const typeOptions = [
   { label: '基金', value: 'fund' },
   { label: '股票', value: 'stock' },
   { label: '债券', value: 'bond' },
-  { label: '存款', value: 'deposit' },
   { label: '其他', value: 'other' }
 ]
 
@@ -219,28 +347,49 @@ const typeLabels: Record<string, string> = {
   fund: '基金',
   stock: '股票',
   bond: '债券',
-  deposit: '存款',
+  time_deposit: '定期存款',
   other: '其他'
 }
 
 const requestTypeLabels: Record<string, string> = {
+  asset_create: '资产登记',
   investment_create: '登记产品',
   investment_update: '更新产品',
-  investment_income: '登记收益'
+  investment_income: '登记收益',
+  investment_increase: '投资增持',
+  investment_decrease: '投资减持',
+  investment_delete: '删除产品'
 }
 
 const columns = computed(() => [
   { title: '产品名称', key: 'name' },
   { title: '类型', key: 'investment_type', render: (row: any) => typeLabels[row.investment_type] || row.investment_type },
-  { title: '投资本金', key: 'principal', render: (row: any) => `¥${formatMoney(row.principal)}` },
-  { title: '预期年化', key: 'expected_rate', render: (row: any) => `${(row.expected_rate * 100).toFixed(2)}%` },
-  { title: '累计收益', key: 'total_income', render: (row: any) => h('span', { style: { color: (row.total_income || 0) >= 0 ? '#10b981' : '#ef4444' } }, `¥${formatMoney(row.total_income || 0)}`) },
-  { title: '状态', key: 'is_active', render: (row: any) => h(NTag, { type: row.is_active ? 'success' : 'default', size: 'small' }, { default: () => row.is_active ? '持有中' : '已结束' }) },
+  { title: '初始本金', key: 'principal', render: (row: any) => `¥${formatMoney(row.principal)}` },
+  { title: '当前持仓', key: 'current_principal', render: (row: any) => `¥${formatMoney(row.current_principal || row.principal)}` },
+  { title: '总收益', key: 'total_return', render: (row: any) => h('span', { style: { color: (row.total_return || 0) >= 0 ? '#10b981' : '#ef4444' } }, `¥${formatMoney(row.total_return || 0)}`) },
+  { title: 'ROI', key: 'roi', render: (row: any) => {
+    const roi = row.roi || 0
+    return h('span', { style: { color: roi >= 0 ? '#10b981' : '#ef4444' } }, `${roi.toFixed(2)}%`)
+  }},
+  { title: '状态', key: 'is_active', render: (row: any) => {
+    if (row.is_deleted) return h(NTag, { type: 'error', size: 'small' }, { default: () => '已删除' })
+    return h(NTag, { type: row.is_active ? 'success' : 'default', size: 'small' }, { default: () => row.is_active ? '持有中' : '已结束' })
+  }},
   { title: '开始日期', key: 'start_date', render: (row: any) => formatLocalDate(row.start_date) },
   { 
     title: '操作', 
     key: 'actions',
-    render: (row: any) => h(NButton, { size: 'small', text: true, type: 'primary', onClick: () => openIncomeModal(row) }, { default: () => '登记收益' })
+    render: (row: any) => {
+      if (row.is_deleted) return h('span', { style: { color: '#999' } }, '已删除')
+      return h(NSpace, { size: 'small' }, {
+        default: () => [
+          h(NButton, { size: 'small', text: true, type: 'primary', onClick: () => openIncomeModal(row) }, { default: () => '更新价值' }),
+          h(NButton, { size: 'small', text: true, type: 'info', onClick: () => openIncreaseModal(row) }, { default: () => '增持' }),
+          h(NButton, { size: 'small', text: true, type: 'warning', onClick: () => openDecreaseModal(row) }, { default: () => '减持' }),
+          h(NButton, { size: 'small', text: true, type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' })
+        ]
+      })
+    }
   }
 ])
 
@@ -287,14 +436,17 @@ const approvalColumns = computed(() => [
 async function loadData() {
   loading.value = true
   try {
-    const [investmentsRes, approvalsRes] = await Promise.all([
+    const [investmentsRes, approvalsRes, cashBalanceRes] = await Promise.all([
       investmentApi.list(),
-      approvalApi.list({ status: 'pending' })
+      approvalApi.list({ status: 'pending' }),
+      assetApi.getCashBalance()  // 获取家庭自由资金余额
     ])
     investments.value = investmentsRes.data
-    // 只显示理财相关的待审批申请
-    const investmentTypes = ['investment_create', 'investment_update', 'investment_income']
-    pendingApprovals.value = approvalsRes.data.filter((item: any) => investmentTypes.includes(item.request_type))
+    // 显示所有理财相关的待审批申请（包括新的 asset_create 类型）
+    const investmentTypes = ['asset_create', 'investment_create', 'investment_update', 'investment_income', 'investment_increase', 'investment_decrease', 'investment_delete']
+    pendingApprovals.value = (approvalsRes.data.items || []).filter((item: any) => investmentTypes.includes(item.request_type))
+    // 从API获取家庭自由资金余额
+    currentBalance.value = cashBalanceRes.data.balance || 0
   } finally {
     loading.value = false
   }
@@ -302,17 +454,37 @@ async function loadData() {
 
 async function handleSubmit() {
   if (!formData.value.name || !formData.value.principal) { message.warning('请填写完整信息'); return }
+  
+  // 检查是否需要从自由资金扣除，如果是则检查余额
+  if (formData.value.deduct_from_cash) {
+    try {
+      const { data } = await assetApi.getCashBalance()
+      const cashBalance = data.balance || 0
+      if (cashBalance < formData.value.principal) {
+        message.error(`家庭自由资金不足：需要¥${formData.value.principal}，当前仅有¥${cashBalance.toFixed(2)}`)
+        return
+      }
+    } catch (error) {
+      console.error('Failed to check cash balance:', error)
+      message.error('无法获取家庭自由资金余额，请稍后重试')
+      return
+    }
+  }
+  
   submitting.value = true
   try {
-    await approvalApi.createInvestment({
+    await approvalApi.createAsset({
+      user_id: userStore.user?.id || 0,
       name: formData.value.name,
-      investment_type: formData.value.investment_type,
-      principal: formData.value.principal,
+      asset_type: formData.value.investment_type as any,
+      currency: 'CNY',
+      amount: formData.value.principal,
       expected_rate: (formData.value.expected_rate || 0) / 100,
-      start_date: new Date().toISOString()
+      start_date: new Date().toISOString(),
+      deduct_from_cash: formData.value.deduct_from_cash
     })
     message.success('申请已提交，等待审批！📈')
-    formData.value = { name: '', investment_type: 'fund', principal: null, expected_rate: null }
+    formData.value = { name: '', investment_type: 'fund', principal: null, expected_rate: null, deduct_from_cash: false }
     loadData()
   } catch (e: any) {
     message.error(e.response?.data?.detail || '操作失败')
@@ -324,7 +496,7 @@ async function handleSubmit() {
 function openIncomeModal(investment: any) {
   selectedInvestment.value = investment
   incomeForm.value = {
-    amount: null,
+    current_value: null,
     income_date: Date.now(),
     note: ''
   }
@@ -332,25 +504,121 @@ function openIncomeModal(investment: any) {
 }
 
 async function submitIncome() {
-  if (incomeForm.value.amount === null) { 
-    message.warning('请输入收益金额')
+  if (incomeForm.value.current_value === null || incomeForm.value.current_value <= 0) { 
+    message.warning('请输入有效的当前总价值')
     return false
   }
   try {
     await approvalApi.createInvestmentIncome({
       investment_id: selectedInvestment.value.id,
-      amount: incomeForm.value.amount,
+      amount: null,
+      current_value: incomeForm.value.current_value,
       income_date: new Date(incomeForm.value.income_date).toISOString(),
-      note: incomeForm.value.note
+      note: incomeForm.value.note || null
     })
-    message.success('收益登记申请已提交！')
+    message.success('价值更新申请已提交！')
     showIncomeModal.value = false
+    loadData()
+    return true
+  } catch (e: any) {
+    console.error('Income submission error:', e.response?.data)
+    message.error(e.response?.data?.detail || '操作失败')
+    return false
+  }
+}
+
+function openIncreaseModal(investment: any) {
+  selectedInvestment.value = investment
+  increaseForm.value = {
+    amount: null,
+    operation_date: Date.now(),
+    note: ''
+  }
+  showIncreaseModal.value = true
+}
+
+async function submitIncrease() {
+  if (increaseForm.value.amount === null) { 
+    message.warning('请输入增持金额')
+    return false
+  }
+  if (increaseForm.value.amount > currentBalance.value) {
+    message.warning('余额不足')
+    return false
+  }
+  try {
+    await approvalApi.increaseInvestment({
+      investment_id: selectedInvestment.value.id,
+      amount: increaseForm.value.amount,
+      operation_date: new Date(increaseForm.value.operation_date).toISOString(),
+      note: increaseForm.value.note
+    })
+    message.success('增持申请已提交！')
+    showIncreaseModal.value = false
     loadData()
     return true
   } catch (e: any) {
     message.error(e.response?.data?.detail || '操作失败')
     return false
   }
+}
+
+function openDecreaseModal(investment: any) {
+  selectedInvestment.value = investment
+  decreaseForm.value = {
+    amount: null,
+    operation_date: Date.now(),
+    note: ''
+  }
+  showDecreaseModal.value = true
+}
+
+async function submitDecrease() {
+  if (decreaseForm.value.amount === null) { 
+    message.warning('请输入减持金额')
+    return false
+  }
+  const maxDecrease = selectedInvestment.value.current_principal || 0
+  if (decreaseForm.value.amount > maxDecrease) {
+    message.warning(`减持金额不能超过当前持仓 ￥${maxDecrease}`)
+    return false
+  }
+  try {
+    await approvalApi.decreaseInvestment({
+      investment_id: selectedInvestment.value.id,
+      amount: decreaseForm.value.amount,
+      operation_date: new Date(decreaseForm.value.operation_date).toISOString(),
+      note: decreaseForm.value.note
+    })
+    message.success('减持申请已提交！')
+    showDecreaseModal.value = false
+    loadData()
+    return true
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '操作失败')
+    return false
+  }
+}
+
+function handleDelete(investment: any) {
+  dialog.warning({
+    title: '确认删除',
+    content: `确认删除投资产品「${investment.name}」？此操作为软删除，历史数据将保留。`,
+    positiveText: '确认删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await approvalApi.deleteInvestment({
+          investment_id: investment.id,
+          reason: '用户请求删除'
+        })
+        message.success('删除申请已提交！')
+        loadData()
+      } catch (e: any) {
+        message.error(e.response?.data?.detail || '操作失败')
+      }
+    }
+  })
 }
 
 async function doApprove(id: number, approved: boolean, reason?: string) {
@@ -408,6 +676,16 @@ onMounted(loadData)
 </script>
 
 <style scoped>
+/* 家庭自由资金卡片样式 */
+:deep(.n-statistic) {
+  color: white;
+}
+
+:deep(.n-statistic .n-statistic-value__prefix),
+:deep(.n-statistic .n-statistic-value__content) {
+  color: white !important;
+}
+
 /* 桌面/移动端显示控制 */
 .desktop-only {
   display: block;

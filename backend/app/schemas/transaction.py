@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from app.models.models import TransactionType
+from app.schemas.investment import DividendBreakdown
 
 
 class TransactionResponse(BaseModel):
@@ -40,6 +41,7 @@ class DividendCalculation(BaseModel):
     family_id: int
     total_income: float  # 总收益
     members: List["MemberDividend"]  # 各成员分红
+    breakdown: List[DividendBreakdown] = []  # 按投资产品的收益明细
 
 
 class MemberDividend(BaseModel):

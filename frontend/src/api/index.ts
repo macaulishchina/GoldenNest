@@ -173,13 +173,52 @@ export const approvalApi = {
     note?: string
   }) => api.post('/approval/investment/update', data),
   
-  // 理财收益登记申请
+  // 理财收益登记申请（支持新旧两种模式）
   createInvestmentIncome: (data: {
     investment_id: number
-    amount: number
+    amount?: number  // 老模式：直接记录收益金额
+    current_value?: number  // 新模式：记录当前总价值，系统自动计算收益
     income_date: string
     note?: string
   }) => api.post('/approval/investment/income', data),
+  
+  // 投资增持申请
+  increaseInvestment: (data: {
+    investment_id: number
+    amount: number
+    operation_date: string
+    note?: string
+  }) => api.post('/approval/investment/increase', data),
+  
+  // 投资减持申请
+  decreaseInvestment: (data: {
+    investment_id: number
+    amount: number
+    operation_date: string
+    note?: string
+  }) => api.post('/approval/investment/decrease', data),
+  
+  // 删除投资产品申请
+  deleteInvestment: (data: {
+    investment_id: number
+    reason?: string
+  }) => api.post('/approval/investment/delete', data),
+  
+  // 资产登记申请（统一入口）
+  createAsset: (data: {
+    user_id: number
+    name: string
+    asset_type: 'cash' | 'time_deposit' | 'fund' | 'stock' | 'bond' | 'other'
+    currency: 'CNY' | 'USD' | 'HKD' | 'JPY' | 'EUR' | 'GBP' | 'AUD' | 'CAD' | 'SGD' | 'KRW'
+    amount?: number  // CNY金额
+    foreign_amount?: number  // 外币金额
+    expected_rate: number
+    start_date: string
+    end_date?: string
+    bank_name?: string
+    deduct_from_cash: boolean
+    note?: string
+  }) => api.post('/approval/asset/create', data),
   
   // 支出申请
   createExpense: (data: {
@@ -219,4 +258,27 @@ export const approvalApi = {
   
   // 催促审核
   remind: (id: number) => api.post(`/approval/${id}/remind`)
+}
+
+// 资产管理 API（统一入口）
+export const assetApi = {
+  // 获取活期现金余额
+  getCashBalance: () => api.get('/asset/cash-balance'),
+  
+  // 获取资产汇总
+  getSummary: () => api.get('/asset/summary'),
+  
+  // 获取资产列表
+  list: (params?: { 
+    asset_type?: string
+    currency?: string
+    user_id?: number
+    is_active?: boolean
+  }) => api.get('/asset/list', { params }),
+  
+  // 获取我的资产
+  myAssets: () => api.get('/asset/my-assets'),
+  
+  // 获取实时汇率
+  getExchangeRate: (currency: string) => api.get(`/asset/exchange-rate/${currency}`)
 }

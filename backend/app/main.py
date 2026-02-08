@@ -8,7 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.api import auth, family, deposit, equity, investment, transaction, achievement, gift, vote, pet, announcement, report, approval, todo, calendar
+from app.api import auth, family, deposit, equity, investment, transaction, achievement, gift, vote, pet, announcement, report, approval, todo, calendar, asset
 from app.services.notification import set_external_base_url, detect_external_url_from_headers
 
 
@@ -78,9 +78,10 @@ app.add_middleware(
 # 注册路由
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
 app.include_router(family.router, prefix="/api/family", tags=["家庭管理"])
-app.include_router(deposit.router, prefix="/api/deposit", tags=["资金注入"])
+app.include_router(asset.router, prefix="/api/asset", tags=["资产登记"])  # 🌟 NEW: 统一资产管理
+app.include_router(deposit.router, prefix="/api/deposit", tags=["资金注入"])  # 保留向后兼容
 app.include_router(equity.router, prefix="/api/equity", tags=["股权"])
-app.include_router(investment.router, prefix="/api/investment", tags=["理财管理"])
+app.include_router(investment.router, prefix="/api/investment", tags=["理财管理"])  # 保留向后兼容
 # expense router 已迁移至 approval 通用审批系统
 app.include_router(transaction.router, prefix="/api/transaction", tags=["资金流水"])
 app.include_router(achievement.router)  # 成就系统（路由已内置prefix）

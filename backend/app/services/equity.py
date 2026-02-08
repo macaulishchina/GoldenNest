@@ -86,26 +86,16 @@ async def calculate_family_equity(family_id: int, db: AsyncSession) -> EquitySum
     
     # 计算每个成员的股权
     members_equity: List[MemberEquity] = []
-    total_weighted = 0.0
     total_original = 0.0
     
     for membership, user in member_rows:
         user_original = 0.0
-        user_weighted = 0.0
         
         if user.id in user_deposits:
             for deposit in user_deposits[user.id]:
                 user_original += deposit.amount
-                weighted = calculate_weighted_amount(
-                    deposit.amount,
-                    deposit.deposit_date,
-                    family.time_value_rate,
-                    now
-                )
-                user_weighted += weighted
         
         total_original += user_original
-        total_weighted += user_weighted
         
         members_equity.append({
             "user_id": user.id,
@@ -114,15 +104,15 @@ async def calculate_family_equity(family_id: int, db: AsyncSession) -> EquitySum
             "avatar_version": user.avatar_version or 0,  # 头像版本号
             "role": membership.role,  # 成员角色
             "total_deposit": user_original,
-            "weighted_deposit": user_weighted,
+            "weighted_deposit": user_original,  # 不再使用时间加权，与 total_deposit 相同
             "equity_ratio": 0,  # 稍后计算
             "equity_percentage": 0
         })
     
-    # 计算股权比例
+    # 计算股权比例（直接按原始存入金额计算）
     for member in members_equity:
-        if total_weighted > 0:
-            member["equity_ratio"] = round(member["weighted_deposit"] / total_weighted, 6)
+        if total_original > 0:
+            member["equity_ratio"] = round(member["total_deposit"] / total_original, 6)
             member["equity_percentage"] = round(member["equity_ratio"] * 100, 2)
         else:
             member["equity_ratio"] = 0
@@ -134,18 +124,13 @@ async def calculate_family_equity(family_id: int, db: AsyncSession) -> EquitySum
     # 计算目标进度
     target_progress = min(total_original / family.savings_target, 1.0) if family.savings_target > 0 else 0
     
-    # 计算今日加权增长
-    # 公式: daily_growth = total_weighted * (rate / 365)
-    # 这表示因为时间流逝一天，加权总额每日增加的金额
-    daily_weighted_growth = round(total_weighted * (family.time_value_rate / 365), 2)
-    
     return EquitySummary(
         family_id=family.id,
         family_name=family.name,
         savings_target=family.savings_target,
         total_savings=total_original,
-        total_weighted=total_weighted,
-        daily_weighted_growth=daily_weighted_growth,
+        total_weighted=total_original,  # 不再使用时间加权，与 total_savings 相同
+        daily_weighted_growth=0.0,  # 不再计算时间加权增长
         target_progress=round(target_progress, 4),
         time_value_rate=family.time_value_rate,
         members=member_equity_list,

@@ -38,6 +38,11 @@ const router = createRouter({
           component: () => import('@/views/Deposit.vue')
         },
         {
+          path: 'asset',
+          name: 'Asset',
+          component: () => import('@/views/Asset.vue')
+        },
+        {
           path: 'investment',
           name: 'Investment',
           component: () => import('@/views/Investment.vue')
@@ -117,16 +122,34 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const userStore = useUserStore()
   
-  if (to.meta.requiresAuth && !userStore.isLoggedIn) {
-    // 未登录访问需要认证的页面，跳转到登录页并保存原始路径
-    next({
-      path: '/login',
-      query: { redirect: to.fullPath }
-    })
-  } else if (!to.meta.requiresAuth && userStore.isLoggedIn && (to.name === 'Login' || to.name === 'Register')) {
+  // 如果需要认证
+  if (to.meta.requiresAuth) {
+    if (!userStore.isLoggedIn) {
+      // 未登录，跳转到登录页并保存原始路径
+      next({
+        path: '/login',
+        query: { redirect: to.fullPath }
+      })
+      return
+    }
+    
+    // 已登录但用户信息未加载，先加载用户信息
+    if (!userStore.user) {
+      try {
+        await userStore.fetchUser()
+      } catch (error) {
+        console.error('Failed to load user:', error)
+        // 如果加载失败，跳转到登录页
+        next('/login')
+        return
+      }
+    }
+  }
+  
+  if (!to.meta.requiresAuth && userStore.isLoggedIn && (to.name === 'Login' || to.name === 'Register')) {
     // 已登录用户访问登录/注册页，重定向到首页
     next('/')
   } else {

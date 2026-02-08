@@ -237,6 +237,10 @@
                 <n-icon :size="20"><TrendingUpOutline /></n-icon>
                 <span>理财产品</span>
               </div>
+              <div class="drawer-menu-item" @click="navigateAndClose('/asset')">
+                <n-icon :size="20"><DiamondOutline /></n-icon>
+                <span>资产登记</span>
+              </div>
               <div class="drawer-menu-item" @click="navigateAndClose('/report')">
                 <n-icon :size="20"><StatsChartOutline /></n-icon>
                 <span>年度报告</span>
@@ -326,6 +330,7 @@ import {
   WalletOutline, 
   PieChartOutline,
   TrendingUpOutline,
+  DiamondOutline,
   CardOutline,
   ListOutline,
   PeopleOutline,
@@ -384,6 +389,7 @@ const availableModules = [
   { key: 'expense', label: '支出', icon: markRaw(CardOutline) },
   { key: 'transaction', label: '流水', icon: markRaw(ListOutline) },
   { key: 'investment', label: '理财', icon: markRaw(TrendingUpOutline) },
+  { key: 'asset', label: '资产', icon: markRaw(DiamondOutline) },
   { key: 'report', label: '报告', icon: markRaw(StatsChartOutline) },
   // 家庭事务
   { key: 'equity', label: '股权', icon: markRaw(PieChartOutline) },
@@ -590,6 +596,11 @@ const menuOptions = computed<MenuOption[]>(() => [
         label: '理财产品',
         key: 'investment',
         icon: renderIcon(TrendingUpOutline)
+      },
+      {
+        label: '资产登记',
+        key: 'asset',
+        icon: renderIcon(DiamondOutline)
       },
       {
         label: '年度报告',

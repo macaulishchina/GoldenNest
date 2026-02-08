@@ -28,7 +28,8 @@ export const useUserStore = defineStore('user', () => {
     try {
       const response = await authApi.getMe()
       user.value = response.data
-    } catch {
+    } catch (error) {
+      console.error('Failed to fetch user:', error)
       logout()
     }
   }

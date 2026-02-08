@@ -11,6 +11,9 @@
       <button class="btn-create" @click="showCreateModal = true">
         📝 发起新提案
       </button>
+      <button class="btn-dividend" @click="openDividendModal">
+        💰 发起分红
+      </button>
       <div class="filter-tabs">
         <button 
           v-for="tab in tabs" 
@@ -149,6 +152,77 @@
       </div>
     </div>
 
+    <!-- 发起分红弹窗 -->
+    <div v-if="showDividendModal" class="modal-overlay" @click.self="showDividendModal = false">
+      <div class="modal-content dividend-modal">
+        <h2>💰 发起分红提案</h2>
+        
+        <div class="pool-info" v-if="!loadingPool">
+          <div class="pool-item">
+            <span class="pool-label">理财收益池:</span>
+            <span class="pool-value">{{ dividendPool.profit_pool.toFixed(2) }} 元</span>
+          </div>
+          <div class="pool-item">
+            <span class="pool-label">家庭自由资金:</span>
+            <span class="pool-value">{{ dividendPool.cash_pool.toFixed(2) }} 元</span>
+          </div>
+        </div>
+        <div v-else class="loading-pool">加载中...</div>
+
+        <div class="form-group">
+          <label>分红类型</label>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" v-model="dividendForm.dividend_type" value="profit" @change="loadDividendPool" />
+              <span>理财收益分红</span>
+              <span class="type-desc">（清空理财产品累计收益）</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" v-model="dividendForm.dividend_type" value="cash" @change="loadDividendPool" />
+              <span>自由资金分红</span>
+              <span class="type-desc">（减少家庭自由资金）</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>分红金额 (元)</label>
+          <input 
+            v-model.number="dividendForm.amount" 
+            type="number" 
+            step="0.01" 
+            :max="dividendForm.dividend_type === 'profit' ? dividendPool.profit_pool : dividendPool.cash_pool"
+            min="0.01"
+            placeholder="请输入分红金额"
+          />
+          <div class="amount-hint">
+            可用金额: {{ (dividendForm.dividend_type === 'profit' ? dividendPool.profit_pool : dividendPool.cash_pool).toFixed(2) }} 元
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>投票期限 (天)</label>
+          <input v-model.number="dividendForm.deadline_days" type="number" min="1" max="30" />
+        </div>
+
+        <div class="dividend-note">
+          <p>💡 说明：</p>
+          <ul>
+            <li>分红将按股权比例分配给所有家庭成员</li>
+            <li>成员可选择"红利再投"（增加股权）或"提现"</li>
+            <li>需要全体成员同意才能通过</li>
+          </ul>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="showDividendModal = false">取消</button>
+          <button class="btn-submit" @click="createDividendProposal" :disabled="creating || loadingPool">
+            {{ creating ? '提交中...' : '提交分红提案' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 提案详情弹窗 -->
     <div v-if="selectedProposal" class="modal-overlay" @click.self="selectedProposal = null">
       <div class="modal-content proposal-detail">
@@ -234,12 +308,22 @@ const proposals = ref([])
 const currentTab = ref('voting')
 const showCreateModal = ref(false)
 const selectedProposal = ref(null)
+const showDividendModal = ref(false)
+const dividendPool = ref({ profit_pool: 0, cash_pool: 0 })
+const loadingPool = ref(false)
 
 // 新提案表单
 const newProposal = ref({
   title: '',
   description: '',
   options: ['同意', '反对'],
+  deadline_days: 7
+})
+
+// 分红提案表单
+const dividendForm = ref({
+  dividend_type: 'profit',  // 'profit' 或 'cash'
+  amount: 0,
   deadline_days: 7
 })
 
@@ -335,6 +419,62 @@ const addOption = () => {
 
 const removeOption = (idx) => {
   newProposal.value.options.splice(idx, 1)
+}
+
+// 分红相关函数
+const openDividendModal = async () => {
+  showDividendModal.value = true
+  await loadDividendPool()
+}
+
+const loadDividendPool = async () => {
+  loadingPool.value = true
+  try {
+    const res = await api.get('/vote/dividend-pool')
+    dividendPool.value = res.data
+    // 默认设置为可用的最大金额
+    const maxAmount = dividendForm.value.dividend_type === 'profit' 
+      ? dividendPool.value.profit_pool 
+      : dividendPool.value.cash_pool
+    dividendForm.value.amount = maxAmount
+  } catch (err) {
+    message.error('获取分红资金池失败')
+  } finally {
+    loadingPool.value = false
+  }
+}
+
+const createDividendProposal = async () => {
+  if (dividendForm.value.amount <= 0) {
+    message.warning('分红金额必须大于0')
+    return
+  }
+  
+  const maxAmount = dividendForm.value.dividend_type === 'profit'
+    ? dividendPool.value.profit_pool
+    : dividendPool.value.cash_pool
+  
+  if (dividendForm.value.amount > maxAmount) {
+    message.warning('分红金额超出可用资金')
+    return
+  }
+  
+  creating.value = true
+  try {
+    await api.post('/vote/proposals/dividend', {
+      dividend_type: dividendForm.value.dividend_type,
+      amount: dividendForm.value.amount,
+      deadline_days: dividendForm.value.deadline_days
+    })
+    showDividendModal.value = false
+    dividendForm.value = { dividend_type: 'profit', amount: 0, deadline_days: 7 }
+    message.success('分红提案创建成功')
+    await loadProposals()
+  } catch (err) {
+    message.error(err.response?.data?.detail || '创建分红提案失败')
+  } finally {
+    creating.value = false
+  }
 }
 
 // 工具函数
@@ -433,6 +573,22 @@ onMounted(() => {
 .btn-create:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-dividend {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-dividend:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(240, 147, 251, 0.4);
 }
 
 .filter-tabs {
@@ -919,5 +1075,114 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 分红Modal样式 */
+.dividend-modal {
+  max-width: 550px;
+}
+
+.pool-info {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg, #667eea15, #764ba215);
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.pool-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pool-label {
+  font-size: 13px;
+  color: #666;
+}
+
+.pool-value {
+  font-size: 22px;
+  font-weight: bold;
+  color: #667eea;
+}
+
+.loading-pool {
+  text-align: center;
+  padding: 20px;
+  color: #999;
+}
+
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.radio-label:hover {
+  border-color: #667eea;
+  background: #f8f9ff;
+}
+
+.radio-label input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.radio-label input[type="radio"]:checked + span {
+  color: #667eea;
+  font-weight: 600;
+}
+
+.type-desc {
+  font-size: 12px;
+  color: #999;
+  margin-left: 4px;
+}
+
+.amount-hint {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #667eea;
+}
+
+.dividend-note {
+  background: #fffbf0;
+  border-left: 4px solid #ffc107;
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-top: 16px;
+}
+
+.dividend-note p {
+  margin: 0 0 8px 0;
+  font-weight: 600;
+  color: #666;
+}
+
+.dividend-note ul {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+}
+
+.dividend-note li {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #666;
 }
 </style>

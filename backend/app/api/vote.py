@@ -12,7 +12,8 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.api.auth import get_current_user
 from app.models.models import (
-    User, FamilyMember, Proposal, Vote, ProposalStatus
+    User, FamilyMember, Proposal, Vote, ProposalStatus,
+    Dividend, DividendType, DividendStatus
 )
 from app.schemas.common import TimeRange, get_time_range_filter
 
@@ -25,6 +26,12 @@ class ProposalCreate(BaseModel):
     title: str
     description: str
     options: List[str]  # 选项列表，至少2个
+    deadline_days: int = 7  # 投票期限（天）
+
+class DividendProposalCreate(BaseModel):
+    """分红提案创建"""
+    dividend_type: str  # "profit" 或 "cash"
+    amount: float  # 分红金额
     deadline_days: int = 7  # 投票期限（天）
 
 class VoteCreate(BaseModel):
@@ -114,11 +121,60 @@ async def check_proposal_result(db: AsyncSession, proposal: Proposal, family_id:
         if vote_counts.get(0, 0) == total_members:
             proposal.status = ProposalStatus.PASSED
             proposal.closed_at = datetime.utcnow()
+            
+            # 🌟 检查是否是分红提案，如果是则触发分红分配
+            await handle_dividend_approval(db, proposal)
         else:
             proposal.status = ProposalStatus.REJECTED
             proposal.closed_at = datetime.utcnow()
+            
+            # 🌟 如果是分红提案被拒绝，更新分红状态
+            await handle_dividend_rejection(db, proposal)
         
         await db.commit()
+
+
+async def handle_dividend_approval(db: AsyncSession, proposal: Proposal):
+    """处理分红提案通过"""
+    from app.services.dividend import (
+        get_dividend_by_proposal,
+        create_dividend_claims,
+        clear_dividend_pool
+    )
+    
+    # 查找关联的分红记录
+    dividend = await get_dividend_by_proposal(proposal.id, db)
+    if not dividend:
+        return  # 不是分红提案
+    
+    # 更新分红状态
+    dividend.status = DividendStatus.APPROVED
+    dividend.approved_at = datetime.utcnow()
+    await db.commit()
+    
+    # 先清空分红资金池（在分配前清空，避免资金重复计算）
+    await clear_dividend_pool(
+        dividend.family_id,
+        dividend.type,
+        dividend.total_amount,
+        db
+    )
+    
+    # 创建个人分红审核
+    await create_dividend_claims(dividend.id, db)
+
+
+async def handle_dividend_rejection(db: AsyncSession, proposal: Proposal):
+    """处理分红提案被拒绝"""
+    from app.services.dividend import get_dividend_by_proposal
+    
+    dividend = await get_dividend_by_proposal(proposal.id, db)
+    if not dividend:
+        return  # 不是分红提案
+    
+    # 更新分红状态为已拒绝
+    dividend.status = DividendStatus.REJECTED
+    await db.commit()
 
 
 # ==================== API ====================
@@ -455,4 +511,88 @@ async def get_vote_stats(
         "total_votes": total_votes,
         "total_proposals": total_proposals,
         "passed_proposals": passed_proposals
+    }
+
+
+# ==================== 分红投票 ====================
+
+@router.get("/dividend-pool", response_model=dict)
+async def get_dividend_pool(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取可用于分红的资金池"""
+    from app.services.dividend import calculate_dividend_pool
+    
+    family_id = await get_user_family_id(current_user.id, db)
+    
+    profit_pool = await calculate_dividend_pool(family_id, DividendType.PROFIT, db)
+    cash_pool = await calculate_dividend_pool(family_id, DividendType.CASH, db)
+    
+    return {
+        "profit_pool": round(profit_pool, 2),
+        "cash_pool": round(cash_pool, 2)
+    }
+
+
+@router.post("/proposals/dividend", response_model=dict)
+async def create_dividend_proposal(
+    data: DividendProposalCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """创建分红提案"""
+    from app.services.dividend import calculate_dividend_pool
+    
+    family_id = await get_user_family_id(current_user.id, db)
+    
+    # 验证分红类型
+    try:
+        dividend_type = DividendType(data.dividend_type)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无效的分红类型")
+    
+    # 检查可用资金
+    available_amount = await calculate_dividend_pool(family_id, dividend_type, db)
+    if data.amount > available_amount:
+        raise HTTPException(
+            status_code=400,
+            detail=f"分红金额超出可用资金（可用：{available_amount:.2f}元）"
+        )
+    
+    if data.amount <= 0:
+        raise HTTPException(status_code=400, detail="分红金额必须大于0")
+    
+    # 创建投票提案
+    type_name = "理财收益" if dividend_type == DividendType.PROFIT else "家庭自由资金"
+    proposal = Proposal(
+        family_id=family_id,
+        creator_id=current_user.id,
+        title=f"分红提案 - {type_name}",
+        description=f"提议将 {data.amount:.2f} 元{type_name}进行分红，按股权比例分配。",
+        options=json.dumps(["同意", "不同意"], ensure_ascii=False),
+        deadline=datetime.utcnow() + timedelta(days=data.deadline_days),
+        status=ProposalStatus.VOTING
+    )
+    db.add(proposal)
+    await db.flush()
+    
+    # 创建分红记录（状态为VOTING）
+    dividend = Dividend(
+        family_id=family_id,
+        type=dividend_type,
+        total_amount=data.amount,
+        proposal_id=proposal.id,
+        status=DividendStatus.VOTING,
+        created_by=current_user.id
+    )
+    db.add(dividend)
+    await db.commit()
+    await db.refresh(proposal)
+    
+    return {
+        "success": True,
+        "message": "分红提案创建成功",
+        "proposal_id": proposal.id,
+        "dividend_id": dividend.id
     }

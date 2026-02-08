@@ -7,10 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.core.database import get_db
-from app.models.models import Investment, InvestmentIncome, FamilyMember, User, Transaction, TransactionType
+from app.models.models import (
+    Investment, InvestmentIncome, InvestmentPosition, PositionOperationType,
+    FamilyMember, User, Transaction, TransactionType
+)
 from app.schemas.investment import (
     InvestmentCreate, InvestmentUpdate, InvestmentResponse,
-    InvestmentIncomeCreate, InvestmentIncomeResponse, InvestmentSummary
+    InvestmentIncomeCreate, InvestmentIncomeResponse, InvestmentPositionResponse,
+    InvestmentSummary
 )
 from app.schemas.common import TimeRange, get_time_range_filter
 from app.api.auth import get_current_user
@@ -50,6 +54,7 @@ async def create_investment(
 @router.get("/list", response_model=List[InvestmentResponse])
 async def list_investments(
     time_range: TimeRange = Query(TimeRange.MONTH, description="时间范围：day/week/month/year/all"),
+    include_deleted: bool = Query(False, description="是否包含已删除的投资"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -60,6 +65,10 @@ async def list_investments(
     
     # 构建查询
     query = select(Investment).where(Investment.family_id == family_id)
+    
+    # 过滤已删除的投资
+    if not include_deleted:
+        query = query.where(Investment.is_deleted == False)
     
     # 时间范围筛选
     start_time = get_time_range_filter(time_range)
@@ -74,12 +83,20 @@ async def list_investments(
     
     response = []
     for inv in investments:
-        # 计算累计收益
+        # 获取持仓记录
         result = await db.execute(
-            select(func.sum(InvestmentIncome.amount))
-            .where(InvestmentIncome.investment_id == inv.id)
+            select(InvestmentPosition)
+            .where(InvestmentPosition.investment_id == inv.id)
+            .order_by(InvestmentPosition.operation_date.desc())
         )
-        total_income = result.scalar() or 0
+        positions = result.scalars().all()
+        
+        # 计算当前持仓本金
+        current_principal = sum(
+            p.amount if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
+            else -p.amount
+            for p in positions
+        )
         
         # 获取收益记录
         result = await db.execute(
@@ -88,6 +105,15 @@ async def list_investments(
             .order_by(InvestmentIncome.income_date.desc())
         )
         income_records = result.scalars().all()
+        
+        # 计算总收益（支持新旧两种模式）
+        total_return = sum(
+            ir.calculated_income if ir.calculated_income is not None else ir.amount
+            for ir in income_records
+        )
+        
+        # 计算ROI
+        roi = (total_return / inv.principal * 100) if inv.principal > 0 else 0
         
         response.append(InvestmentResponse(
             id=inv.id,
@@ -99,18 +125,39 @@ async def list_investments(
             start_date=inv.start_date,
             end_date=inv.end_date,
             is_active=inv.is_active,
+            is_deleted=inv.is_deleted,
+            deleted_at=inv.deleted_at,
             note=inv.note,
             created_at=inv.created_at,
-            total_income=total_income,
+            total_income=total_return,  # Deprecated but kept for compatibility
+            current_principal=current_principal,
+            total_return=total_return,
+            roi=roi,
             income_records=[
                 InvestmentIncomeResponse(
                     id=ir.id,
                     investment_id=ir.investment_id,
                     amount=ir.amount,
+                    current_value=ir.current_value,
+                    calculated_income=ir.calculated_income,
                     income_date=ir.income_date,
                     note=ir.note,
                     created_at=ir.created_at
                 ) for ir in income_records
+            ],
+            positions=[
+                InvestmentPositionResponse(
+                    id=p.id,
+                    investment_id=p.investment_id,
+                    operation_type=p.operation_type,
+                    amount=p.amount,
+                    operation_date=p.operation_date,
+                    note=p.note,
+                    transaction_id=p.transaction_id,
+                    deposit_id=p.deposit_id,
+                    approval_request_id=p.approval_request_id,
+                    created_at=p.created_at
+                ) for p in positions
             ]
         ))
     
@@ -163,22 +210,48 @@ async def get_investment_summary(
     """获取理财汇总"""
     family_id = await get_user_family_id(current_user.id, db)
     
-    # 获取所有理财
+    # 获取所有未删除的理财
     result = await db.execute(
-        select(Investment).where(Investment.family_id == family_id)
+        select(Investment).where(
+            Investment.family_id == family_id,
+            Investment.is_deleted == False
+        )
     )
     investments = result.scalars().all()
     
-    total_principal = sum(inv.principal for inv in investments if inv.is_active)
+    # 计算总本金（使用持仓记录）
+    total_principal = 0
+    for inv in investments:
+        if inv.is_active:
+            result = await db.execute(
+                select(InvestmentPosition).where(
+                    InvestmentPosition.investment_id == inv.id
+                )
+            )
+            positions = result.scalars().all()
+            current_principal = sum(
+                p.amount if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
+                else -p.amount
+                for p in positions
+            )
+            total_principal += current_principal
+    
     active_count = sum(1 for inv in investments if inv.is_active)
     
-    # 计算总收益
+    # 计算总收益（支持新旧两种模式）
     result = await db.execute(
-        select(func.sum(InvestmentIncome.amount))
+        select(InvestmentIncome)
         .join(Investment, InvestmentIncome.investment_id == Investment.id)
-        .where(Investment.family_id == family_id)
+        .where(
+            Investment.family_id == family_id,
+            Investment.is_deleted == False
+        )
     )
-    total_income = result.scalar() or 0
+    incomes = result.scalars().all()
+    total_income = sum(
+        inc.calculated_income if inc.calculated_income is not None else inc.amount
+        for inc in incomes
+    )
     
     return InvestmentSummary(
         family_id=family_id,

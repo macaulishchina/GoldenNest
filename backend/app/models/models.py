@@ -29,13 +29,38 @@ class ExpenseStatus(str, enum.Enum):
     CANCELLED = "cancelled"      # 已取消
 
 
-class InvestmentType(str, enum.Enum):
-    """理财类型"""
-    DEPOSIT = "deposit"          # 银行存款
+class AssetType(str, enum.Enum):
+    """资产类型（原理财类型）"""
+    CASH = "cash"                # 活期现金
+    TIME_DEPOSIT = "time_deposit"  # 定期存款（原deposit）
     FUND = "fund"                # 基金
     STOCK = "stock"              # 股票
     BOND = "bond"                # 债券
     OTHER = "other"              # 其他
+
+# 向后兼容：InvestmentType 作为 AssetType 的别名
+InvestmentType = AssetType
+
+
+class CurrencyType(str, enum.Enum):
+    """货币类型"""
+    CNY = "CNY"  # 人民币
+    USD = "USD"  # 美元
+    HKD = "HKD"  # 港元
+    JPY = "JPY"  # 日元
+    EUR = "EUR"  # 欧元
+    GBP = "GBP"  # 英镑
+    AUD = "AUD"  # 澳元
+    CAD = "CAD"  # 加元
+    SGD = "SGD"  # 新加坡元
+    KRW = "KRW"  # 韩元
+
+
+class PositionOperationType(str, enum.Enum):
+    """持仓操作类型"""
+    CREATE = "create"            # 创建投资
+    INCREASE = "increase"        # 增持
+    DECREASE = "decrease"        # 减持
 
 
 # ==================== 用户模型 ====================
@@ -133,40 +158,96 @@ class Deposit(Base):
 # ==================== 理财配置模型 ====================
 
 class Investment(Base):
-    """理财配置表"""
+    """理财配置表（将重命名为Asset - 资产登记表）"""
     __tablename__ = "investments"
     
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)  # 🌟 NEW: 资产归属人
     name: Mapped[str] = mapped_column(String(100))  # 理财产品名称
-    investment_type: Mapped[InvestmentType] = mapped_column(SQLEnum(InvestmentType))
-    principal: Mapped[float] = mapped_column(Float)  # 本金
-    expected_rate: Mapped[float] = mapped_column(Float)  # 预期年化收益率
+    investment_type: Mapped[AssetType] = mapped_column(SQLEnum(AssetType))  # 使用AssetType
+    
+    # 💰 多币种支持
+    currency: Mapped[CurrencyType] = mapped_column(SQLEnum(CurrencyType), default=CurrencyType.CNY)  # 🌟 NEW: 货币类型
+    foreign_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 🌟 NEW: 外币金额
+    exchange_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 🌟 NEW: 汇率（外币→CNY）
+    
+    principal: Mapped[float] = mapped_column(Float)  # 本金（CNY，用于股权计算）
+    expected_rate: Mapped[float] = mapped_column(Float, default=0.0)  # 预期年化收益率
     start_date: Mapped[datetime] = mapped_column(DateTime)  # 开始日期
     end_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 到期日期
+    bank_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # 🌟 NEW: 银行/机构名称
+    deduct_from_cash: Mapped[bool] = mapped_column(Boolean, default=False)  # 🌟 NEW: 是否从活期扣除
+    
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)  # 软删除标记
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 删除时间
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # 关联关系
     family: Mapped["Family"] = relationship(back_populates="investments")
+    user: Mapped[Optional["User"]] = relationship(foreign_keys=[user_id])  # 🌟 NEW: 归属人关系
     income_records: Mapped[List["InvestmentIncome"]] = relationship(back_populates="investment")
+    positions: Mapped[List["InvestmentPosition"]] = relationship(back_populates="investment")
+
+# 🌟 NEW: Asset作为Investment的别名（逐步迁移）
+Asset = Investment
 
 
 class InvestmentIncome(Base):
-    """理财收益记录表"""
+    """理财收益记录表（将重命名为AssetIncome）"""
     __tablename__ = "investment_incomes"
     
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     investment_id: Mapped[int] = mapped_column(ForeignKey("investments.id"))
-    amount: Mapped[float] = mapped_column(Float)  # 收益金额
+    
+    # 💰 多币种支持
+    foreign_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 🌟 NEW: 外币收益金额
+    exchange_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 🌟 NEW: 收益时汇率
+    
+    amount: Mapped[float] = mapped_column(Float)  # CNY收益金额（计入活期）
+    current_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 当前总价值（新模式）
+    calculated_income: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 计算出的收益（新模式）
     income_date: Mapped[datetime] = mapped_column(DateTime)  # 收益日期
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     # 关联关系
     investment: Mapped["Investment"] = relationship(back_populates="income_records")
+
+# 🌟 NEW: AssetIncome作为InvestmentIncome的别名
+AssetIncome = InvestmentIncome
+
+
+class InvestmentPosition(Base):
+    """投资持仓变动记录表（将重命名为AssetPosition）"""
+    __tablename__ = "investment_positions"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    investment_id: Mapped[int] = mapped_column(ForeignKey("investments.id"))
+    operation_type: Mapped[PositionOperationType] = mapped_column(SQLEnum(PositionOperationType))
+    
+    # 💰 多币种支持
+    foreign_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 🌟 NEW: 外币金额变化
+    exchange_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 🌟 NEW: 本次操作汇率
+    
+    amount: Mapped[float] = mapped_column(Float)  # CNY金额变化（用于股权计算）
+    principal_before: Mapped[float] = mapped_column(Float, default=0)  # 操作前本金（CNY）
+    principal_after: Mapped[float] = mapped_column(Float)  # 操作后本金（CNY）
+    operation_date: Mapped[datetime] = mapped_column(DateTime)  # 操作日期
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    transaction_id: Mapped[Optional[int]] = mapped_column(ForeignKey("transactions.id"), nullable=True)  # 关联资金流水
+    deposit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("deposits.id"), nullable=True)  # 关联权益记录
+    approval_request_id: Mapped[Optional[int]] = mapped_column(ForeignKey("approval_requests.id"), nullable=True)  # 关联审批
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    # 关联关系
+    investment: Mapped["Investment"] = relationship(back_populates="positions")
+
+# 🌟 NEW: AssetPosition作为InvestmentPosition的别名
+AssetPosition = InvestmentPosition
 
 
 # ==================== 支出申请模型 ====================
@@ -211,7 +292,7 @@ class ExpenseApproval(Base):
 # ==================== 交易流水模型 ====================
 
 class Transaction(Base):
-    """资金流水表"""
+    """资金流水表 - 记录活期资产的变化"""
     __tablename__ = "transactions"
     
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -219,7 +300,7 @@ class Transaction(Base):
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     transaction_type: Mapped[TransactionType] = mapped_column(SQLEnum(TransactionType))
     amount: Mapped[float] = mapped_column(Float)  # 金额（正数为入账，负数为出账）
-    balance_after: Mapped[float] = mapped_column(Float)  # 交易后余额
+    balance_after: Mapped[float] = mapped_column(Float)  # 🌟 交易后的活期余额（仅CNY活期资产，不含投资）
     description: Mapped[str] = mapped_column(String(500))  # 描述
     reference_id: Mapped[Optional[int]] = mapped_column(nullable=True)  # 关联的记录ID
     reference_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # 关联类型
@@ -458,11 +539,16 @@ class PetExpLog(Base):
 
 class ApprovalRequestType(str, enum.Enum):
     """申请类型"""
-    DEPOSIT = "deposit"              # 资金注入
-    INVESTMENT_CREATE = "investment_create"  # 创建理财产品
+    ASSET_CREATE = "asset_create"    # 🌟 NEW: 资产登记（统一入口）
+    DEPOSIT = "deposit"              # 资金注入（保留兼容）
+    INVESTMENT_CREATE = "investment_create"  # 创建理财产品（保留兼容）
     INVESTMENT_UPDATE = "investment_update"  # 更新理财产品
     INVESTMENT_INCOME = "investment_income"  # 登记理财收益
+    INVESTMENT_INCREASE = "investment_increase"  # 投资增持
+    INVESTMENT_DECREASE = "investment_decrease"  # 投资减持
+    INVESTMENT_DELETE = "investment_delete"  # 删除投资产品
     EXPENSE = "expense"              # 大额支出
+    DIVIDEND_CLAIM = "dividend_claim"  # 分红领取处理
     MEMBER_JOIN = "member_join"      # 成员加入（任一成员同意即可）
     MEMBER_REMOVE = "member_remove"  # 成员剔除（需要管理员同意）
 
@@ -482,6 +568,7 @@ class ApprovalRequest(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
     requester_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    target_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)  # 🌟 NEW: 目标用户（用于个人专属审核）
     request_type: Mapped[ApprovalRequestType] = mapped_column(SQLEnum(ApprovalRequestType))
     title: Mapped[str] = mapped_column(String(200))  # 申请标题
     description: Mapped[str] = mapped_column(Text)  # 申请描述
@@ -491,6 +578,8 @@ class ApprovalRequest(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     executed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 执行时间
+    execution_failed: Mapped[bool] = mapped_column(Boolean, default=False)  # 执行失败标记
+    failure_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 失败原因
     
     # 关联关系
     approval_records: Mapped[List["ApprovalRecord"]] = relationship(back_populates="approval_request")
@@ -656,3 +745,67 @@ class CalendarEventParticipant(Base):
     
     # 关联关系
     event: Mapped["CalendarEvent"] = relationship(back_populates="participants")
+
+
+# ==================== 分红系统模型 ====================
+
+class DividendType(str, enum.Enum):
+    """分红类型"""
+    PROFIT = "profit"             # 理财收益分红
+    CASH = "cash"                 # 自有资金分红
+
+
+class DividendStatus(str, enum.Enum):
+    """分红状态"""
+    VOTING = "voting"             # 投票中
+    APPROVED = "approved"         # 已批准，待分配
+    DISTRIBUTING = "distributing" # 分配中（已创建个人审核）
+    COMPLETED = "completed"       # 已完成（所有成员处理完毕）
+    REJECTED = "rejected"         # 已拒绝
+
+
+class DividendClaimStatus(str, enum.Enum):
+    """分红领取状态"""
+    PENDING = "pending"           # 待处理
+    REINVESTED = "reinvested"     # 已再投
+    WITHDRAWN = "withdrawn"       # 已提现
+
+
+class Dividend(Base):
+    """分红记录表"""
+    __tablename__ = "dividends"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    type: Mapped[DividendType] = mapped_column(SQLEnum(DividendType))  # 分红类型
+    total_amount: Mapped[float] = mapped_column(Float)  # 分红总额
+    proposal_id: Mapped[int] = mapped_column(ForeignKey("proposals.id"))  # 关联投票提案
+    status: Mapped[DividendStatus] = mapped_column(SQLEnum(DividendStatus), default=DividendStatus.VOTING)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))  # 发起人
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 批准时间
+    distributed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 分配时间
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 完成时间
+    
+    # 关联关系
+    claims: Mapped[List["DividendClaim"]] = relationship(back_populates="dividend", cascade="all, delete-orphan")
+
+
+class DividendClaim(Base):
+    """分红领取记录表"""
+    __tablename__ = "dividend_claims"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    dividend_id: Mapped[int] = mapped_column(ForeignKey("dividends.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))  # 领取人
+    amount: Mapped[float] = mapped_column(Float)  # 分红金额
+    equity_ratio: Mapped[float] = mapped_column(Float)  # 当时的股权比例（快照）
+    status: Mapped[DividendClaimStatus] = mapped_column(SQLEnum(DividendClaimStatus), default=DividendClaimStatus.PENDING)
+    reinvest: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)  # 是否再投
+    deposit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("deposits.id"), nullable=True)  # 如果再投，关联的Deposit记录
+    approval_request_id: Mapped[Optional[int]] = mapped_column(ForeignKey("approval_requests.id"), nullable=True)  # 关联审核
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 处理时间
+    
+    # 关联关系
+    dividend: Mapped["Dividend"] = relationship(back_populates="claims")
