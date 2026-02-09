@@ -1,5 +1,10 @@
 """
-小金库 (Golden Nest) - 资金注入路由
+小金库 (Golden Nest) - 资金注入查询路由
+
+注意：创建存款的功能已迁移至审批系统，使用 POST /api/approval/deposit
+此模块仅保留查询相关功能：
+- 获取存款列表
+- 获取存款统计
 """
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -28,23 +33,8 @@ async def get_user_family_id(user_id: int, db: AsyncSession) -> int:
     return membership.family_id
 
 
-@router.post("/create")
-async def create_deposit(
-    deposit_data: DepositCreate,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    [已废弃] 创建资金注入记录
-    
-    此接口已废弃，请使用审批接口 POST /api/approval/deposit
-    所有资金注入现在需要经过家庭成员审批后才能执行。
-    """
-    raise HTTPException(
-        status_code=400,
-        detail="此接口已废弃。资金注入需要家庭成员审批，请使用 POST /api/approval/deposit 接口"
-    )
-
+# ==================== 查询接口 ====================
+# 注意：创建存款的功能已迁移至审批系统 POST /api/approval/deposit
 
 @router.get("/list", response_model=List[DepositResponse])
 async def list_deposits(
