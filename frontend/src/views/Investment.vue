@@ -115,7 +115,7 @@
             <div class="approval-detail">{{ formatApprovalDetail(item) }}</div>
           </div>
           <div class="approval-card-footer">
-            <span class="approval-progress">审批进度: {{ item.approved_count || 0 }}/{{ item.required_count || 0 }}</span>
+            <span class="approval-progress">审批进度: {{ item.approved_count || 0 }}/{{ getRequiredCount(item) }}</span>
             <div class="approval-actions" v-if="item.requester_id !== userStore.user?.id && !item.has_voted">
               <n-button size="small" type="success" @click="handleApprove(item.id, true)">同意</n-button>
               <n-button size="small" type="error" @click="handleApprove(item.id, false)">拒绝</n-button>
@@ -276,6 +276,7 @@ import { useMessage, useDialog, NButton, NTag, NSpace, NInput, NRadio, NRadioGro
 import { storeToRefs } from 'pinia'
 import { investmentApi, approvalApi, transactionApi, assetApi } from '@/api'
 import { useUserStore } from '@/stores/user'
+import { useApprovalStore } from '@/stores/approval'
 import { usePrivacyStore } from '@/stores/privacy'
 import { SendOutline } from '@vicons/ionicons5'
 import { formatShortDateTime, formatLocalDate } from '@/utils/date'
@@ -285,12 +286,24 @@ import dayjs from 'dayjs'
 const message = useMessage()
 const dialog = useDialog()
 const userStore = useUserStore()
+const approvalStore = useApprovalStore()
 const privacyStore = usePrivacyStore()
 const { privacyMode } = storeToRefs(privacyStore)
 const loading = ref(false)
 
 // 隐私模式格式化金额
 const formatMoney = (num: number) => privacyStore.formatMoney(num)
+
+// 计算需要的审批人数
+const getRequiredCount = (item: any): number => {
+  // 单人家庭：需要1人（自己）
+  if (item.total_members === 1) {
+    return 1
+  }
+  // 多人家庭：需要所有人审批（除申请人）= total_members - 1
+  return item.total_members - 1
+}
+
 const submitting = ref(false)
 const investments = ref<any[]>([])
 const pendingApprovals = ref<any[]>([])
@@ -366,10 +379,10 @@ const columns = computed(() => [
   { title: '类型', key: 'investment_type', render: (row: any) => typeLabels[row.investment_type] || row.investment_type },
   { title: '初始本金', key: 'principal', render: (row: any) => `¥${formatMoney(row.principal)}` },
   { title: '当前持仓', key: 'current_principal', render: (row: any) => `¥${formatMoney(row.current_principal || row.principal)}` },
-  { title: '总收益', key: 'total_return', render: (row: any) => h('span', { style: { color: (row.total_return || 0) >= 0 ? '#10b981' : '#ef4444' } }, `¥${formatMoney(row.total_return || 0)}`) },
+  { title: '总收益', key: 'total_return', render: (row: any) => h('span', { style: { color: (row.total_return || 0) >= 0 ? 'var(--theme-success)' : 'var(--theme-error)' } }, `¥${formatMoney(row.total_return || 0)}`) },
   { title: 'ROI', key: 'roi', render: (row: any) => {
     const roi = row.roi || 0
-    return h('span', { style: { color: roi >= 0 ? '#10b981' : '#ef4444' } }, `${roi.toFixed(2)}%`)
+    return h('span', { style: { color: roi >= 0 ? 'var(--theme-success)' : 'var(--theme-error)' } }, `${roi.toFixed(2)}%`)
   }},
   { title: '状态', key: 'is_active', render: (row: any) => {
     if (row.is_deleted) return h(NTag, { type: 'error', size: 'small' }, { default: () => '已删除' })
@@ -380,7 +393,7 @@ const columns = computed(() => [
     title: '操作', 
     key: 'actions',
     render: (row: any) => {
-      if (row.is_deleted) return h('span', { style: { color: '#999' } }, '已删除')
+      if (row.is_deleted) return h('span', { style: { color: 'var(--theme-text-tertiary)' } }, '已删除')
       return h(NSpace, { size: 'small' }, {
         default: () => [
           h(NButton, { size: 'small', text: true, type: 'primary', onClick: () => openIncomeModal(row) }, { default: () => '更新价值' }),
@@ -404,27 +417,40 @@ const approvalColumns = computed(() => [
     title: '详情', 
     key: 'details', 
     render: (row: any) => {
-      const data = JSON.parse(row.request_data)
-      if (row.request_type === 'investment_create') {
-        return `${data.name} - ¥${formatMoney(data.principal || 0)}`
-      } else if (row.request_type === 'investment_income') {
-        return `收益: ¥${formatMoney(data.amount || 0)}`
+      try {
+        const data = typeof row.request_data === 'string' ? JSON.parse(row.request_data) : row.request_data
+        if (!data) return '-'
+        
+        if (row.request_type === 'investment_create' || row.request_type === 'asset_create') {
+          return `${data.name || '未命名'} - ¥${formatMoney(data.principal || data.amount || 0)}`
+        } else if (row.request_type === 'investment_income') {
+          return `价值更新: ¥${formatMoney(data.current_value || data.amount || 0)}`
+        } else if (row.request_type === 'investment_increase') {
+          return `增持: ¥${formatMoney(data.amount || 0)}`
+        } else if (row.request_type === 'investment_decrease') {
+          return `减持: ¥${formatMoney(data.amount || 0)}`
+        } else if (row.request_type === 'investment_delete') {
+          return `删除理财产品`
+        }
+        return '-'
+      } catch (error) {
+        console.error('Approval column render error:', error, row)
+        return '数据格式错误'
       }
-      return '-'
     }
   },
   { title: '申请时间', key: 'created_at', render: (row: any) => dayjs(row.created_at).format('YYYY-MM-DD HH:mm') },
   { 
     title: '审批进度', 
     key: 'progress',
-    render: (row: any) => `${row.approved_count || 0}/${row.required_count || 0}`
+    render: (row: any) => `${row.approved_count || 0}/${getRequiredCount(row)}`
   },
   { 
     title: '操作', 
     key: 'actions',
     render: (row: any) => {
       const canApprove = row.requester_id !== userStore.user?.id && !row.has_voted
-      if (!canApprove) return h('span', { style: 'color:#94a3b8' }, row.has_voted ? '已投票' : '等待他人')
+      if (!canApprove) return h('span', { style: 'color: var(--theme-text-tertiary)' }, row.has_voted ? '已投票' : '等待他人')
       return h(NSpace, { size: 'small' }, { default: () => [
         h(NButton, { size: 'small', type: 'success', onClick: () => handleApprove(row.id, true) }, { default: () => '同意' }),
         h(NButton, { size: 'small', type: 'error', onClick: () => handleApprove(row.id, false) }, { default: () => '拒绝' })
@@ -444,9 +470,12 @@ async function loadData() {
     investments.value = investmentsRes.data
     // 显示所有理财相关的待审批申请（包括新的 asset_create 类型）
     const investmentTypes = ['asset_create', 'investment_create', 'investment_update', 'investment_income', 'investment_increase', 'investment_decrease', 'investment_delete']
-    pendingApprovals.value = (approvalsRes.data.items || []).filter((item: any) => investmentTypes.includes(item.request_type))
+    pendingApprovals.value = (approvalsRes.data?.items || []).filter((item: any) => investmentTypes.includes(item.request_type))
     // 从API获取家庭自由资金余额
-    currentBalance.value = cashBalanceRes.data.balance || 0
+    currentBalance.value = cashBalanceRes.data?.balance || 0
+  } catch (error) {
+    console.error('loadData error:', error)
+    message.error('数据加载失败')
   } finally {
     loading.value = false
   }
@@ -485,7 +514,11 @@ async function handleSubmit() {
     })
     message.success('申请已提交，等待审批！📈')
     formData.value = { name: '', investment_type: 'fund', principal: null, expected_rate: null, deduct_from_cash: false }
-    loadData()
+    // 延迟加载数据，给后端时间处理（单人家庭自动执行）
+    setTimeout(() => {
+      loadData()
+      approvalStore.refreshNow()
+    }, 800)
   } catch (e: any) {
     message.error(e.response?.data?.detail || '操作失败')
   } finally {
@@ -518,7 +551,11 @@ async function submitIncome() {
     })
     message.success('价值更新申请已提交！')
     showIncomeModal.value = false
-    loadData()
+    // 延迟加载数据，给后端时间处理（单人家庭自动执行）
+    setTimeout(() => {
+      loadData()
+      approvalStore.refreshNow()
+    }, 800)
     return true
   } catch (e: any) {
     console.error('Income submission error:', e.response?.data)
@@ -555,7 +592,11 @@ async function submitIncrease() {
     })
     message.success('增持申请已提交！')
     showIncreaseModal.value = false
-    loadData()
+    // 延迟加载数据，给后端时间处理（单人家庭自动执行）
+    setTimeout(() => {
+      loadData()
+      approvalStore.refreshNow()
+    }, 800)
     return true
   } catch (e: any) {
     message.error(e.response?.data?.detail || '操作失败')
@@ -592,7 +633,11 @@ async function submitDecrease() {
     })
     message.success('减持申请已提交！')
     showDecreaseModal.value = false
-    loadData()
+    // 延迟加载数据，给后端时间处理（单人家庭自动执行）
+    setTimeout(() => {
+      loadData()
+      approvalStore.refreshNow()
+    }, 800)
     return true
   } catch (e: any) {
     message.error(e.response?.data?.detail || '操作失败')
@@ -613,7 +658,11 @@ function handleDelete(investment: any) {
           reason: '用户请求删除'
         })
         message.success('删除申请已提交！')
-        loadData()
+        // 延迟加载数据，给后端时间处理（单人家庭自动执行）
+        setTimeout(() => {
+          loadData()
+          approvalStore.refreshNow()
+        }, 800)
       } catch (e: any) {
         message.error(e.response?.data?.detail || '操作失败')
       }
@@ -631,6 +680,9 @@ async function doApprove(id: number, approved: boolean, reason?: string) {
     message.success(approved ? '已同意' : '已拒绝')
     loadData()
     
+    // 立即刷新审批红点
+    await approvalStore.refreshNow()
+    
     // 审批通过后检查成就
     if (approved) {
       setTimeout(() => checkAndShowAchievements(), 500)
@@ -642,13 +694,27 @@ async function doApprove(id: number, approved: boolean, reason?: string) {
 
 // 格式化审批详情（移动端卡片用）
 function formatApprovalDetail(item: any): string {
-  const data = JSON.parse(item.request_data)
-  if (item.request_type === 'investment_create') {
-    return `${data.name} - ¥${formatMoney(data.principal || 0)}`
-  } else if (item.request_type === 'investment_income') {
-    return `收益: ¥${formatMoney(data.amount || 0)}`
+  try {
+    // request_data 可能已经是对象或者是字符串，需要判断
+    const data = typeof item.request_data === 'string' ? JSON.parse(item.request_data) : item.request_data
+    if (!data) return '-'
+    
+    if (item.request_type === 'investment_create' || item.request_type === 'asset_create') {
+      return `${data.name || '未命名'} - ¥${formatMoney(data.principal || data.amount || 0)}`
+    } else if (item.request_type === 'investment_income') {
+      return `价值更新: ¥${formatMoney(data.current_value || data.amount || 0)}`
+    } else if (item.request_type === 'investment_increase') {
+      return `增持: ¥${formatMoney(data.amount || 0)}`
+    } else if (item.request_type === 'investment_decrease') {
+      return `减持: ¥${formatMoney(data.amount || 0)}`
+    } else if (item.request_type === 'investment_delete') {
+      return `删除理财产品`
+    }
+    return '-'
+  } catch (error) {
+    console.error('formatApprovalDetail error:', error, item)
+    return '数据格式错误'
   }
-  return '-'
 }
 
 function handleApprove(id: number, approved: boolean) {
@@ -817,10 +883,10 @@ onMounted(loadData)
   }
 
   .investment-card {
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    background: linear-gradient(135deg, var(--theme-bg-secondary) 0%, var(--theme-border-light) 100%);
     border-radius: 12px;
     padding: 14px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--theme-border);
   }
 
   .investment-card .card-header {
@@ -833,7 +899,7 @@ onMounted(loadData)
   .investment-card .product-name {
     font-size: 16px;
     font-weight: 600;
-    color: #1e293b;
+    color: var(--theme-text-primary);
   }
 
   .investment-card .card-type {
@@ -845,7 +911,7 @@ onMounted(loadData)
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
     margin-bottom: 12px;
-    background: white;
+    background: var(--theme-bg-card);
     border-radius: 8px;
     padding: 10px;
   }
@@ -859,22 +925,22 @@ onMounted(loadData)
 
   .investment-card .stat-label {
     font-size: 11px;
-    color: #64748b;
+    color: var(--theme-text-secondary);
     margin-bottom: 4px;
   }
 
   .investment-card .stat-value {
     font-size: 14px;
     font-weight: 600;
-    color: #334155;
+    color: var(--theme-text-primary);
   }
 
   .investment-card .stat-value.profit {
-    color: #10b981;
+    color: var(--theme-success);
   }
 
   .investment-card .stat-value.loss {
-    color: #ef4444;
+    color: var(--theme-error);
   }
 
   .investment-card .card-footer {
@@ -882,12 +948,12 @@ onMounted(loadData)
     justify-content: space-between;
     align-items: center;
     padding-top: 10px;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid var(--theme-border);
   }
 
   .investment-card .start-date {
     font-size: 12px;
-    color: #94a3b8;
+    color: var(--theme-text-tertiary);
   }
 
   /* ===== 待审批卡片样式 ===== */
@@ -913,7 +979,7 @@ onMounted(loadData)
 
   .approval-time {
     font-size: 11px;
-    color: #94a3b8;
+    color: var(--theme-text-tertiary);
   }
 
   .approval-card-body {
@@ -923,13 +989,13 @@ onMounted(loadData)
   .approval-requester {
     font-size: 14px;
     font-weight: 500;
-    color: #1e293b;
+    color: var(--theme-text-primary);
     margin-bottom: 4px;
   }
 
   .approval-detail {
     font-size: 13px;
-    color: #64748b;
+    color: var(--theme-text-secondary);
   }
 
   .approval-card-footer {
@@ -937,12 +1003,12 @@ onMounted(loadData)
     justify-content: space-between;
     align-items: center;
     padding-top: 10px;
-    border-top: 1px solid #fde68a;
+    border-top: 1px solid var(--theme-border);
   }
 
   .approval-progress {
     font-size: 12px;
-    color: #64748b;
+    color: var(--theme-text-secondary);
   }
 
   .approval-actions {
@@ -952,7 +1018,7 @@ onMounted(loadData)
 
   .approval-wait {
     font-size: 12px;
-    color: #94a3b8;
+    color: var(--theme-text-tertiary);
   }
 
   /* ===== 移动端紧凑表单样式 ===== */

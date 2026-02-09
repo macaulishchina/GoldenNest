@@ -349,7 +349,7 @@ onMounted(() => {
 }
 
 .page-header p {
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 /* 年份选择 */
@@ -407,7 +407,7 @@ onMounted(() => {
 .loading {
   text-align: center;
   padding: 60px;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 .spinner {
@@ -733,7 +733,7 @@ onMounted(() => {
 .dividend-header {
   background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
   padding: 20px 24px;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .dividend-total {
@@ -751,7 +751,7 @@ onMounted(() => {
 .dividend-amount {
   font-size: 28px;
   font-weight: bold;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .dividend-note {

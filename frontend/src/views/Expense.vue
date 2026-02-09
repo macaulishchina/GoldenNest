@@ -164,11 +164,13 @@ import { ref, computed, onMounted, h, watch } from 'vue'
 import { useMessage, NButton, NTag, NSpace, NTooltip, NProgress } from 'naive-ui'
 import { approvalApi, familyApi } from '@/api'
 import { useUserStore } from '@/stores/user'
+import { useApprovalStore } from '@/stores/approval'
 import { formatShortDateTime } from '@/utils/date'
 import TimeRangeSelector from '@/components/TimeRangeSelector.vue'
 
 const message = useMessage()
 const userStore = useUserStore()
+const approvalStore = useApprovalStore()
 const loading = ref(false)
 const submitting = ref(false)
 const expenses = ref<any[]>([])
@@ -291,7 +293,7 @@ const columns = [
           showIndicator: false,
           style: 'flex: 1'
         }),
-        h('span', { style: 'font-size: 12px; color: #666' }, `${approved}/${total}`)
+        h('span', { style: 'font-size: 12px; color: var(--theme-text-secondary)' }, `${approved}/${total}`)
       ])
     }
   },
@@ -322,7 +324,7 @@ const columns = [
       
       // 已经审批过
       if (hasApproved) {
-        return h('span', { style: 'color:#94a3b8' }, '已审批')
+        return h('span', { style: 'color: var(--theme-text-tertiary)' }, '已审批')
       }
       
       // 待审批
@@ -411,6 +413,9 @@ async function handleApprove(id: number, approved: boolean) {
       message.success('已拒绝')
     }
     loadData()
+    
+    // 立即刷新审批红点
+    await approvalStore.refreshNow()
   } catch (e: any) {
     message.error(e.response?.data?.detail || '操作失败')
   }
@@ -421,6 +426,9 @@ async function handleCancel(id: number) {
     await approvalApi.cancel(id)
     message.success('已取消申请')
     loadData()
+    
+    // 立即刷新审批红点
+    await approvalStore.refreshNow()
   } catch (e: any) {
     message.error(e.response?.data?.detail || '操作失败')
   }
@@ -590,24 +598,24 @@ onMounted(async () => {
   }
 
   .expense-card {
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    background: linear-gradient(135deg, var(--theme-bg-secondary) 0%, var(--theme-border-light) 100%);
     border-radius: 12px;
     padding: 14px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--theme-border);
   }
 
   .expense-card.status-pending {
-    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    background: linear-gradient(135deg, var(--theme-warning-bg) 0%, #fef3c7 100%);
     border-color: #fde68a;
   }
 
   .expense-card.status-approved {
-    background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+    background: linear-gradient(135deg, var(--theme-success-bg) 0%, #dcfce7 100%);
     border-color: #86efac;
   }
 
   .expense-card.status-rejected {
-    background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+    background: linear-gradient(135deg, var(--theme-error-bg) 0%, #fecaca 100%);
     border-color: #fca5a5;
   }
 
@@ -621,7 +629,7 @@ onMounted(async () => {
   .expense-title {
     font-size: 15px;
     font-weight: 600;
-    color: #1e293b;
+    color: var(--theme-text-primary);
   }
 
   .expense-card-body {
@@ -637,7 +645,7 @@ onMounted(async () => {
 
   .expense-reason {
     font-size: 13px;
-    color: #64748b;
+    color: var(--theme-text-secondary);
     line-height: 1.4;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -650,7 +658,7 @@ onMounted(async () => {
     justify-content: space-between;
     align-items: center;
     padding-top: 10px;
-    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    border-top: 1px solid var(--theme-border-light);
   }
 
   .expense-meta {
@@ -666,7 +674,7 @@ onMounted(async () => {
 
   .expense-time {
     font-size: 11px;
-    color: #94a3b8;
+    color: var(--theme-text-tertiary);
   }
 
   .expense-actions {
@@ -682,7 +690,7 @@ onMounted(async () => {
 
   .expense-wait {
     font-size: 12px;
-    color: #94a3b8;
+    color: var(--theme-text-tertiary);
   }
 
   /* ===== 移动端紧凑表单样式 ===== */
@@ -723,7 +731,7 @@ onMounted(async () => {
   
   .mobile-expense-form label {
     font-size: 12px;
-    color: #6b7280;
+    color: var(--theme-text-secondary);
     font-weight: 500;
   }
   
@@ -754,14 +762,14 @@ onMounted(async () => {
   
   /* 股权分配区域紧凑样式 */
   .ratio-section {
-    background: #f8fafc;
+    background: var(--theme-bg-secondary);
     border-radius: 8px;
     padding: 10px;
   }
   
   .ratio-label {
     font-size: 12px;
-    color: #6b7280;
+    color: var(--theme-text-secondary);
     font-weight: 500;
     display: flex;
     align-items: center;
@@ -770,7 +778,7 @@ onMounted(async () => {
   }
   
   .ratio-hint {
-    color: #22c55e;
+    color: var(--theme-success);
     font-weight: 600;
   }
   

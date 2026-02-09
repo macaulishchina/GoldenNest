@@ -1,5 +1,5 @@
 <template>
-  <n-config-provider :theme-overrides="themeOverrides">
+  <n-config-provider :theme="themeStore.naiveTheme" :theme-overrides="themeStore.themeOverrides">
     <n-message-provider>
       <n-dialog-provider>
         <n-notification-provider>
@@ -13,11 +13,19 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
-import type { GlobalThemeOverrides } from 'naive-ui'
+import { onMounted, onUnmounted, watch } from 'vue'
 import AchievementToast from '@/components/AchievementToast.vue'
 import { fetchUnshownAchievements } from '@/utils/achievement'
 import { useUserStore } from '@/stores/user'
+import { useThemeStore } from '@/stores/theme'
+
+const themeStore = useThemeStore()
+
+// 监听主题变化，更新 body 类名
+watch(() => themeStore.currentTheme, (newTheme) => {
+  console.log('App.vue 检测到主题变化:', newTheme)
+  document.body.className = `theme-${newTheme}`
+}, { immediate: true })
 
 // 成就轮询定时器
 let achievementPollingTimer: ReturnType<typeof setInterval> | null = null
@@ -50,27 +58,6 @@ onMounted(() => {
 onUnmounted(() => {
   stopAchievementPolling()
 })
-
-// 自定义主题 - 清新可爱风格
-const themeOverrides: GlobalThemeOverrides = {
-  common: {
-    primaryColor: '#10b981',
-    primaryColorHover: '#34d399',
-    primaryColorPressed: '#059669',
-    primaryColorSuppl: '#6ee7b7',
-    borderRadius: '12px',
-    borderRadiusSmall: '8px'
-  },
-  Card: {
-    borderRadius: '16px'
-  },
-  Button: {
-    borderRadiusMedium: '10px'
-  },
-  Tag: {
-    borderRadius: '8px'
-  }
-}
 </script>
 
 <style>

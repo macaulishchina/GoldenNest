@@ -518,7 +518,7 @@ onMounted(() => {
 }
 
 .gift-pending {
-  background: linear-gradient(135deg, #fffbe6 0%, #fff7e6 100%);
+  background: linear-gradient(135deg, var(--theme-warning-bg) 0%, #fff7e6 100%);
   border-color: #ffe58f;
 }
 
@@ -646,7 +646,7 @@ onMounted(() => {
 
 .mobile-gift-form .form-col label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--theme-text-secondary);
   font-weight: 500;
 }
 
@@ -675,7 +675,7 @@ onMounted(() => {
 
 .mobile-gift-form .amount-suffix {
   font-size: 13px;
-  color: #64748b;
+  color: var(--theme-text-secondary);
   font-weight: 500;
 }
 
@@ -700,12 +700,12 @@ onMounted(() => {
 .mobile-gift-form .calculated-amount {
   font-size: 13px;
   font-weight: 600;
-  color: #059669;
+  color: var(--theme-success);
 }
 
 .mobile-gift-form .my-equity {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--theme-text-tertiary);
 }
 
 /* ===== 移动端适配 ===== */

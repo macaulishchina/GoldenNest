@@ -311,9 +311,11 @@ import { useMessage } from 'naive-ui'
 import { SendOutline, CashOutline, InformationCircleOutline } from '@vicons/ionicons5'
 import { approvalApi, assetApi, familyApi } from '@/api'
 import { useUserStore } from '@/stores/user'
+import { useApprovalStore } from '@/stores/approval'
 
 const message = useMessage()
 const userStore = useUserStore()
+const approvalStore = useApprovalStore()
 
 // 表单数据
 const formData = ref({
@@ -619,6 +621,9 @@ const handleApprove = async (id: number, approved: boolean) => {
     loadPendingApprovals()
     loadCashBalance()
     loadAssets()
+    
+    // 立即刷新审批红点
+    await approvalStore.refreshNow()
   } catch (error: any) {
     console.error('Failed to approve:', error)
     message.error(error.response?.data?.detail || '操作失败')
@@ -705,7 +710,7 @@ onMounted(() => {
 
 .approval-card,
 .asset-card {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--theme-border);
   border-radius: 8px;
   padding: 16px;
   background: white;
@@ -714,7 +719,7 @@ onMounted(() => {
 
 .approval-card:hover,
 .asset-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px var(--theme-shadow-sm);
   transform: translateY(-2px);
 }
 
@@ -738,13 +743,13 @@ onMounted(() => {
 
 .approval-detail {
   font-size: 14px;
-  color: #4b5563;
+  color: var(--theme-text-primary);
   margin-bottom: 4px;
 }
 
 .approval-description {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--theme-text-tertiary);
 }
 
 .approval-card-footer {
@@ -752,12 +757,12 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding-top: 12px;
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid var(--theme-border-light);
 }
 
 .approval-progress {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--theme-text-secondary);
 }
 
 .approval-actions {
@@ -767,12 +772,12 @@ onMounted(() => {
 
 .approval-wait {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--theme-text-tertiary);
 }
 
 .approval-time {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--theme-text-tertiary);
 }
 
 .asset-name {
@@ -783,13 +788,13 @@ onMounted(() => {
 .asset-amount {
   font-size: 24px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--theme-text-primary);
   margin-bottom: 8px;
 }
 
 .asset-info {
   font-size: 14px;
-  color: #6b7280;
+  color: var(--theme-text-secondary);
   margin-bottom: 8px;
 }
 
@@ -803,7 +808,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding-top: 12px;
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid var(--theme-border-light);
 }
 
 @media (max-width: 768px) {

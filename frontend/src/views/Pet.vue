@@ -891,13 +891,13 @@ onMounted(() => {
   max-width: 600px;
   margin: 0 auto;
   min-height: 100vh;
-  background: linear-gradient(180deg, #fff9e6 0%, #fff 30%);
+  background: var(--theme-bg-primary);
 }
 
 .loading {
   text-align: center;
   padding: 60px;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 .spinner {
@@ -1104,7 +1104,7 @@ onMounted(() => {
 .pet-name {
   font-size: 28px;
   margin: 20px 0 8px 0;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .rename-icon {
@@ -1121,7 +1121,7 @@ onMounted(() => {
 }
 
 .pet-type-label {
-  color: #888;
+  color: var(--theme-text-secondary);
   font-size: 16px;
   margin: 0 0 20px 0;
 }
@@ -1144,7 +1144,7 @@ onMounted(() => {
 .exp-bar {
   width: 150px;
   height: 10px;
-  background: #e0e0e0;
+  background: var(--theme-bg-secondary);
   border-radius: 5px;
   overflow: hidden;
 }
@@ -1158,7 +1158,7 @@ onMounted(() => {
 
 .exp-text {
   font-size: 12px;
-  color: #888;
+  color: var(--theme-text-secondary);
 }
 
 /* ==================== 属性卡片 ==================== */
@@ -1170,13 +1170,13 @@ onMounted(() => {
 }
 
 .stat-card {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 12px;
   padding: 16px;
   display: flex;
   align-items: center;
   gap: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px var(--theme-shadow-sm);
 }
 
 .stat-icon {
@@ -1197,12 +1197,12 @@ onMounted(() => {
 .stat-value {
   font-size: 18px;
   font-weight: bold;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .stat-label {
   font-size: 12px;
-  color: #888;
+  color: var(--theme-text-secondary);
 }
 
 .multiplier-badge {
@@ -1219,34 +1219,34 @@ onMounted(() => {
 }
 
 .multiplier-normal {
-  background: #f5f5f5;
-  color: #666;
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-secondary);
 }
 
 .multiplier-low {
-  background: #fff3e0;
+  background: var(--theme-warning-bg);
   color: #e65100;
 }
 
 .multiplier-bad {
-  background: #ffebee;
-  color: #c62828;
+  background: var(--theme-error-bg);
+  color: var(--theme-error);
 }
 
 /* ==================== 里程碑区域 ==================== */
 .milestones-section {
-  background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%);
+  background: var(--theme-warning-bg);
   border-radius: 16px;
   padding: 20px;
   margin-bottom: 24px;
-  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.2);
-  border: 1px solid #ffeeba;
+  box-shadow: 0 2px 8px var(--theme-shadow-sm);
+  border: 1px solid var(--theme-warning-light);
 }
 
 .milestones-section h2 {
   margin: 0 0 16px 0;
   font-size: 18px;
-  color: #856404;
+  color: var(--theme-text-primary);
 }
 
 .milestone-list {
@@ -1258,11 +1258,11 @@ onMounted(() => {
 .milestone-card {
   display: flex;
   align-items: center;
-  background: white;
+  background: var(--theme-bg-card);
   padding: 14px 16px;
   border-radius: 12px;
   gap: 12px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  box-shadow: 0 1px 4px var(--theme-shadow-sm);
 }
 
 .milestone-icon {
@@ -1278,7 +1278,7 @@ onMounted(() => {
 
 .milestone-name {
   font-weight: 600;
-  color: #333;
+  color: var(--theme-text-primary);
   font-size: 15px;
 }
 
@@ -1295,7 +1295,7 @@ onMounted(() => {
   padding: 8px 18px;
   font-size: 14px;
   font-weight: 600;
-  color: #333;
+  color: var(--theme-text-primary);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -1376,11 +1376,11 @@ onMounted(() => {
 
 /* ==================== 小游戏面板 ==================== */
 .game-panel {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   padding: 20px;
   margin-bottom: 24px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px var(--theme-shadow-sm);
   animation: slideDown 0.3s ease-out;
 }
 
@@ -1396,10 +1396,10 @@ onMounted(() => {
 }
 
 .game-card {
-  background: #f8f8ff;
+  background: var(--theme-bg-card);
   border-radius: 12px;
   padding: 14px;
-  border: 1px solid #e8e8f0;
+  border: 1px solid var(--theme-border-light);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -1416,8 +1416,8 @@ onMounted(() => {
 }
 
 .game-card.active {
-  border-color: #9c27b0;
-  background: #faf0ff;
+  border-color: var(--theme-purple);
+  background: var(--theme-purple-bg);
 }
 
 .game-card-top {
@@ -1444,12 +1444,12 @@ onMounted(() => {
   font-weight: 600;
   font-size: 15px;
   margin-bottom: 4px;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .game-desc {
   font-size: 12px;
-  color: #999;
+  color: var(--theme-text-tertiary);
   margin: 0 0 8px 0;
   line-height: 1.4;
 }
@@ -1468,8 +1468,8 @@ onMounted(() => {
 
 .game-played {
   font-size: 11px;
-  color: #888;
-  background: #f0f0f0;
+  color: var(--theme-text-secondary);
+  background: var(--theme-bg-secondary);
   padding: 2px 6px;
   border-radius: 8px;
 }
@@ -1477,7 +1477,7 @@ onMounted(() => {
 .game-total-badge {
   font-size: 13px;
   font-weight: normal;
-  color: #888;
+  color: var(--theme-text-secondary);
   margin-left: 8px;
 }
 
@@ -1553,17 +1553,18 @@ onMounted(() => {
 
 .game-abandon-btn {
   padding: 6px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--theme-border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--theme-bg-card);
+  color: var(--theme-text-primary);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
   margin-left: 12px;
 }
 .game-abandon-btn:hover {
-  background: #ffebee;
-  border-color: #ef9a9a;
+  background: var(--theme-error-bg);
+  border-color: var(--theme-error-light);
 }
 
 /* 确认放弃弹窗 */
@@ -1581,12 +1582,12 @@ onMounted(() => {
   z-index: 100;
 }
 .abandon-confirm-dialog {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 12px;
   padding: 20px;
   max-width: 280px;
   text-align: center;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 20px var(--theme-shadow);
 }
 .abandon-confirm-title {
   font-size: 18px;
@@ -1595,7 +1596,7 @@ onMounted(() => {
 }
 .abandon-confirm-message {
   font-size: 14px;
-  color: #666;
+  color: var(--theme-text-secondary);
   margin-bottom: 20px;
   line-height: 1.5;
 }
@@ -1614,11 +1615,11 @@ onMounted(() => {
   border: none;
 }
 .abandon-confirm-btn.cancel {
-  background: #f5f5f5;
-  color: #666;
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-secondary);
 }
 .abandon-confirm-btn.cancel:hover {
-  background: #e0e0e0;
+  background: var(--theme-card-hover);
 }
 .abandon-confirm-btn.confirm {
   background: #ef5350;
@@ -1639,7 +1640,7 @@ onMounted(() => {
   height: 32px;
   border: none;
   border-radius: 50%;
-  background: #f0f0f0;
+  background: var(--theme-bg-secondary);
   font-size: 16px;
   cursor: pointer;
   display: flex;
@@ -1649,7 +1650,7 @@ onMounted(() => {
 }
 
 .game-fullscreen-btn:hover {
-  background: #e0e0e0;
+  background: var(--theme-card-hover);
 }
 
 .game-close-btn {
@@ -1657,7 +1658,7 @@ onMounted(() => {
   height: 32px;
   border: none;
   border-radius: 50%;
-  background: #f0f0f0;
+  background: var(--theme-bg-secondary);
   font-size: 16px;
   cursor: pointer;
   display: flex;
@@ -1667,7 +1668,7 @@ onMounted(() => {
 }
 
 .game-close-btn:hover {
-  background: #e0e0e0;
+  background: var(--theme-card-hover);
 }
 
 .game-done-actions {
@@ -1676,11 +1677,11 @@ onMounted(() => {
 
 /* ==================== 进化路线 ==================== */
 .evolution-section {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   padding: 20px;
   margin-bottom: 24px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px var(--theme-shadow-sm);
 }
 
 .evolution-section h2 {
@@ -1701,7 +1702,7 @@ onMounted(() => {
   left: 30px;
   right: 30px;
   height: 3px;
-  background: #e0e0e0;
+  background: var(--theme-border);
 }
 
 .evolution-stage {
@@ -1729,7 +1730,7 @@ onMounted(() => {
 
 .stage-emoji {
   font-size: 32px;
-  background: white;
+  background: var(--theme-bg-card);
   width: 50px;
   height: 50px;
   border-radius: 50%;
@@ -1743,20 +1744,20 @@ onMounted(() => {
 
 .stage-name {
   font-size: 11px;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 .stage-level {
   font-size: 10px;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 /* ==================== 经验获取记录 ==================== */
 .exp-logs-section {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   margin-bottom: 24px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px var(--theme-shadow-sm);
   overflow: hidden;
 }
 
@@ -1770,18 +1771,18 @@ onMounted(() => {
 }
 
 .exp-logs-header:hover {
-  background: #f9f9f9;
+  background: var(--theme-card-hover);
 }
 
 .exp-logs-header h3 {
   margin: 0;
   font-size: 16px;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .toggle-icon {
   font-size: 12px;
-  color: #999;
+  color: var(--theme-text-tertiary);
   transition: transform 0.3s;
 }
 
@@ -1806,11 +1807,11 @@ onMounted(() => {
 }
 
 .tips-box {
-  background: #fffbeb;
+  background: var(--theme-warning-bg);
   border-radius: 10px;
   padding: 14px;
   margin-bottom: 16px;
-  border: 1px solid #ffeeba;
+  border: 1px solid var(--theme-warning-light);
 }
 
 .tips-box h4 {
@@ -1825,7 +1826,7 @@ onMounted(() => {
 }
 
 .tips-box li {
-  color: #666;
+  color: var(--theme-text-secondary);
   font-size: 13px;
   margin: 4px 0;
 }
@@ -1841,7 +1842,7 @@ onMounted(() => {
   justify-content: center;
   gap: 8px;
   padding: 20px;
-  color: #888;
+  color: var(--theme-text-secondary);
   font-size: 14px;
 }
 
@@ -1858,14 +1859,14 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 12px;
-  background: #f9f9f9;
+  background: var(--theme-bg-secondary);
   border-radius: 10px;
   margin-bottom: 8px;
   transition: background 0.2s;
 }
 
 .exp-log-item:hover {
-  background: #f0f0f0;
+  background: var(--theme-card-hover);
 }
 
 .log-icon {
@@ -1884,7 +1885,7 @@ onMounted(() => {
 
 .log-source {
   font-size: 14px;
-  color: #333;
+  color: var(--theme-text-primary);
   font-weight: 500;
 }
 
@@ -1896,7 +1897,7 @@ onMounted(() => {
 }
 
 .log-operator {
-  color: #666;
+  color: var(--theme-text-secondary);
   font-weight: 500;
 }
 
@@ -1905,14 +1906,14 @@ onMounted(() => {
 }
 
 .log-time {
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 .log-exp {
   font-size: 14px;
   font-weight: bold;
   color: #ffc107;
-  background: #fff9e6;
+  background: var(--theme-warning-bg);
   padding: 4px 10px;
   border-radius: 12px;
 }
@@ -1927,15 +1928,15 @@ onMounted(() => {
   border: 1px solid #ddd;
   padding: 8px 20px;
   border-radius: 20px;
-  color: #666;
+  color: var(--theme-text-secondary);
   cursor: pointer;
   font-size: 13px;
   transition: all 0.2s;
 }
 
 .load-more button:hover:not(:disabled) {
-  background: #f5f5f5;
-  border-color: #ccc;
+  background: var(--theme-card-hover);
+  border-color: var(--theme-border);
 }
 
 .load-more button:disabled {
@@ -1946,7 +1947,7 @@ onMounted(() => {
 .no-logs {
   text-align: center;
   padding: 30px;
-  color: #999;
+  color: var(--theme-text-tertiary);
   font-size: 14px;
 }
 
@@ -1962,12 +1963,12 @@ onMounted(() => {
 }
 
 .no-pet h2 {
-  color: #666;
+  color: var(--theme-text-secondary);
   margin-bottom: 8px;
 }
 
 .no-pet p {
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 /* ==================== Modal 通用 ==================== */
@@ -1986,7 +1987,7 @@ onMounted(() => {
 }
 
 .modal-content {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   padding: 24px;
   max-width: 400px;
@@ -2017,7 +2018,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 16px;
-  background: #f9f9f9;
+  background: var(--theme-bg-secondary);
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s;
@@ -2025,7 +2026,7 @@ onMounted(() => {
 }
 
 .food-item:hover:not(.food-disabled) {
-  background: #fff3e0;
+  background: var(--theme-warning-bg);
   transform: translateX(4px);
 }
 
@@ -2049,7 +2050,7 @@ onMounted(() => {
 .food-name {
   font-weight: 600;
   font-size: 15px;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .food-effects {
@@ -2064,7 +2065,7 @@ onMounted(() => {
 
 .food-remaining {
   font-size: 12px;
-  color: #888;
+  color: var(--theme-text-secondary);
 }
 
 .form-group input {
@@ -2085,8 +2086,8 @@ onMounted(() => {
 .btn-cancel {
   flex: 1;
   padding: 12px;
-  border: 1px solid #e0e0e0;
-  background: white;
+  border: 1px solid var(--theme-border);
+  background: var(--theme-bg-secondary);
   border-radius: 8px;
   cursor: pointer;
 }
@@ -2095,7 +2096,7 @@ onMounted(() => {
   flex: 1;
   padding: 12px;
   background: #ffc107;
-  color: #333;
+  color: var(--theme-text-primary);
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -2469,8 +2470,8 @@ onMounted(() => {
 }
 
 .difficulty-card.medium {
-  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
-  border-color: #ffb74d;
+  background: var(--theme-warning-bg);
+  border-color: var(--theme-warning);
 }
 
 .difficulty-card.hard {
@@ -2496,13 +2497,13 @@ onMounted(() => {
 
 .diff-desc {
   font-size: 13px;
-  color: #666;
+  color: var(--theme-text-secondary);
   margin-bottom: 4px;
 }
 
 .diff-exp {
   font-size: 12px;
-  color: #888;
+  color: var(--theme-text-secondary);
   font-weight: 500;
 }
 

@@ -597,7 +597,7 @@ onMounted(() => {
 }
 
 .page-header p {
-  color: #666;
+  color: var(--theme-text-secondary);
   margin: 0;
 }
 
@@ -627,7 +627,7 @@ onMounted(() => {
   background: transparent;
   cursor: pointer;
   font-size: 14px;
-  color: #666;
+  color: var(--theme-text-secondary);
   transition: all 0.2s;
 }
 
@@ -747,15 +747,15 @@ onMounted(() => {
 .weekday-header {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  background: #f8fafc;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--theme-bg-secondary);
+  border-bottom: 1px solid var(--theme-border);
 }
 
 .weekday-header span {
   padding: 12px;
   text-align: center;
   font-weight: 500;
-  color: #666;
+  color: var(--theme-text-secondary);
   font-size: 13px;
 }
 
@@ -778,7 +778,7 @@ onMounted(() => {
 }
 
 .calendar-cell:hover {
-  background: #f8fafc;
+  background: var(--theme-bg-secondary);
 }
 
 .calendar-cell.other-month {
@@ -877,8 +877,8 @@ onMounted(() => {
 .week-header {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  background: #f8fafc;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--theme-bg-secondary);
+  border-bottom: 1px solid var(--theme-border);
 }
 
 .week-day-header {
@@ -991,7 +991,7 @@ onMounted(() => {
 }
 
 .list-event:hover {
-  background: #f8fafc;
+  background: var(--theme-bg-secondary);
 }
 
 .event-color {

@@ -573,7 +573,7 @@ onMounted(async () => {
 }
 
 .page-header p {
-  color: #666;
+  color: var(--theme-text-secondary);
   margin: 8px 0 0;
 }
 
@@ -613,7 +613,7 @@ onMounted(async () => {
 .stat-label {
   display: block;
   font-size: 12px;
-  color: #666;
+  color: var(--theme-text-secondary);
   margin-top: 4px;
 }
 
@@ -645,7 +645,7 @@ onMounted(async () => {
 .panel-header h3 {
   margin: 0;
   font-size: 16px;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .btn-add-list {
@@ -824,7 +824,7 @@ onMounted(async () => {
   padding: 12px;
   border-radius: 10px;
   margin-bottom: 8px;
-  background: #f9fafb;
+  background: var(--theme-bg-secondary);
   transition: all 0.2s;
 }
 
@@ -959,7 +959,7 @@ onMounted(async () => {
 }
 
 .empty-state.select-list {
-  background: #f9fafb;
+  background: var(--theme-bg-secondary);
   border-radius: 16px;
 }
 

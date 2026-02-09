@@ -103,6 +103,7 @@ import { ref, onMounted, h } from 'vue'
 import { useMessage, useDialog, NButton, NTag, NSpace, NInput } from 'naive-ui'
 import { depositApi, approvalApi } from '@/api'
 import { useUserStore } from '@/stores/user'
+import { useApprovalStore } from '@/stores/approval'
 import { SendOutline } from '@vicons/ionicons5'
 import { formatShortDateTime } from '@/utils/date'
 import { checkAndShowAchievements } from '@/utils/achievement'
@@ -111,6 +112,7 @@ import TimeRangeSelector from '@/components/TimeRangeSelector.vue'
 const message = useMessage()
 const dialog = useDialog()
 const userStore = useUserStore()
+const approvalStore = useApprovalStore()
 const loading = ref(false)
 const submitting = ref(false)
 const deposits = ref<any[]>([])
@@ -154,7 +156,7 @@ const approvalColumns = [
     key: 'actions',
     render: (row: any) => {
       const canApprove = row.requester_id !== userStore.user?.id && !row.has_voted
-      if (!canApprove) return h('span', { style: 'color:#94a3b8' }, row.has_voted ? '已投票' : '等待他人')
+      if (!canApprove) return h('span', { style: 'color: var(--theme-text-tertiary)' }, row.has_voted ? '已投票' : '等待他人')
       return h(NSpace, { size: 'small' }, { default: () => [
         h(NButton, { size: 'small', type: 'success', onClick: () => handleApprove(row.id, true) }, { default: () => '同意' }),
         h(NButton, { size: 'small', type: 'error', onClick: () => handleApprove(row.id, false) }, { default: () => '拒绝' })
@@ -205,6 +207,9 @@ async function doApprove(id: number, approved: boolean, reason?: string) {
     }
     message.success(approved ? '已同意' : '已拒绝')
     loadData()
+    
+    // 立即刷新审批红点
+    await approvalStore.refreshNow()
     
     // 审批后检查成就
     if (approved) {
@@ -291,7 +296,7 @@ onMounted(loadData)
 
 :deep(.n-form-item-label) {
   font-size: 13px;
-  color: #6b7280;
+  color: var(--theme-text-secondary);
   padding-bottom: 4px;
 }
 
@@ -430,21 +435,21 @@ onMounted(loadData)
 }
 
 .record-card {
-  background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(250,250,250,0.9));
+  background: var(--theme-bg-card);
   border-radius: 12px;
   padding: 12px 14px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  border: 1px solid rgba(0,0,0,0.04);
+  box-shadow: 0 2px 8px var(--theme-shadow-sm);
+  border: 1px solid var(--theme-border-light);
 }
 
 .record-card.pending-card {
-  background: linear-gradient(135deg, rgba(255,251,235,0.95), rgba(254,243,199,0.7));
-  border-color: rgba(245,158,11,0.15);
+  background: var(--theme-warning-bg);
+  border-color: var(--theme-warning-light);
 }
 
 .record-card.deposit-card {
-  background: linear-gradient(135deg, rgba(240,253,244,0.95), rgba(220,252,231,0.7));
-  border-color: rgba(34,197,94,0.15);
+  background: var(--theme-success-bg);
+  border-color: var(--theme-success-light);
 }
 
 .record-card-header {
@@ -457,7 +462,7 @@ onMounted(loadData)
 .record-user {
   font-weight: 600;
   font-size: 14px;
-  color: #1f2937;
+  color: var(--theme-text-primary);
 }
 
 .record-card-body {
@@ -467,13 +472,13 @@ onMounted(loadData)
 .record-amount {
   font-size: 20px;
   font-weight: 700;
-  color: #059669;
+  color: var(--theme-success);
   margin-bottom: 2px;
 }
 
 .record-note {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--theme-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -484,12 +489,12 @@ onMounted(loadData)
   justify-content: space-between;
   align-items: center;
   padding-top: 8px;
-  border-top: 1px solid rgba(0,0,0,0.05);
+  border-top: 1px solid var(--theme-border-light);
 }
 
 .record-time {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--theme-text-tertiary);
 }
 
 .record-actions {
@@ -500,6 +505,6 @@ onMounted(loadData)
 
 .record-status {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--theme-text-tertiary);
 }
 </style>

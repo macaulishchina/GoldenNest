@@ -105,7 +105,7 @@ async def create_dividend_claims(
         # 为该成员创建个人审核
         approval = ApprovalRequest(
             family_id=dividend.family_id,
-            requester_id=dividend.created_by,  # 发起人为分红创建者（系统）
+            requester_id=0,  # 系统发起，不是任何用户
             target_user_id=member_equity.user_id,  # 目标用户（只有他能处理）
             request_type=ApprovalRequestType.DIVIDEND_CLAIM,
             title=f"分红领取 - {member_amount:.2f}元",

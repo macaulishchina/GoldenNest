@@ -45,6 +45,8 @@
             <n-tag v-if="family" type="success" round>
               🏡 {{ family.name }}
             </n-tag>
+            <!-- 主题切换按钮 -->
+            <ThemeSelector />
           </div>
         </div>
       </n-layout-header>
@@ -60,6 +62,8 @@
             <n-tag v-else-if="family" type="success" size="small" round>
               {{ family.name }}
             </n-tag>
+            <!-- 主题切换按钮 -->
+            <ThemeSelector />
             <div class="hamburger-btn" @click="showDrawer = true">
               <n-icon :size="24"><MenuOutline /></n-icon>
             </div>
@@ -325,6 +329,7 @@ import { getHolidayGreeting } from '@/utils/holiday'
 import { compressImage, getAvatarColor } from '@/utils/avatar'
 import type { MenuOption } from 'naive-ui'
 import { markRaw } from 'vue'
+import ThemeSelector from '@/components/ThemeSelector.vue'
 import { 
   HomeOutline, 
   WalletOutline, 
@@ -792,21 +797,23 @@ onMounted(async () => {
   // 初始加载审批徽章计数
   if (userStore.isLoggedIn) {
     await approvalStore.fetchPendingCount()
+    // 启动轮询（保底机制）
+    approvalStore.startPolling()
   }
 })
 
 // 路由变化时刷新审批计数
-watch(() => route.path, async (newPath, oldPath) => {
-  if (oldPath === '/approval' && userStore.isLoggedIn) {
-    // 从审批页面离开，延迟刷新计数
-    setTimeout(() => {
-      approvalStore.fetchPendingCount()
-    }, 300)
+watch(() => route.path, async () => {
+  if (userStore.isLoggedIn) {
+    // 每次路由切换都查询一次
+    await approvalStore.refreshNow()
   }
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  // 停止轮询
+  approvalStore.stopPolling()
 })
 </script>
 
@@ -821,7 +828,8 @@ onUnmounted(() => {
 .sider {
   display: flex;
   flex-direction: column;
-  background: white;
+  background: var(--theme-bg-card, white);
+  border-right: 1px solid var(--theme-border, #f0f0f0);
 }
 
 .logo {
@@ -831,7 +839,7 @@ onUnmounted(() => {
   justify-content: center;
   gap: 8px;
   cursor: pointer;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--theme-border, #f0f0f0);
 }
 
 .logo-icon {
@@ -841,14 +849,14 @@ onUnmounted(() => {
 .logo-text {
   font-size: 18px;
   font-weight: 700;
-  color: #10b981;
+  color: var(--theme-primary, #10b981);
 }
 
 .sider-footer {
   margin-top: auto;
   padding: 16px;
   text-align: center;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--theme-border, #f0f0f0);
 }
 
 .header {
@@ -856,7 +864,8 @@ onUnmounted(() => {
   padding: 0 24px;
   display: flex;
   align-items: center;
-  background: white;
+  background: var(--theme-bg-card, white);
+  border-bottom: 1px solid var(--theme-border, #e5e7eb);
 }
 
 .header-content {
@@ -871,7 +880,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   font-size: 16px;
-  color: #1e293b;
+  color: var(--theme-text-primary, #1e293b);
 }
 
 .wave {
@@ -910,7 +919,8 @@ onUnmounted(() => {
 }
 
 .content {
-  background: linear-gradient(135deg, #f0fdf4 0%, #ecfeff 100%);
+  /* 移除固定背景，使用透明背景显示 body 的主题色 */
+  background: transparent;
   min-height: calc(100vh - 64px);
 }
 
@@ -923,9 +933,11 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: linear-gradient(135deg, #f0fdf4 0%, #ecfeff 100%);
+  background: var(--theme-bg-card, white);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   padding: 12px 16px;
-  /* 使用阴影替代边框，避免滚动时的视觉瑕疵 */
+  border-bottom: 1px solid var(--theme-border, #e5e7eb);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
@@ -938,7 +950,7 @@ onUnmounted(() => {
 .mobile-logo {
   font-size: 18px;
   font-weight: 700;
-  color: #10b981;
+  color: var(--theme-primary, #10b981);
 }
 
 .mobile-header-right {
@@ -955,15 +967,15 @@ onUnmounted(() => {
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--theme-bg-secondary, #f3f4f6);
+  color: var(--theme-text-primary, #374151);
   cursor: pointer;
   transition: all 0.2s;
   -webkit-tap-highlight-color: transparent;
 }
 
 .hamburger-btn:active {
-  background: #e5e7eb;
+  background: var(--theme-border, #e5e7eb);
   transform: scale(0.95);
 }
 
@@ -980,15 +992,15 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   z-index: 1000;
-  /* 使用flex布局，让内容和安全区分开 */
   display: flex;
   flex-direction: column;
-  background: white;
-  border-top: 1px solid #e5e7eb;
+  background: var(--theme-bg-card, white);
+  border-top: 1px solid var(--theme-border, #e5e7eb);
 }
 
 /* 导航栏内容区 - 固定高度，包含图标和文字 */
 .mobile-tabbar-inner {
+  width: 100%;
   height: 60px;
   display: flex;
   align-items: center;
@@ -1001,7 +1013,7 @@ onUnmounted(() => {
   content: '';
   display: block;
   height: env(safe-area-inset-bottom, 0px);
-  background: white;
+  background: var(--theme-bg-card, white);
   flex-shrink: 0;
 }
 
@@ -1013,7 +1025,7 @@ onUnmounted(() => {
   justify-content: center;
   gap: 4px;
   padding: 8px 0;
-  color: #9ca3af;
+  color: var(--theme-text-secondary, #9ca3af);
   cursor: pointer;
   transition: all 0.2s ease;
   -webkit-tap-highlight-color: transparent;
@@ -1025,7 +1037,7 @@ onUnmounted(() => {
 }
 
 .tabbar-item.active {
-  color: #10b981;
+  color: var(--theme-primary, #10b981);
 }
 
 .tabbar-item.active .tabbar-label {
@@ -1132,9 +1144,9 @@ onUnmounted(() => {
 .drawer-section-title {
   font-size: 13px;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--theme-text-secondary, #6b7280);
   padding: 0 4px 12px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--theme-border, #f3f4f6);
   margin-bottom: 8px;
 }
 
@@ -1150,14 +1162,14 @@ onUnmounted(() => {
   gap: 12px;
   padding: 14px 12px;
   border-radius: 10px;
-  color: #374151;
+  color: var(--theme-text-primary, #374151);
   cursor: pointer;
   transition: all 0.2s;
   -webkit-tap-highlight-color: transparent;
 }
 
 .drawer-menu-item:active {
-  background: #f3f4f6;
+  background: var(--theme-bg-secondary, #f3f4f6);
   transform: scale(0.98);
 }
 
@@ -1209,7 +1221,7 @@ onUnmounted(() => {
   transform: translateX(-50%);
   width: calc(100vw - 32px);
   max-width: 320px;
-  background: white;
+  background: var(--theme-bg-card, white);
   border-radius: 16px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
   z-index: 2000;
@@ -1226,13 +1238,13 @@ onUnmounted(() => {
   height: 0;
   border-left: 10px solid transparent;
   border-right: 10px solid transparent;
-  border-top: 10px solid white;
+  border-top: 10px solid var(--theme-bg-card, white);
   filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1));
 }
 
 .popup-header {
   padding: 14px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--theme-border, #f0f0f0);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1241,12 +1253,12 @@ onUnmounted(() => {
 .popup-header span:first-child {
   font-size: 15px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--theme-text-primary, #1f2937);
 }
 
 .popup-hint {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--theme-text-secondary, #9ca3af);
 }
 
 .popup-grid {
@@ -1266,18 +1278,18 @@ onUnmounted(() => {
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s;
-  color: #6b7280;
+  color: var(--theme-text-secondary, #6b7280);
   -webkit-tap-highlight-color: transparent;
 }
 
 .popup-item:active {
-  background: #f3f4f6;
+  background: var(--theme-bg-secondary, #f3f4f6);
   transform: scale(0.95);
 }
 
 .popup-item.selected {
-  background: #ecfdf5;
-  color: #10b981;
+  background: var(--theme-bg-secondary, #ecfdf5);
+  color: var(--theme-primary, #10b981);
 }
 
 .popup-item span {
@@ -1287,7 +1299,7 @@ onUnmounted(() => {
 
 .popup-footer {
   padding: 10px 16px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--theme-border, #f0f0f0);
   text-align: center;
 }
 

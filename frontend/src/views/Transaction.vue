@@ -62,10 +62,10 @@ const formatAmount = (amount: number) => {
 }
 
 const typeMap: Record<string, { color: string, label: string }> = {
-  deposit: { color: '#10b981', label: '存入' },
-  withdraw: { color: '#ef4444', label: '支出' },
-  income: { color: '#3b82f6', label: '理财收益' },
-  dividend: { color: '#8b5cf6', label: '分红' }
+  deposit: { color: 'var(--theme-success)', label: '存入' },
+  withdraw: { color: 'var(--theme-error)', label: '支出' },
+  income: { color: 'var(--theme-info)', label: '理财收益' },
+  dividend: { color: 'var(--theme-purple)', label: '分红' }
 }
 
 const columns = computed(() => [
@@ -73,7 +73,7 @@ const columns = computed(() => [
   { title: '类型', key: 'transaction_type', render: (row: any) => h(NTag, { size: 'small', bordered: false, style: { backgroundColor: typeMap[row.transaction_type]?.color + '20', color: typeMap[row.transaction_type]?.color } }, { default: () => typeMap[row.transaction_type]?.label || row.transaction_type }) },
   { title: '金额', key: 'amount', render: (row: any) => {
     const isPositive = row.amount > 0
-    return h('span', { style: { color: isPositive ? '#10b981' : '#ef4444', fontWeight: 600 } }, formatAmount(row.amount))
+    return h('span', { style: { color: isPositive ? 'var(--theme-success)' : 'var(--theme-error)', fontWeight: 600 } }, formatAmount(row.amount))
   }},
   { title: '操作人', key: 'user_nickname' },
   { title: '说明', key: 'description', render: (row: any) => row.description || '-' }
@@ -152,32 +152,32 @@ onMounted(loadData)
 }
 
 .record-card {
-  background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(250,250,250,0.9));
+  background: var(--theme-bg-card);
   border-radius: 12px;
   padding: 12px 14px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  border: 1px solid rgba(0,0,0,0.04);
+  box-shadow: 0 2px 8px var(--theme-shadow-sm);
+  border: 1px solid var(--theme-border-light);
 }
 
 /* 各类型卡片颜色 */
 .record-card.deposit-card {
-  background: linear-gradient(135deg, rgba(240,253,244,0.95), rgba(220,252,231,0.7));
-  border-color: rgba(34,197,94,0.15);
+  background: var(--theme-success-bg);
+  border-color: var(--theme-success-light);
 }
 
 .record-card.withdraw-card {
-  background: linear-gradient(135deg, rgba(254,242,242,0.95), rgba(254,226,226,0.7));
-  border-color: rgba(239,68,68,0.15);
+  background: var(--theme-error-bg);
+  border-color: var(--theme-error-light);
 }
 
 .record-card.income-card {
-  background: linear-gradient(135deg, rgba(239,246,255,0.95), rgba(219,234,254,0.7));
-  border-color: rgba(59,130,246,0.15);
+  background: var(--theme-info-bg);
+  border-color: var(--theme-info-light);
 }
 
 .record-card.dividend-card {
-  background: linear-gradient(135deg, rgba(245,243,255,0.95), rgba(237,233,254,0.7));
-  border-color: rgba(139,92,246,0.15);
+  background: var(--theme-info-bg);
+  border-color: var(--theme-purple-light);
 }
 
 .record-card-header {
@@ -189,7 +189,7 @@ onMounted(loadData)
 
 .record-time {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--theme-text-tertiary);
 }
 
 .record-card-body {
@@ -203,16 +203,16 @@ onMounted(loadData)
 }
 
 .record-amount.positive {
-  color: #059669;
+  color: var(--theme-success);
 }
 
 .record-amount.negative {
-  color: #dc2626;
+  color: var(--theme-error);
 }
 
 .record-desc {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--theme-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -223,11 +223,11 @@ onMounted(loadData)
   justify-content: flex-start;
   align-items: center;
   padding-top: 8px;
-  border-top: 1px solid rgba(0,0,0,0.05);
+  border-top: 1px solid var(--theme-border-light);
 }
 
 .record-user {
   font-size: 12px;
-  color: #64748b;
+  color: var(--theme-text-secondary);
 }
 </style>

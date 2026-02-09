@@ -697,7 +697,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   padding: 60px 20px;
-  color: #64748b;
+  color: var(--theme-text-secondary);
 }
 
 .initializing-text {
@@ -769,7 +769,7 @@ onMounted(async () => {
   right: -2px;
   width: 22px;
   height: 22px;
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -806,14 +806,14 @@ onMounted(async () => {
 
 .webhook-url-masked {
   font-size: 12px;
-  color: #64748b;
+  color: var(--theme-text-secondary);
   word-break: break-all;
   max-width: 300px;
 }
 
 .hint-text {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--theme-text-tertiary);
   margin-left: 8px;
 }
 
@@ -825,9 +825,9 @@ onMounted(async () => {
 /* 通知配置折叠面板 */
 .notification-collapse {
   margin-bottom: 16px;
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px var(--theme-shadow-sm);
 }
 
 .notification-collapse :deep(.n-collapse-item) {
@@ -865,7 +865,7 @@ onMounted(async () => {
   flex-shrink: 0;
   width: 100px;
   font-size: 13px;
-  color: #64748b;
+  color: var(--theme-text-secondary);
 }
 
 .config-value {
@@ -878,7 +878,7 @@ onMounted(async () => {
 
 .hint-text-inline {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--theme-text-tertiary);
 }
 
 /* 移动端响应式 */

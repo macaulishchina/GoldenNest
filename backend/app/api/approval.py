@@ -746,8 +746,8 @@ async def list_approval_requests(
     """获取申请列表（支持时间范围筛选，默认最近一个月）"""
     family_id = await get_user_family_id(current_user.id, db)
     
-    # 构建查询
-    query = select(ApprovalRequest, User).join(
+    # 构建查询 - 使用LEFT JOIN以支持系统申请（requester_id=0）
+    query = select(ApprovalRequest, User).outerjoin(
         User, ApprovalRequest.requester_id == User.id
     ).where(ApprovalRequest.family_id == family_id)
     
@@ -766,6 +766,36 @@ async def list_approval_requests(
     result = await db.execute(query)
     rows = result.all()
     
+    # 批量预加载优化：避免N+1查询
+    request_ids = [request.id for request, _ in rows]
+    
+    # 批量查询所有审批记录
+    approval_records_result = await db.execute(
+        select(ApprovalRecord, User)
+        .join(User, ApprovalRecord.approver_id == User.id)
+        .where(ApprovalRecord.request_id.in_(request_ids))
+    )
+    approval_records_by_request = {}
+    for record, user in approval_records_result.all():
+        if record.request_id not in approval_records_by_request:
+            approval_records_by_request[record.request_id] = []
+        approval_records_by_request[record.request_id].append((record, user))
+    
+    # 批量查询所有目标用户
+    target_user_ids = list(set([request.target_user_id for request, _ in rows if request.target_user_id]))
+    target_users_dict = {}
+    if target_user_ids:
+        target_users_result = await db.execute(
+            select(User).where(User.id.in_(target_user_ids))
+        )
+        target_users_dict = {u.id: u for u in target_users_result.scalars().all()}
+    
+    # 批量查询家庭成员（只查询一次）
+    family_members_result = await db.execute(
+        select(FamilyMember).where(FamilyMember.family_id == family_id)
+    )
+    all_members = family_members_result.scalars().all()
+    
     service = ApprovalService(db)
     items = []
     pending_count = 0
@@ -773,7 +803,23 @@ async def list_approval_requests(
     rejected_count = 0
     
     for request, requester in rows:
-        items.append(await service.get_request_response(request, requester.nickname, requester.avatar_version or 0))
+        # 使用预加载的数据生成响应，避免在循环中查询数据库
+        approval_rows = approval_records_by_request.get(request.id, [])
+        target_user = target_users_dict.get(request.target_user_id) if request.target_user_id else None
+        
+        # 处理系统申请（requester_id=0）
+        requester_nickname = requester.nickname if requester else "系统"
+        requester_avatar_version = requester.avatar_version if requester else 0
+        
+        items.append(await service.get_request_response_with_preloaded_data(
+            request, 
+            requester_nickname, 
+            requester_avatar_version,
+            approval_rows,
+            target_user,
+            all_members
+        ))
+        
         if request.status == ApprovalRequestStatus.PENDING:
             pending_count += 1
         elif request.status == ApprovalRequestStatus.APPROVED:
@@ -798,10 +844,10 @@ async def list_pending_approvals(
     """获取待我审批的申请"""
     family_id = await get_user_family_id(current_user.id, db)
     
-    # 获取所有待审批的申请
+    # 获取所有待审批的申请 - 使用LEFT JOIN以支持系统申请
     result = await db.execute(
         select(ApprovalRequest, User)
-        .join(User, ApprovalRequest.requester_id == User.id)
+        .outerjoin(User, ApprovalRequest.requester_id == User.id)
         .where(
             ApprovalRequest.family_id == family_id,
             ApprovalRequest.status == ApprovalRequestStatus.PENDING
@@ -814,32 +860,41 @@ async def list_pending_approvals(
     pending_items = []
     
     for request, requester in rows:
-        # 检查当前用户是否已经审批过
-        result = await db.execute(
-            select(ApprovalRecord).where(
-                ApprovalRecord.request_id == request.id,
-                ApprovalRecord.approver_id == current_user.id
+        # 🌟 分红领取申请：只有目标用户可以处理
+        if request.request_type == ApprovalRequestType.DIVIDEND_CLAIM:
+            if not request.target_user_id or request.target_user_id != current_user.id:
+                continue  # 不是目标用户，跳过
+        else:
+            # 其他类型的申请：检查当前用户是否已经审批过
+            result = await db.execute(
+                select(ApprovalRecord).where(
+                    ApprovalRecord.request_id == request.id,
+                    ApprovalRecord.approver_id == current_user.id
+                )
             )
-        )
-        if result.scalar_one_or_none():
-            continue  # 已审批过，跳过
+            if result.scalar_one_or_none():
+                continue  # 已审批过，跳过
+            
+            # 检查是否是申请人（多人家庭时申请人一般不需要审批，但成员剔除例外）
+            result = await db.execute(
+                select(FamilyMember).where(FamilyMember.family_id == family_id)
+            )
+            members = result.scalars().all()
+            
+            # 成员剔除申请：管理员可以审批自己发起的申请
+            if request.request_type == ApprovalRequestType.MEMBER_REMOVE:
+                # 检查当前用户是否是管理员
+                current_member = next((m for m in members if m.user_id == current_user.id), None)
+                if not current_member or current_member.role != "admin":
+                    continue  # 非管理员不能审批剔除申请
+            elif len(members) > 1 and request.requester_id == current_user.id:
+                continue  # 其他类型：多人家庭，申请人不需要审批自己的申请
         
-        # 检查是否是申请人（多人家庭时申请人一般不需要审批，但成员剔除例外）
-        result = await db.execute(
-            select(FamilyMember).where(FamilyMember.family_id == family_id)
-        )
-        members = result.scalars().all()
+        # 处理系统申请（requester_id=0）
+        requester_nickname = requester.nickname if requester else "系统"
+        requester_avatar_version = requester.avatar_version if requester else 0
         
-        # 成员剔除申请：管理员可以审批自己发起的申请
-        if request.request_type == ApprovalRequestType.MEMBER_REMOVE:
-            # 检查当前用户是否是管理员
-            current_member = next((m for m in members if m.user_id == current_user.id), None)
-            if not current_member or current_member.role != "admin":
-                continue  # 非管理员不能审批剔除申请
-        elif len(members) > 1 and request.requester_id == current_user.id:
-            continue  # 其他类型：多人家庭，申请人不需要审批自己的申请
-        
-        pending_items.append(await service.get_request_response(request, requester.nickname, requester.avatar_version or 0))
+        pending_items.append(await service.get_request_response(request, requester_nickname, requester_avatar_version))
     
     return pending_items
 
@@ -855,7 +910,7 @@ async def get_approval_request(
     
     result = await db.execute(
         select(ApprovalRequest, User)
-        .join(User, ApprovalRequest.requester_id == User.id)
+        .outerjoin(User, ApprovalRequest.requester_id == User.id)
         .where(
             ApprovalRequest.id == request_id,
             ApprovalRequest.family_id == family_id
@@ -866,8 +921,13 @@ async def get_approval_request(
         raise HTTPException(status_code=404, detail="申请不存在")
     
     request, requester = row
+    
+    # 处理系统申请（requester_id=0）
+    requester_nickname = requester.nickname if requester else "系统"
+    requester_avatar_version = requester.avatar_version if requester else 0
+    
     service = ApprovalService(db)
-    return await service.get_request_response(request, requester.nickname, requester.avatar_version or 0)
+    return await service.get_request_response(request, requester_nickname, requester_avatar_version)
 
 
 # ==================== 成员加入申请 ====================

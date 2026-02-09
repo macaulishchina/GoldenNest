@@ -1,5 +1,10 @@
 <template>
   <div class="auth-container">
+    <!-- 主题切换按钮 -->
+    <div class="theme-switcher">
+      <ThemeSelector />
+    </div>
+    
     <div class="auth-card">
       <div class="logo">
         <span class="logo-icon">🏠</span>
@@ -48,6 +53,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useMessage, type FormInst } from 'naive-ui'
 import { authApi } from '@/api'
 import { useUserStore } from '@/stores/user'
+import ThemeSelector from '@/components/ThemeSelector.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -113,12 +119,20 @@ async function handleRegister() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 20px;
+  position: relative;
+  /* 不设置背景，使用 body 的主题背景 */
+}
+
+.theme-switcher {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 100;
 }
 
 .auth-card {
-  background: white;
+  background: var(--theme-bg-card, white);
   border-radius: 20px;
   padding: 48px;
   width: 100%;
@@ -140,12 +154,12 @@ async function handleRegister() {
 .logo h1 {
   margin: 0;
   font-size: 28px;
-  color: #1e293b;
+  color: var(--theme-text-primary, #1e293b);
 }
 
 .subtitle {
-  margin: 8px 0 0;
   font-size: 14px;
-  color: #64748b;
+  color: var(--theme-text-secondary, #64748b);
+  margin: 8px 0 0;
 }
 </style>

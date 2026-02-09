@@ -863,8 +863,8 @@ const doApproval = async (id: number, isApproved: boolean, reason: string) => {
     loadApprovals()
     loadPendingApprovals()
 
-    // 刷新导航徽章计数
-    await approvalStore.fetchPendingCount()
+    // 立即刷新审批红点（使用refreshNow代替fetchPendingCount）
+    await approvalStore.refreshNow()
 
     // 审批通过后检查成就
     if (isApproved) {
@@ -1228,7 +1228,7 @@ onMounted(() => {
 }
 
 .subtitle {
-  color: #666;
+  color: var(--theme-text-secondary);
   margin: 0;
 }
 
@@ -1245,9 +1245,9 @@ onMounted(() => {
   align-items: center;
   gap: 16px;
   padding: 20px;
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 8px var(--theme-shadow-sm);
 }
 
 .stat-icon {
@@ -1261,13 +1261,13 @@ onMounted(() => {
 
 .stat-label {
   font-size: 14px;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
-.stat-card.pending { border-left: 4px solid #f59e0b; }
-.stat-card.approved { border-left: 4px solid #10b981; }
-.stat-card.rejected { border-left: 4px solid #ef4444; }
-.stat-card.total { border-left: 4px solid #3b82f6; }
+.stat-card.pending { border-left: 4px solid var(--theme-warning); }
+.stat-card.approved { border-left: 4px solid var(--theme-success); }
+.stat-card.rejected { border-left: 4px solid var(--theme-error); }
+.stat-card.total { border-left: 4px solid var(--theme-info); }
 
 /* 操作栏 */
 .action-bar {
@@ -1286,16 +1286,17 @@ onMounted(() => {
 
 .filter-select {
   padding: 10px 16px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--theme-border);
   border-radius: 8px;
   font-size: 14px;
-  background: white;
+  background: var(--theme-bg-card);
+  color: var(--theme-text-primary);
   cursor: pointer;
 }
 
 .btn-primary {
   padding: 12px 24px;
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  background: var(--theme-warning);
   color: white;
   border: none;
   border-radius: 8px;
@@ -1317,7 +1318,7 @@ onMounted(() => {
 
 /* 待审批区域 */
 .pending-section {
-  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  background: var(--theme-warning-bg);
   padding: 24px;
   border-radius: 16px;
   margin-bottom: 32px;
@@ -1335,14 +1336,14 @@ onMounted(() => {
 }
 
 .approval-card {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 8px var(--theme-shadow-sm);
 }
 
 .pending-card {
-  border: 2px solid #f59e0b;
+  border: 2px solid var(--theme-warning);
   animation: pulse 2s infinite;
 }
 
@@ -1421,7 +1422,7 @@ onMounted(() => {
 }
 
 .description {
-  color: #666;
+  color: var(--theme-text-secondary);
   margin: 0 0 12px 0;
   font-size: 14px;
 }
@@ -1876,7 +1877,7 @@ onMounted(() => {
 
 .hint-text {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--theme-text-tertiary);
   margin-top: 4px;
 }
 

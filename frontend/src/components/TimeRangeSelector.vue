@@ -54,9 +54,9 @@ function selectRange(value) {
 
 .range-btn {
   padding: 6px 14px;
-  border: 1px solid #ddd;
-  background: #fff;
-  color: #666;
+  border: 1px solid var(--theme-border);
+  background: var(--theme-bg-card);
+  color: var(--theme-text-secondary);
   border-radius: 20px;
   cursor: pointer;
   font-size: 13px;

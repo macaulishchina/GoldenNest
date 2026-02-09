@@ -4,10 +4,14 @@
 from datetime import datetime
 from typing import List, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 import math
 
-from app.models.models import Deposit, Family, FamilyMember, User
+from app.models.models import (
+    Deposit, Family, FamilyMember, User,
+    Transaction, Investment, InvestmentPosition, InvestmentIncome,
+    PositionOperationType
+)
 from app.schemas.equity import MemberEquity, EquitySummary
 
 
@@ -121,14 +125,70 @@ async def calculate_family_equity(family_id: int, db: AsyncSession) -> EquitySum
     # 转换为 Pydantic 模型
     member_equity_list = [MemberEquity(**m) for m in members_equity]
     
+    # 🌟 计算当前储蓄 = 家庭自由资金 + 理财实际价值
+    
+    # 1. 获取家庭自由资金（最后一笔交易的 balance_after）
+    free_cash = 0.0
+    result = await db.execute(
+        select(Transaction.balance_after)
+        .where(Transaction.family_id == family_id)
+        .order_by(Transaction.id.desc())
+        .limit(1)
+    )
+    last_balance = result.scalar_one_or_none()
+    if last_balance is not None:
+        free_cash = last_balance
+    
+    # 2. 获取所有理财产品的实际价值
+    investment_value = 0.0
+    result = await db.execute(
+        select(Investment)
+        .where(Investment.family_id == family_id)
+        .where(Investment.is_active == True)
+        .where(Investment.is_deleted == False)
+    )
+    investments = result.scalars().all()
+    
+    for inv in investments:
+        # 计算当前持仓本金
+        result = await db.execute(
+            select(InvestmentPosition)
+            .where(InvestmentPosition.investment_id == inv.id)
+        )
+        positions = result.scalars().all()
+        
+        current_principal = sum(
+            p.amount if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
+            else -p.amount
+            for p in positions
+        )
+        
+        # 计算总收益
+        result = await db.execute(
+            select(InvestmentIncome)
+            .where(InvestmentIncome.investment_id == inv.id)
+        )
+        income_records = result.scalars().all()
+        
+        total_return = sum(
+            ir.calculated_income if ir.calculated_income is not None else ir.amount
+            for ir in income_records
+        )
+        
+        # 实际价值 = 当前持仓本金 + 总收益
+        investment_value += current_principal + total_return
+    
+    # 3. 当前储蓄 = 家庭自由资金 + 理财实际价值
+    total_savings = free_cash + investment_value
+    
     # 计算目标进度
-    target_progress = min(total_original / family.savings_target, 1.0) if family.savings_target > 0 else 0
+    target_progress = min(total_savings / family.savings_target, 1.0) if family.savings_target > 0 else 0
     
     return EquitySummary(
         family_id=family.id,
         family_name=family.name,
         savings_target=family.savings_target,
-        total_savings=total_original,
+        total_savings=total_savings,
         total_weighted=total_original,  # 不再使用时间加权，与 total_savings 相同
         daily_weighted_growth=0.0,  # 不再计算时间加权增长
         target_progress=round(target_progress, 4),

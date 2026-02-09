@@ -403,7 +403,7 @@ onUnmounted(() => {
 }
 
 .page-header p {
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 /* 筛选区域 */
@@ -510,7 +510,7 @@ onUnmounted(() => {
 .loading {
   text-align: center;
   padding: 40px;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 .spinner {
@@ -560,7 +560,7 @@ onUnmounted(() => {
 
 .pin-badge {
   display: inline-block;
-  background: #fff3e0;
+  background: var(--theme-warning-light);
   color: #ff9800;
   padding: 4px 12px;
   border-radius: 12px;
@@ -602,7 +602,7 @@ onUnmounted(() => {
 
 .post-time {
   font-size: 12px;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 /* 操作菜单 */

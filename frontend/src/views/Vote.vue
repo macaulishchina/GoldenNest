@@ -6,14 +6,16 @@
       <p>家庭重大决策民主投票，全员同意才能通过</p>
     </div>
 
-    <!-- 创建提案按钮 -->
+    <!-- 操作栏 -->
     <div class="action-bar">
-      <button class="btn-create" @click="showCreateModal = true">
-        📝 发起新提案
-      </button>
-      <button class="btn-dividend" @click="openDividendModal">
-        💰 发起分红
-      </button>
+      <div class="action-bar-left">
+        <button class="btn-create" @click="showCreateModal = true">
+          📝 发起新提案
+        </button>
+        <button class="btn-dividend" @click="openDividendModal">
+          💰 发起分红
+        </button>
+      </div>
       <div class="filter-tabs">
         <button 
           v-for="tab in tabs" 
@@ -521,15 +523,19 @@ onMounted(() => {
 }
 
 .page-header p {
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 .action-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
+  margin-bottom: 24px;
+  gap: 16px;
+}
+
+.action-bar-left {
+  display: flex;
   gap: 12px;
 }
 
@@ -537,18 +543,21 @@ onMounted(() => {
 @media (max-width: 768px) {
   .action-bar {
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     gap: 16px;
   }
   
-  .btn-create {
+  .action-bar-left {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .btn-create,
+  .btn-dividend {
     width: 100%;
-    max-width: 280px;
-    text-align: center;
   }
   
   .filter-tabs {
-    width: 100%;
     justify-content: center;
     flex-wrap: wrap;
   }
@@ -598,31 +607,38 @@ onMounted(() => {
 
 .tab-btn {
   padding: 8px 16px;
-  border: 1px solid #e0e0e0;
-  background: white;
+  border: 1px solid var(--theme-border);
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-primary);
   border-radius: 20px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
+.tab-btn:hover {
+  background: var(--theme-bg-card);
+  border-color: var(--theme-purple);
+}
+
 .tab-btn.active {
-  background: #667eea;
-  color: white;
-  border-color: #667eea;
+  background: var(--theme-purple-bg);
+  color: var(--theme-purple);
+  border-color: var(--theme-purple);
+  font-weight: 500;
 }
 
 .loading {
   text-align: center;
   padding: 40px;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 .spinner {
   display: inline-block;
   width: 30px;
   height: 30px;
-  border: 3px solid #f3f3f3;
-  border-top: 3px solid #667eea;
+  border: 3px solid var(--theme-border-light);
+  border-top: 3px solid var(--theme-purple);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -641,7 +657,7 @@ onMounted(() => {
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 .empty-icon {
@@ -650,18 +666,19 @@ onMounted(() => {
 }
 
 .proposal-card {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  box-shadow: var(--theme-shadow);
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
-  border-left: 4px solid #e0e0e0;
+  border-left: 4px solid var(--theme-border);
 }
 
 .proposal-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  box-shadow: var(--theme-shadow);
+  border-left-color: var(--theme-purple);
 }
 
 .proposal-card.status-voting {
@@ -716,17 +733,18 @@ onMounted(() => {
 
 .proposal-date {
   font-size: 12px;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 .proposal-title {
   font-size: 18px;
   margin: 0 0 8px 0;
-  color: #333;
+  color: var(--theme-text-primary);
+  font-weight: 500;
 }
 
 .proposal-desc {
-  color: #666;
+  color: var(--theme-text-secondary);
   font-size: 14px;
   margin: 0 0 12px 0;
   overflow: hidden;
@@ -740,14 +758,14 @@ onMounted(() => {
   display: flex;
   gap: 16px;
   font-size: 13px;
-  color: #888;
+  color: var(--theme-text-tertiary);
   margin-bottom: 12px;
   flex-wrap: wrap;
 }
 
 .vote-progress {
   height: 6px;
-  background: #f0f0f0;
+  background: var(--theme-bg-secondary);
   border-radius: 3px;
   overflow: hidden;
   margin-bottom: 8px;
@@ -776,7 +794,7 @@ onMounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0,0,0,0.5);
+  background: rgba(0,0,0,0.6);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -785,13 +803,14 @@ onMounted(() => {
 }
 
 .modal-content {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   padding: 24px;
   max-width: 500px;
   width: 100%;
   max-height: 80vh;
   overflow-y: auto;
+  box-shadow: var(--theme-shadow);
 }
 
 .modal-content h2 {
@@ -807,23 +826,26 @@ onMounted(() => {
   display: block;
   margin-bottom: 8px;
   font-weight: 500;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .form-group input,
 .form-group textarea {
   width: 100%;
   padding: 12px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--theme-border);
   border-radius: 8px;
   font-size: 14px;
   box-sizing: border-box;
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-primary);
 }
 
 .form-group input:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--theme-purple);
+  background: var(--theme-bg-card);
 }
 
 .options-list {
@@ -852,16 +874,17 @@ onMounted(() => {
 
 .btn-add-option {
   padding: 10px;
-  border: 1px dashed #ccc;
-  background: none;
+  border: 1px dashed var(--theme-border);
+  background: transparent;
   border-radius: 8px;
   cursor: pointer;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 .btn-add-option:hover {
-  border-color: #667eea;
-  color: #667eea;
+  border-color: var(--theme-purple);
+  color: var(--theme-purple);
+  background: var(--theme-purple-bg);
 }
 
 .modal-actions {
@@ -873,10 +896,17 @@ onMounted(() => {
 
 .btn-cancel {
   padding: 10px 20px;
-  border: 1px solid #e0e0e0;
-  background: white;
+  border: 1px solid var(--theme-border);
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-primary);
   border-radius: 8px;
   cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-cancel:hover {
+  background: var(--theme-bg-card);
+  border-color: var(--theme-border-light);
 }
 
 .btn-submit {
@@ -913,33 +943,35 @@ onMounted(() => {
 }
 
 .detail-info {
-  background: #f9f9f9;
+  background: var(--theme-bg-secondary);
   padding: 12px;
   border-radius: 8px;
   margin-bottom: 20px;
+  border: 1px solid var(--theme-border);
 }
 
 .detail-info p {
   margin: 4px 0;
   font-size: 14px;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 .vote-options h4 {
   margin: 0 0 12px 0;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .option-result {
-  background: #f5f5f5;
+  background: var(--theme-bg-secondary);
   padding: 12px;
   border-radius: 8px;
   margin-bottom: 8px;
+  border: 1px solid var(--theme-border);
 }
 
 .option-result.selected {
-  background: #e8f5e9;
-  border: 1px solid #4caf50;
+  background: var(--theme-success-bg);
+  border: 1px solid var(--theme-success);
 }
 
 .option-info {
@@ -953,13 +985,13 @@ onMounted(() => {
 }
 
 .vote-count {
-  color: #666;
+  color: var(--theme-text-secondary);
   font-size: 14px;
 }
 
 .voters {
   font-size: 12px;
-  color: #888;
+  color: var(--theme-text-tertiary);
   margin-bottom: 8px;
 }
 
@@ -974,15 +1006,15 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #fff;
+  background: var(--theme-bg-card);
   padding: 4px 10px 4px 4px;
   border-radius: 16px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--theme-border);
 }
 
 .voter-name {
   font-size: 13px;
-  color: #555;
+  color: var(--theme-text-secondary);
 }
 
 .btn-vote {
@@ -1016,8 +1048,9 @@ onMounted(() => {
 .vote-result-summary {
   margin: 12px 0;
   padding: 12px;
-  background: #f8f9fa;
+  background: var(--theme-bg-secondary);
   border-radius: 8px;
+  border: 1px solid var(--theme-border);
 }
 
 .result-bar {
@@ -1037,12 +1070,12 @@ onMounted(() => {
   justify-content: space-between;
   font-size: 13px;
   margin-bottom: 4px;
-  color: #555;
+  color: var(--theme-text-secondary);
 }
 
 .result-progress {
   height: 8px;
-  background: #e0e0e0;
+  background: var(--theme-border-light);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -1068,7 +1101,7 @@ onMounted(() => {
   gap: 8px;
   margin: 4px 0;
   font-size: 14px;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 .detail-info .creator-row {
@@ -1100,19 +1133,19 @@ onMounted(() => {
 
 .pool-label {
   font-size: 13px;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 .pool-value {
   font-size: 22px;
   font-weight: bold;
-  color: #667eea;
+  color: var(--theme-purple);
 }
 
 .loading-pool {
   text-align: center;
   padding: 20px;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 .radio-group {
@@ -1126,15 +1159,16 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   padding: 12px;
-  border: 2px solid #e0e0e0;
+  border: 2px solid var(--theme-border);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
+  background: var(--theme-bg-secondary);
 }
 
 .radio-label:hover {
-  border-color: #667eea;
-  background: #f8f9ff;
+  border-color: var(--theme-purple);
+  background: var(--theme-purple-bg);
 }
 
 .radio-label input[type="radio"] {
@@ -1144,25 +1178,25 @@ onMounted(() => {
 }
 
 .radio-label input[type="radio"]:checked + span {
-  color: #667eea;
+  color: var(--theme-purple);
   font-weight: 600;
 }
 
 .type-desc {
   font-size: 12px;
-  color: #999;
+  color: var(--theme-text-tertiary);
   margin-left: 4px;
 }
 
 .amount-hint {
   margin-top: 8px;
   font-size: 13px;
-  color: #667eea;
+  color: var(--theme-purple);
 }
 
 .dividend-note {
-  background: #fffbf0;
-  border-left: 4px solid #ffc107;
+  background: var(--theme-warning-bg);
+  border-left: 4px solid var(--theme-warning);
   padding: 12px 16px;
   border-radius: 4px;
   margin-top: 16px;
@@ -1171,7 +1205,7 @@ onMounted(() => {
 .dividend-note p {
   margin: 0 0 8px 0;
   font-weight: 600;
-  color: #666;
+  color: var(--theme-text-primary);
 }
 
 .dividend-note ul {
@@ -1183,6 +1217,6 @@ onMounted(() => {
 .dividend-note li {
   margin: 4px 0;
   font-size: 13px;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 </style>

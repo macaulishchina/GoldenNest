@@ -7,10 +7,12 @@ export const useApprovalStore = defineStore('approval', () => {
   const pendingCount = ref(0)
   const lastFetchTime = ref(0)
   const FETCH_INTERVAL = 5000 // 5秒防抖
+  const POLL_INTERVAL = 30000 // 30秒轮询间隔
+  let pollTimer: ReturnType<typeof setInterval> | null = null
 
-  async function fetchPendingCount() {
+  async function fetchPendingCount(force = false) {
     const now = Date.now()
-    if (now - lastFetchTime.value < FETCH_INTERVAL) {
+    if (!force && now - lastFetchTime.value < FETCH_INTERVAL) {
       return
     }
 
@@ -31,14 +33,40 @@ export const useApprovalStore = defineStore('approval', () => {
     }
   }
 
+  // 立即刷新（忽略防抖限制）
+  async function refreshNow() {
+    await fetchPendingCount(true)
+  }
+
+  // 启动轮询
+  function startPolling() {
+    if (pollTimer) return // 已经在轮询
+    
+    pollTimer = setInterval(() => {
+      fetchPendingCount()
+    }, POLL_INTERVAL)
+  }
+
+  // 停止轮询
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
+
   function resetCount() {
     pendingCount.value = 0
     lastFetchTime.value = 0
+    stopPolling()
   }
 
   return {
     pendingCount,
     fetchPendingCount,
+    refreshNow,
+    startPolling,
+    stopPolling,
     resetCount
   }
 })

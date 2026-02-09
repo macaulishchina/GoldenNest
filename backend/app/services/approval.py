@@ -63,9 +63,21 @@ class ApprovalService:
             
             # 更新状态为已通过
             request.status = ApprovalRequestStatus.APPROVED
+            await self.db.flush()
             
-            # 执行申请
-            await self._execute_request(request)
+            # 【关键修复】先提交事务，再执行业务逻辑
+            # 这样可以避免长时间事务阻塞其他查询
+            await self.db.commit()
+            
+            # 重新获取request对象（commit后session失效）
+            result = await self.db.execute(
+                select(ApprovalRequest).where(ApprovalRequest.id == request.id)
+            )
+            request = result.scalar_one_or_none()
+            if request:
+                # 在新的事务中执行申请
+                await self._execute_request(request)
+                await self.db.commit()
         
         await self.db.refresh(request)
         return request
@@ -254,6 +266,99 @@ class ApprovalService:
             rejected_count=rejected_count
         )
     
+    async def get_request_response_with_preloaded_data(
+        self,
+        request: ApprovalRequest,
+        requester_nickname: str,
+        requester_avatar_version: int = 0,
+        approval_rows: list = None,
+        target_user = None,
+        all_members: list = None
+    ) -> ApprovalRequestResponse:
+        """获取申请响应对象（使用预加载的数据，避免N+1查询）"""
+        if approval_rows is None:
+            approval_rows = []
+        if all_members is None:
+            all_members = []
+            
+        approvals = [
+            ApprovalRecordResponse(
+                id=a.id,
+                request_id=a.request_id,
+                approver_id=a.approver_id,
+                approver_nickname=u.nickname,
+                approver_avatar_version=u.avatar_version or 0,
+                is_approved=a.is_approved,
+                comment=a.comment,
+                created_at=a.created_at
+            )
+            for a, u in approval_rows
+        ]
+        
+        # 使用预加载的目标用户信息
+        target_user_id = request.target_user_id
+        target_user_nickname = None
+        target_user_avatar_version = None
+        if target_user:
+            target_user_nickname = target_user.nickname
+            target_user_avatar_version = target_user.avatar_version or 0
+        
+        # 使用预加载的家庭成员
+        all_member_ids = [m.user_id for m in all_members]
+        
+        # 计算待审批成员
+        approved_user_ids = [a.approver_id for a, _ in approval_rows]
+        
+        if len(all_member_ids) == 1:
+            # 单人家庭，申请人自己审批
+            pending_approvers = [uid for uid in all_member_ids if uid not in approved_user_ids]
+        elif request.request_type == ApprovalRequestType.MEMBER_REMOVE:
+            # 成员剔除：需要管理员同意，申请人如果是管理员也可以自己审批
+            admin_ids = [m.user_id for m in all_members if m.role == "admin"]
+            pending_approvers = [
+                uid for uid in admin_ids
+                if uid not in approved_user_ids
+            ]
+        elif request.request_type == ApprovalRequestType.DIVIDEND_CLAIM:
+            # 分红领取：只有目标用户需要审批
+            pending_approvers = [target_user_id] if target_user_id and target_user_id not in approved_user_ids else []
+        else:
+            # 其他申请类型：除申请人外的成员需要审批
+            pending_approvers = [
+                uid for uid in all_member_ids
+                if uid != request.requester_id and uid not in approved_user_ids
+            ]
+        
+        approved_count = sum(1 for a, _ in approval_rows if a.is_approved)
+        rejected_count = sum(1 for a, _ in approval_rows if not a.is_approved)
+        
+        return ApprovalRequestResponse(
+            id=request.id,
+            family_id=request.family_id,
+            requester_id=request.requester_id,
+            requester_nickname=requester_nickname,
+            requester_avatar_version=requester_avatar_version,
+            target_user_id=target_user_id,
+            target_user_nickname=target_user_nickname,
+            target_user_avatar_version=target_user_avatar_version,
+            request_type=request.request_type,
+            title=request.title,
+            description=request.description,
+            amount=request.amount,
+            request_data=json.loads(request.request_data),
+            status=request.status,
+            created_at=request.created_at,
+            updated_at=request.updated_at,
+            executed_at=request.executed_at,
+            execution_failed=request.execution_failed,
+            failure_reason=request.failure_reason,
+            approvals=approvals,
+            pending_approvers=pending_approvers,
+            total_members=len(all_member_ids),
+            approved_count=approved_count,
+            rejected_count=rejected_count
+        )
+    
     async def _get_family_member_count(self, family_id: int) -> int:
         """获取家庭成员数量"""
         result = await self.db.execute(
@@ -362,11 +467,11 @@ class ApprovalService:
     
     async def _execute_request(self, request: ApprovalRequest) -> None:
         """执行已通过的申请（带幂等性保护和回滚支持）"""
-        # 【幂等性保护】使用行锁重新获取申请记录，防止并发执行
+        # 【幂等性保护】重新获取申请记录，检查是否已执行
+        # 不使用行锁，避免阻塞其他查询
         result = await self.db.execute(
             select(ApprovalRequest)
             .where(ApprovalRequest.id == request.id)
-            .with_for_update()  # 行锁，确保同一时间只有一个事务可以执行
         )
         locked_request = result.scalar_one_or_none()
         
@@ -941,13 +1046,13 @@ class ApprovalService:
         last_transaction = result.scalar_one_or_none()
         current_balance = last_transaction.balance_after if last_transaction else 0
         
-        # 创建交易流水
+        # 创建交易流水（理财收益不影响家庭自由资金余额，仅作记录）
         transaction = Transaction(
             family_id=request.family_id,
             user_id=None,
             transaction_type=TransactionType.INCOME,
             amount=income_amount,
-            balance_after=current_balance + income_amount,
+            balance_after=current_balance,  # 余额不变，收益留在理财产品中
             description=f"理财收益: {investment.name} +{income_amount}元",
             reference_id=income.id,
             reference_type="investment_income"

@@ -33,8 +33,8 @@
           :border-radius="12"
           :fill-border-radius="12"
           indicator-placement="inside"
-          color="#10b981"
-          rail-color="#e2e8f0"
+          :color="'var(--theme-success)'"
+          :rail-color="'var(--theme-border)'"
         />
         <div class="target-tips">
           💡 再存 <strong>¥{{ formatNumber(Math.max(0, (equity?.savings_target || 2000000) - (equity?.total_savings || 0))) }}</strong> 就达成目标！
@@ -49,9 +49,10 @@
           <div v-show="showSavingsHelp" class="help-content">
             <p><strong>📊 储蓄说明：</strong></p>
             <ul>
-              <li>储蓄金额 = 所有家庭成员的“资金注入”总额</li>
-              <li>不包含理财收益，只计算实际注入的本金</li>
-              <li>通过“资金注入”页面增加家庭储蓄</li>
+              <li>当前储蓄 = 家庭自由资金 + 理财实际价值</li>
+              <li>家庭自由资金：可随时支配的现金余额</li>
+              <li>理财实际价值：所有理财产品的持仓本金 + 累计收益</li>
+              <li>通过"资金注入"和理财投资增加家庭储蓄</li>
             </ul>
           </div>
         </Transition>
@@ -254,9 +255,9 @@ function formatNumber(num: number) {
 }
 
 function getProgressColor(percentage: number) {
-  if (percentage >= 50) return '#10b981'
-  if (percentage >= 30) return '#3b82f6'
-  return '#f59e0b'
+  if (percentage >= 50) return 'var(--theme-success)'
+  if (percentage >= 30) return 'var(--theme-info)'
+  return 'var(--theme-warning)'
 }
 
 async function loadData() {
@@ -331,7 +332,7 @@ onMounted(() => {
 
 .privacy-toggle {
   background: none;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--theme-border);
   border-radius: 8px;
   padding: 8px 12px;
   cursor: pointer;
@@ -343,8 +344,8 @@ onMounted(() => {
 }
 
 .privacy-toggle:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
+  background: var(--theme-border-light);
+  border-color: var(--theme-border);
 }
 
 .privacy-toggle:active {
@@ -354,11 +355,11 @@ onMounted(() => {
 .privacy-icon {
   width: 20px;
   height: 20px;
-  color: #64748b;
+  color: var(--theme-text-secondary);
 }
 
 .privacy-toggle:hover .privacy-icon {
-  color: #334155;
+  color: var(--theme-text-primary);
 }
 
 /* 个人信息区域 */
@@ -367,14 +368,14 @@ onMounted(() => {
   align-items: center;
   gap: 16px;
   padding: 16px 20px;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  background: linear-gradient(135deg, var(--theme-bg-card) 0%, var(--theme-bg-secondary) 100%);
   border-radius: 16px;
   margin-bottom: 24px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--theme-border);
 }
 
 .profile-avatar {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(135deg, var(--theme-success) 0%, var(--theme-success-dark) 100%);
   color: white;
   font-weight: 600;
   font-size: 18px;
@@ -389,7 +390,7 @@ onMounted(() => {
 .profile-name {
   font-size: 18px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--theme-text-primary);
   margin-bottom: 6px;
 }
 
@@ -402,14 +403,14 @@ onMounted(() => {
 
 .profile-greeting {
   font-size: 14px;
-  color: #64748b;
+  color: var(--theme-text-secondary);
 }
 
 /* 资金概览 */
 .assets-overview {
   margin-bottom: 24px;
-  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
-  border: 1px solid #10b981;
+  background: var(--theme-success-bg);
+  border: 1px solid var(--theme-success);
 }
 
 .overview-header {
@@ -418,26 +419,26 @@ onMounted(() => {
   align-items: flex-end;
   margin-bottom: 20px;
   padding-bottom: 12px;
-  border-bottom: 2px solid #10b981;
+  border-bottom: 2px solid var(--theme-success);
 }
 
 .overview-title {
   font-size: 20px;
   font-weight: 700;
-  color: #065f46;
+  color: var(--theme-text-primary);
   margin: 0 0 4px 0;
 }
 
 .overview-subtitle {
   font-size: 13px;
-  color: #059669;
+  color: var(--theme-text-secondary);
   margin: 0;
   opacity: 0.8;
 }
 
 .overview-date {
   font-size: 13px;
-  color: #065f46;
+  color: var(--theme-text-primary);
   opacity: 0.6;
 }
 
@@ -453,9 +454,9 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   padding: 16px;
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 12px;
-  border: 1px solid #a7f3d0;
+  border: 1px solid var(--theme-border-light);
   transition: all 0.3s;
 }
 
@@ -466,7 +467,7 @@ onMounted(() => {
 
 .asset-card.primary-card {
   grid-column: span 3;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(135deg, var(--theme-success) 0%, var(--theme-success-dark) 100%);
   border: none;
 }
 
@@ -486,7 +487,7 @@ onMounted(() => {
 
 .asset-label {
   font-size: 13px;
-  color: #78716c;
+  color: var(--theme-text-secondary);
   margin-bottom: 4px;
 }
 
@@ -498,7 +499,7 @@ onMounted(() => {
 .asset-value {
   font-size: 24px;
   font-weight: 700;
-  color: #1e293b;
+  color: var(--theme-text-primary);
   margin-bottom: 2px;
 }
 
@@ -509,7 +510,7 @@ onMounted(() => {
 
 .asset-detail {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--theme-text-tertiary);
 }
 
 .primary-card .asset-detail {
@@ -523,9 +524,9 @@ onMounted(() => {
   justify-content: center;
   gap: 16px;
   padding: 16px;
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 12px;
-  border: 1px solid #a7f3d0;
+  border: 1px solid var(--theme-border-light);
   margin-top: 16px;
 }
 
@@ -538,19 +539,19 @@ onMounted(() => {
 
 .summary-label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--theme-text-secondary);
   font-weight: 500;
 }
 
 .summary-value {
   font-size: 18px;
   font-weight: 700;
-  color: #1e293b;
+  color: var(--theme-text-primary);
 }
 
 .summary-divider {
   font-size: 20px;
-  color: #94a3b8;
+  color: var(--theme-text-tertiary);
   font-weight: 600;
 }
 
@@ -560,22 +561,22 @@ onMounted(() => {
 }
 
 .positive-value {
-  color: #10b981 !important;
+  color: var(--theme-success) !important;
 }
 
 .negative-value {
-  color: #ef4444 !important;
+  color: var(--theme-error) !important;
 }
 
 .asset-distribution {
   margin-top: 20px;
   padding-top: 20px;
-  border-top: 1px dashed #fbbf24;
+  border-top: 1px dashed var(--theme-warning);
 }
 
 .distribution-bar {
   height: 32px;
-  background: #f5f5f5;
+  background: var(--theme-bg-secondary);
   border-radius: 16px;
   overflow: hidden;
   display: flex;
@@ -589,11 +590,11 @@ onMounted(() => {
 }
 
 .balance-segment {
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: var(--theme-success);
 }
 
 .investment-segment {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: var(--theme-info);
 }
 
 .distribution-legend {
@@ -607,7 +608,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #64748b;
+  color: var(--theme-text-secondary);
 }
 
 .legend-dot {
@@ -617,16 +618,16 @@ onMounted(() => {
 }
 
 .balance-dot {
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: var(--theme-success);
 }
 
 .investment-dot {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: var(--theme-info);
 }
 
 .target-card {
-  background: linear-gradient(135deg, #fef3c7 0%, #fef9e7 100%);
-  border: 1px solid #fbbf24;
+  background: var(--theme-warning-bg);
+  border: 1px solid var(--theme-warning);
 }
 
 .target-header {
@@ -639,13 +640,13 @@ onMounted(() => {
 .target-title {
   font-size: 18px;
   font-weight: 700;
-  color: #92400e;
+  color: var(--theme-text-primary);
   margin: 0 0 8px 0;
 }
 
 .target-subtitle {
   font-size: 14px;
-  color: #92400e;
+  color: var(--theme-text-primary);
   margin: 0;
   opacity: 0.8;
 }
@@ -663,7 +664,7 @@ onMounted(() => {
 
 .stat-label-small {
   font-size: 12px;
-  color: #92400e;
+  color: var(--theme-text-primary);
   opacity: 0.7;
   margin-bottom: 2px;
 }
@@ -671,7 +672,7 @@ onMounted(() => {
 .stat-value-small {
   font-size: 16px;
   font-weight: 700;
-  color: #92400e;
+  color: var(--theme-text-primary);
 }
 
 .target-amount {
@@ -681,7 +682,7 @@ onMounted(() => {
 .amount-label {
   display: block;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--theme-text-tertiary);
 }
 
 .amount-value {
@@ -692,11 +693,11 @@ onMounted(() => {
 .target-tips {
   margin-top: 16px;
   padding: 12px 16px;
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 8px;
-  color: #92400e;
+  color: var(--theme-text-primary);
   font-size: 13px;
-  border-left: 3px solid #fbbf24;
+  border-left: 3px solid var(--theme-warning);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -706,21 +707,21 @@ onMounted(() => {
 .help-content {
   margin-top: 12px;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--theme-bg-secondary);
   border-radius: 8px;
-  border: 1px dashed #fbbf24;
+  border: 1px dashed var(--theme-warning);
 }
 
 .help-content p {
   margin: 0 0 8px 0;
-  color: #92400e;
+  color: var(--theme-text-primary);
   font-size: 13px;
 }
 
 .help-content ul {
   margin: 0;
   padding-left: 20px;
-  color: #92400e;
+  color: var(--theme-text-primary);
   font-size: 13px;
   line-height: 1.8;
 }
@@ -749,19 +750,19 @@ onMounted(() => {
 .stat-value {
   font-size: 20px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--theme-text-primary);
 }
 
 .stat-label {
   font-size: 13px;
-  color: #64748b;
+  color: var(--theme-text-secondary);
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
 .growth-value {
-  color: #10b981;
+  color: var(--theme-success);
 }
 
 .help-icon {
@@ -772,34 +773,34 @@ onMounted(() => {
   height: 16px;
   font-size: 11px;
   font-weight: 600;
-  background: #e2e8f0;
-  color: #64748b;
+  background: var(--theme-border);
+  color: var(--theme-text-secondary);
   border-radius: 50%;
   cursor: help;
 }
 
 /* 股权分布卡片 */
 .equity-card {
-  background: linear-gradient(135deg, #ede9fe 0%, #f5f3ff 100%);
-  border: 1px solid #a78bfa;
+  background: var(--theme-info-bg);
+  border: 1px solid var(--theme-purple);
 }
 
 .equity-header {
   margin-bottom: 20px;
   padding-bottom: 12px;
-  border-bottom: 2px solid #a78bfa;
+  border-bottom: 2px solid var(--theme-purple);
 }
 
 .equity-title {
   font-size: 18px;
   font-weight: 700;
-  color: #5b21b6;
+  color: var(--theme-text-primary);
   margin: 0 0 4px 0;
 }
 
 .equity-subtitle {
   font-size: 13px;
-  color: #7c3aed;
+  color: var(--theme-text-secondary);
   margin: 0;
   opacity: 0.8;
 }
@@ -830,7 +831,7 @@ onMounted(() => {
 
 .member-deposit {
   font-size: 13px;
-  color: #64748b;
+  color: var(--theme-text-secondary);
   min-width: 150px;
 }
 
@@ -848,7 +849,7 @@ onMounted(() => {
 
 .equity-value {
   font-weight: 600;
-  color: #10b981;
+  color: var(--theme-success);
   min-width: 60px;
   text-align: right;
 }
@@ -983,7 +984,7 @@ onMounted(() => {
     align-items: stretch;
     gap: 8px;
     padding: 12px 0;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--theme-border-light);
   }
   
   .equity-item:last-child {
@@ -999,7 +1000,7 @@ onMounted(() => {
   .member-deposit {
     min-width: unset;
     font-size: 14px;
-    color: #1e293b;
+    color: var(--theme-text-primary);
   }
   
   .member-equity {

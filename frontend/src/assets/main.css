@@ -1,15 +1,60 @@
 /* 小金库 Golden Nest - 全局样式 */
 
+:root {
+  /* 默认主题变量（浅色主题） */
+  --theme-bg-primary: linear-gradient(135deg, #f0fdf4 0%, #ecfeff 100%);
+  --theme-bg-secondary: #f9fafb;
+  --theme-bg-card: #ffffff;
+  --theme-text-primary: #1f2937;
+  --theme-text-secondary: #6b7280;
+  --theme-border: #e5e7eb;
+  --theme-primary: #18A058;
+  --theme-primary-hover: #36AD6A;
+}
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
+html {
+  min-height: 100vh;
+}
+
 body {
   font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  background: linear-gradient(135deg, #f0fdf4 0%, #ecfeff 100%);
   min-height: 100vh;
+  transition: background 0.3s ease, color 0.3s ease;
+  margin: 0;
+  padding: 0;
+  color: var(--theme-text-primary);
+}
+
+/* 主题背景渐变 - 使用更高的优先级 */
+html body.theme-light,
+body.theme-light {
+  background: var(--theme-bg-primary) !important;
+}
+
+html body.theme-dark,
+body.theme-dark {
+  background: var(--theme-bg-primary) !important;
+}
+
+html body.theme-blue,
+body.theme-blue {
+  background: var(--theme-bg-primary) !important;
+}
+
+html body.theme-green,
+body.theme-green {
+  background: var(--theme-bg-primary) !important;
+}
+
+html body.theme-purple,
+body.theme-purple {
+  background: var(--theme-bg-primary) !important;
 }
 
 /* 自定义滚动条 */
@@ -67,7 +112,7 @@ body {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--theme-text-primary);
   margin-bottom: 24px;
   display: flex;
   align-items: center;
