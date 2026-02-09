@@ -3,13 +3,13 @@
 """
 import json
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
-from app.main import limiter
+from app.core.limiter import limiter
 from app.models.models import (
     ApprovalRequest, ApprovalRecord, ApprovalRequestType, ApprovalRequestStatus,
     FamilyMember, User, Investment, Family, ExpenseRequest, ExpenseStatus
@@ -47,6 +47,7 @@ async def get_user_family_id(user_id: int, db: AsyncSession) -> int:
 @router.post("/deposit", response_model=ApprovalRequestResponse)
 @limiter.limit("30/hour")
 async def create_deposit_approval(
+    request: Request,
     data: DepositApprovalCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -85,6 +86,7 @@ async def create_deposit_approval(
 @router.post("/asset/create", response_model=ApprovalRequestResponse)
 @limiter.limit("50/day")
 async def create_asset_approval(
+    request: Request,
     data: AssetCreateApprovalCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -180,6 +182,7 @@ async def create_asset_approval(
 @router.post("/expense", response_model=ApprovalRequestResponse)
 @limiter.limit("20/day")
 async def create_expense_approval(
+    request: Request,
     data: ExpenseApprovalCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -569,6 +572,7 @@ async def create_investment_delete_approval(
 @router.post("/{request_id}/approve", response_model=ApprovalRequestResponse)
 @limiter.limit("100/hour")
 async def approve_request(
+    request: Request,
     request_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)

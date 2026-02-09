@@ -4,16 +4,16 @@
 from datetime import datetime
 from typing import List, Optional
 import json
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.constants import ContentLimits
+from app.core.limiter import limiter
 from app.schemas.common import TimeRange, get_time_range_filter
 from app.api.auth import get_current_user
-from app.main import limiter
 from app.models.models import (
     User, FamilyMember, Announcement, AnnouncementLike, AnnouncementComment
 )
@@ -150,6 +150,7 @@ async def build_announcement_response(
 @router.post("", response_model=dict)
 @limiter.limit("50/day")
 async def create_announcement(
+    request: Request,
     data: AnnouncementCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -329,6 +330,7 @@ async def delete_announcement(
 @router.post("/{announcement_id}/like", response_model=dict)
 @limiter.limit("100/hour")
 async def toggle_like(
+    request: Request,
     announcement_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
