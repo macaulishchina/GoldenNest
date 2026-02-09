@@ -920,6 +920,7 @@ def create_minesweeper_session(difficulty: str) -> dict:
         "board": [[0] * cols for _ in range(rows)],
         "revealed": [[False] * cols for _ in range(rows)],
         "flagged": [[False] * cols for _ in range(rows)],
+        "questioned": [[False] * cols for _ in range(rows)],  # 添加问号标记支持
         "first_click": True,
         "completed": False,
         "won": False,
@@ -976,6 +977,9 @@ def _flood_fill(session: dict, row: int, col: int):
             continue
         session["revealed"][r][c] = True
         session["cells_revealed"] += 1
+        # 清除问号标记（翻开时）
+        if session.get("questioned") and session["questioned"][r][c]:
+            session["questioned"][r][c] = False
         # 如果是0，展开周围
         if session["board"][r][c] == 0:
             for dr in range(-1, 2):
@@ -983,8 +987,10 @@ def _flood_fill(session: dict, row: int, col: int):
                     if dr == 0 and dc == 0:
                         continue
                     nr, nc = r + dr, c + dc
-                    if 0 <= nr < rows and 0 <= nc < cols and not session["revealed"][nr][nc] and not session["flagged"][nr][nc]:
-                        stack.append((nr, nc))
+                    if 0 <= nr < rows and 0 <= nc < cols and not session["revealed"][nr][nc]:
+                        # 不展开标旗的格子，但可以展开问号格子
+                        if not session["flagged"][nr][nc]:
+                            stack.append((nr, nc))
 
 
 # ==================== 游戏逻辑处理 ====================
@@ -1327,7 +1333,23 @@ def process_minesweeper_action(session: dict, action: dict) -> dict:
     if act == "flag":
         if session["revealed"][row][col]:
             raise HTTPException(status_code=400, detail="不能标记已翻开的格子")
-        session["flagged"][row][col] = not session["flagged"][row][col]
+        # 循环状态: 隐藏 → 旗帜 → 问号 → 隐藏
+        is_flagged = session["flagged"][row][col]
+        is_questioned = session.get("questioned", [[False] * session["cols"] for _ in range(session["rows"])])[row][col]
+        
+        if not is_flagged and not is_questioned:
+            # 隐藏 → 旗帜
+            session["flagged"][row][col] = True
+            session["questioned"][row][col] = False
+        elif is_flagged and not is_questioned:
+            # 旗帜 → 问号
+            session["flagged"][row][col] = False
+            session["questioned"][row][col] = True
+        else:
+            # 问号 → 隐藏
+            session["flagged"][row][col] = False
+            session["questioned"][row][col] = False
+        
         return {"completed": False, "exp_earned": 0}
 
     elif act == "reveal":
@@ -1369,7 +1391,7 @@ def process_minesweeper_action(session: dict, action: dict) -> dict:
         if num <= 0:
             raise HTTPException(status_code=400, detail="该格不是数字格")
 
-        # 计算周围旗数
+        # 计算周围旗数和未翻开格子
         flag_count = 0
         unrevealed = []
         for dr in range(-1, 2):
@@ -1381,10 +1403,31 @@ def process_minesweeper_action(session: dict, action: dict) -> dict:
                     if session["flagged"][nr][nc]:
                         flag_count += 1
                     elif not session["revealed"][nr][nc]:
+                        # 问号格子也算作未翻开
                         unrevealed.append((nr, nc))
 
-        if flag_count != num:
-            raise HTTPException(status_code=400, detail=f"周围旗数({flag_count})不等于数字({num})")
+        # 专业扫雷模式：两种和弦触发条件
+        # 1. 旗数等于数字 - 经典模式
+        # 2. 旗数 + 未翻开数 = 数字 - 智能模式(当剩余格子都是雷时)
+        can_chord = False
+        
+        if flag_count == num:
+            # 经典和弦：旗数正确，翻开其他格子
+            can_chord = True
+        elif flag_count + len(unrevealed) == num:
+            # 智能和弦：剩余格子都是雷，自动标旗并翻开
+            # 先标记所有未标记的格子为旗
+            for nr, nc in unrevealed:
+                if not session["flagged"][nr][nc]:
+                    session["flagged"][nr][nc] = True
+            unrevealed = []  # 清空待翻开列表
+            can_chord = True
+        
+        if not can_chord:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"无法和弦：周围有{flag_count}面旗，{len(unrevealed)}个未翻开格子，但数字是{num}"
+            )
 
         # 翻开所有未翻开未标旗的邻居
         hit_mine = False

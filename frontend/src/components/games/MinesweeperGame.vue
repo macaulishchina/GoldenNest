@@ -32,6 +32,8 @@
               class="cell"
               :class="cellClass(Math.floor(idx / state.cols), idx % state.cols)"
               @click="cellClick(Math.floor(idx / state.cols), idx % state.cols)"
+              @mousedown="cellMouseDown(Math.floor(idx / state.cols), idx % state.cols, $event)"
+              @mouseup="cellMouseUp"
               @contextmenu.prevent="cellRightClick(Math.floor(idx / state.cols), idx % state.cols)"
             >
               <span v-if="cellContent(Math.floor(idx / state.cols), idx % state.cols)" :class="'n' + state.board[Math.floor(idx / state.cols)][idx % state.cols]">
@@ -42,15 +44,20 @@
         </div>
       </div>
 
-      <!-- 操作栏 - 固定底部 -->
-      <div v-if="!state.completed" class="action-bar">
-        <button
-          class="mode-btn"
-          :class="{ active: flagMode }"
-          @click="flagMode = !flagMode"
-        >
-          {{ flagMode ? '🚩 标旗模式' : '👆 翻开模式' }}
-        </button>
+      <!-- 操作提示 - 固定底部 -->
+      <div v-if="!state.completed" class="hints-bar">
+        <div class="hint-item">
+          <span class="hint-icon">👆</span>
+          <span class="hint-text">左键翻开</span>
+        </div>
+        <div class="hint-item">
+          <span class="hint-icon">🚩</span>
+          <span class="hint-text">右键标记</span>
+        </div>
+        <div class="hint-item">
+          <span class="hint-icon">⚡</span>
+          <span class="hint-text">双键和弦</span>
+        </div>
       </div>
 
       <!-- 结果 - 固定底部 -->
@@ -72,11 +79,13 @@ const emit = defineEmits<{
   (e: 'action', action: any): void
 }>()
 
-const flagMode = ref(false)
 const startTime = ref(Date.now())
 const elapsedTime = ref(0)
 const showAbandonConfirm = ref(false)
 const boardScrollRef = ref<HTMLElement | null>(null)
+const mouseDownCell = ref<{ r: number; c: number } | null>(null)
+const isLeftMouseDown = ref(false)
+const isRightMouseDown = ref(false)
 let timer: ReturnType<typeof setInterval> | null = null
 
 const difficulties = [
@@ -123,6 +132,9 @@ onMounted(() => {
     elapsedTime.value = Math.floor((Date.now() - startTime.value) / 1000)
   }, 1000)
   
+  // 全局监听鼠标松开事件，确保和弦检测正确
+  window.addEventListener('mouseup', cellMouseUp)
+  
   // 处理触摸滚动，阻止事件冒泡到父容器
   const el = boardScrollRef.value
   if (el) {
@@ -138,12 +150,14 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
+  window.removeEventListener('mouseup', cellMouseUp)
 })
 
 function cellClass(r: number, c: number) {
   if (!props.state) return ''
   const revealed = props.state.revealed[r][c]
   const flagged = props.state.flagged[r][c]
+  const questioned = props.state.questioned?.[r]?.[c] || false
   const val = props.state.board[r][c]
   const classes: string[] = []
   if (revealed) {
@@ -152,7 +166,16 @@ function cellClass(r: number, c: number) {
   } else {
     classes.push('hidden')
     if (flagged) classes.push('flagged')
+    else if (questioned) classes.push('questioned')
   }
+  
+  // 添加和弦高亮效果
+  if (revealed && val > 0 && (isLeftMouseDown.value || isRightMouseDown.value)) {
+    if (mouseDownCell.value && mouseDownCell.value.r === r && mouseDownCell.value.c === c) {
+      classes.push('chord-hover')
+    }
+  }
+  
   return classes.join(' ')
 }
 
@@ -160,8 +183,10 @@ function cellContent(r: number, c: number): string {
   if (!props.state) return ''
   const revealed = props.state.revealed[r][c]
   const flagged = props.state.flagged[r][c]
+  const questioned = props.state.questioned?.[r]?.[c] || false
   const val = props.state.board[r][c]
   if (!revealed && flagged) return '🚩'
+  if (!revealed && questioned) return '❓'
   if (!revealed) return ''
   if (val === -1) return '💣'
   if (val === 0) return ''
@@ -172,14 +197,9 @@ function cellClick(r: number, c: number) {
   if (!props.state || props.state.completed) return
   const revealed = props.state.revealed[r][c]
   const flagged = props.state.flagged[r][c]
+  const questioned = props.state.questioned?.[r]?.[c] || false
 
-  if (flagMode.value) {
-    if (!revealed) {
-      emit('action', { action: 'flag', row: r, col: c })
-    }
-    return
-  }
-
+  // 对已翻开的数字格子进行和弦操作
   if (revealed) {
     const val = props.state.board[r][c]
     if (val > 0) {
@@ -188,15 +208,52 @@ function cellClick(r: number, c: number) {
     return
   }
 
-  if (flagged) return
+  // 对未翻开的格子：如果有标记（旗帜或问号），不做任何操作
+  // 专业扫雷中，左键点击标记的格子不会翻开
+  if (flagged || questioned) return
+  
   emit('action', { action: 'reveal', row: r, col: c })
 }
 
 function cellRightClick(r: number, c: number) {
   if (!props.state || props.state.completed) return
   if (!props.state.revealed[r][c]) {
+    // 右键循环标记：隐藏 → 旗帜 → 问号 → 隐藏
     emit('action', { action: 'flag', row: r, col: c })
   }
+}
+
+function cellMouseDown(r: number, c: number, e: MouseEvent) {
+  if (!props.state || props.state.completed) return
+  
+  if (e.button === 0) {
+    isLeftMouseDown.value = true
+  } else if (e.button === 2) {
+    isRightMouseDown.value = true
+  }
+  
+  mouseDownCell.value = { r, c }
+  
+  // 检测双键和弦（左右键同时按下）
+  if (isLeftMouseDown.value && isRightMouseDown.value) {
+    const revealed = props.state.revealed[r][c]
+    if (revealed) {
+      const val = props.state.board[r][c]
+      if (val > 0) {
+        // 双键和弦
+        emit('action', { action: 'chord', row: r, col: c })
+      }
+    }
+  }
+}
+
+function cellMouseUp(e: MouseEvent) {
+  if (e.button === 0) {
+    isLeftMouseDown.value = false
+  } else if (e.button === 2) {
+    isRightMouseDown.value = false
+  }
+  mouseDownCell.value = null
 }
 
 function doAbandon() {
@@ -312,11 +369,19 @@ function doAbandon() {
 .cell.flagged {
   background: linear-gradient(135deg, #90a4ae, #78909c);
 }
+.cell.questioned {
+  background: linear-gradient(135deg, #ffb74d, #ffa726);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(0,0,0,0.15);
+}
 .cell.revealed {
   background: #e8e8e8;
 }
 .cell.mine {
   background: #ef5350;
+}
+.cell.chord-hover {
+  background: #c5e1a5 !important;
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
 }
 
 /* 数字颜色 */
@@ -329,28 +394,29 @@ function doAbandon() {
 .n7 { color: #212121; }
 .n8 { color: #9e9e9e; }
 
-/* 操作栏 - 固定底部 */
-.action-bar {
+/* 操作提示栏 - 固定底部 */
+.hints-bar {
   flex-shrink: 0;
   display: flex;
-  justify-content: center;
-  padding: 8px 0;
+  justify-content: space-around;
+  align-items: center;
+  padding: 8px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  margin-bottom: 8px;
 }
-.mode-btn {
-  padding: 8px 20px;
-  border: 2px solid #90a4ae;
-  border-radius: 20px;
-  background: white;
-  font-size: 14px;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: #546e7a;
+.hint-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #666;
 }
-.mode-btn.active {
-  background: #fff3e0;
-  border-color: #ff9800;
-  color: #e65100;
+.hint-icon {
+  font-size: 16px;
+}
+.hint-text {
+  font-weight: 500;
 }
 
 /* 结果 - 固定底部 */
