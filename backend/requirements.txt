@@ -12,6 +12,9 @@ python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 bcrypt>=4.2.0
 
+# Encryption
+cryptography>=42.0.0  # 用于敏感数据加密
+
 # Validation
 pydantic>=2.10.0
 pydantic-settings>=2.6.0

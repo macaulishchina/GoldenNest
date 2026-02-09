@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7天
     ALGORITHM: str = "HS256"
     
+    # 加密配置（用于敏感数据加密，如Webhook URL）
+    ENCRYPTION_KEY: str = ""  # 必须在.env中配置，使用Fernet密钥格式
+    
     # 数据库配置
     DATABASE_URL: str = "sqlite+aiosqlite:///./golden_nest.db"
     

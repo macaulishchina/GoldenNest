@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.encryption import encrypt_sensitive_data, decrypt_sensitive_data
 from app.models.models import Family, FamilyMember, User
 from app.schemas.family import (
     FamilyCreate, FamilyUpdate, FamilyResponse, FamilyMemberResponse, JoinFamilyRequest,
@@ -309,9 +310,18 @@ async def get_notification_config(
     )
     family = result.scalar_one()
     
+    # 解密 webhook URL（如果存在）
+    decrypted_webhook = None
+    if family.wechat_webhook_url:
+        try:
+            decrypted_webhook = decrypt_sensitive_data(family.wechat_webhook_url)
+        except Exception:
+            # 如果解密失败，可能是旧数据（未加密），直接使用原值
+            decrypted_webhook = family.wechat_webhook_url
+    
     return NotificationConfigResponse(
         notification_enabled=family.notification_enabled,
-        wechat_webhook_url=mask_webhook_url(family.wechat_webhook_url) if family.wechat_webhook_url else None,
+        wechat_webhook_url=mask_webhook_url(decrypted_webhook) if decrypted_webhook else None,
         has_wechat_webhook=bool(family.wechat_webhook_url),
         external_base_url=family.external_base_url
     )
@@ -353,7 +363,10 @@ async def update_notification_config(
                     status_code=400, 
                     detail="无效的企业微信 Webhook URL，必须以 https://qyapi.weixin.qq.com/ 开头"
                 )
-        family.wechat_webhook_url = config_data.wechat_webhook_url or None
+            # 加密后存储
+            family.wechat_webhook_url = encrypt_sensitive_data(config_data.wechat_webhook_url)
+        else:
+            family.wechat_webhook_url = None
     
     if config_data.external_base_url is not None:
         # 验证外网地址格式（必须以 http:// 或 https:// 开头）
@@ -370,9 +383,18 @@ async def update_notification_config(
     
     await db.commit()
     
+    # 解密 webhook URL 用于返回（如果存在）
+    decrypted_webhook = None
+    if family.wechat_webhook_url:
+        try:
+            decrypted_webhook = decrypt_sensitive_data(family.wechat_webhook_url)
+        except Exception:
+            # 如果解密失败，可能是旧数据（未加密），直接使用原值
+            decrypted_webhook = family.wechat_webhook_url
+    
     return NotificationConfigResponse(
         notification_enabled=family.notification_enabled,
-        wechat_webhook_url=mask_webhook_url(family.wechat_webhook_url) if family.wechat_webhook_url else None,
+        wechat_webhook_url=mask_webhook_url(decrypted_webhook) if decrypted_webhook else None,
         has_wechat_webhook=bool(family.wechat_webhook_url),
         external_base_url=family.external_base_url
     )
@@ -409,6 +431,14 @@ async def test_notification(
     
     if not webhook_url:
         raise HTTPException(status_code=400, detail="未配置企业微信 Webhook URL")
+    
+    # 如果使用的是数据库中的 webhook（已加密），需要解密
+    if not test_data.webhook_url and family.wechat_webhook_url:
+        try:
+            webhook_url = decrypt_sensitive_data(family.wechat_webhook_url)
+        except Exception:
+            # 如果解密失败，可能是旧数据（未加密），直接使用原值
+            webhook_url = family.wechat_webhook_url
     
     if not webhook_url.startswith("https://qyapi.weixin.qq.com/"):
         raise HTTPException(status_code=400, detail="无效的企业微信 Webhook URL")

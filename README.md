@@ -307,10 +307,24 @@ golden-nest/
 
 ## 🔒 安全说明
 
-- 使用 JWT 进行身份认证
-- 密码使用 bcrypt 加密存储
-- 生产环境请务必修改 SECRET_KEY
-- 建议使用 HTTPS
+- ✅ 使用 JWT 进行身份认证
+- ✅ 密码使用 bcrypt 加密存储
+- ✅ **敏感数据加密存储**（Webhook URL 等使用 Fernet 加密）
+- ✅ **API 速率限制**（防止暴力破解和滥用）
+- ✅ 全局异常处理（避免敏感信息泄露）
+- ⚠️ 生产环境请务必修改 SECRET_KEY 和 ENCRYPTION_KEY
+- ⚠️ 建议使用 HTTPS
+
+详细安全配置请参考：
+- [Webhook 加密配置指南](WEBHOOK_ENCRYPTION_GUIDE.md)
+- [.env.example](.env.example)
+
+## 📚 文档
+
+- 📖 [快速开始指南](QUICKSTART.md)
+- 🔧 [启动脚本使用指南](RUN_SCRIPTS_GUIDE.md)
+- 🗄️ [数据库迁移指南](DATABASE_MIGRATION_GUIDE.md)
+- 🔐 [Webhook 加密迁移指南](WEBHOOK_ENCRYPTION_GUIDE.md)
 
 ## 📄 开源协议
 
