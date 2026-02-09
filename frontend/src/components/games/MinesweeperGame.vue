@@ -330,11 +330,14 @@ function cellMouseDown(e: MouseEvent, r: number, c: number) {
 function cellMouseUp(e: MouseEvent, r: number, c: number) {
   if (!props.state || props.state.completed) return
   
+  // Check if mouse up is on the same cell as mouse down
+  const isSameCell = mouseDownCell.value && mouseDownCell.value.r === r && mouseDownCell.value.c === c
+  const wasChordHighlighted = chordHighlight.value.size > 0
+  
   // Clear chord highlight
   chordHighlight.value.clear()
   
-  // Check if mouse up is on the same cell as mouse down
-  if (!mouseDownCell.value || mouseDownCell.value.r !== r || mouseDownCell.value.c !== c) {
+  if (!isSameCell) {
     mouseDownCell.value = null
     return
   }
@@ -345,8 +348,8 @@ function cellMouseUp(e: MouseEvent, r: number, c: number) {
   const flagged = props.state.flagged[r][c]
   const val = props.state.board[r][c]
   
-  // Middle click or both buttons (chord)
-  if (e.button === 1 || (e.buttons === 0 && revealed && val > 0)) {
+  // Middle click (chord)
+  if (e.button === 1) {
     e.preventDefault()
     if (revealed && val > 0) {
       emit('action', { action: 'chord', row: r, col: c })
@@ -363,8 +366,8 @@ function cellMouseUp(e: MouseEvent, r: number, c: number) {
       }
     } else {
       // Reveal mode
-      if (revealed && val > 0) {
-        // Click on revealed number - chord
+      if (revealed && val > 0 && wasChordHighlighted) {
+        // Click on revealed number with chord highlight - chord
         emit('action', { action: 'chord', row: r, col: c })
       } else if (!revealed && !flagged) {
         // Reveal unrevealed cell
@@ -396,11 +399,6 @@ function highlightChordCells(r: number, c: number) {
   }
   
   chordHighlight.value = newHighlight
-}
-
-function cellClick(r: number, c: number) {
-  // Deprecated - replaced by mouse/touch handlers
-  // Kept for backward compatibility but should not be called
 }
 
 function cellRightClick(r: number, c: number) {
@@ -533,7 +531,7 @@ function doAbandon() {
   background: #ef5350;
 }
 .cell.chord-highlight {
-  background: linear-gradient(135deg, #b0c4ce, #98aeb8) !important;
+  background: linear-gradient(135deg, #b0c4ce, #98aeb8);
   box-shadow: inset 0 0 0 2px rgba(33, 150, 243, 0.5);
   animation: pulse-highlight 0.3s ease-in-out;
 }
