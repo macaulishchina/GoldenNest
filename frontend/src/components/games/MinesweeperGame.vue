@@ -35,6 +35,9 @@
               @mousedown="cellMouseDown(Math.floor(idx / state.cols), idx % state.cols, $event)"
               @mouseup="cellMouseUp"
               @contextmenu.prevent="cellRightClick(Math.floor(idx / state.cols), idx % state.cols)"
+              @touchstart="cellTouchStart(Math.floor(idx / state.cols), idx % state.cols)"
+              @touchend="cellTouchEnd(Math.floor(idx / state.cols), idx % state.cols, $event)"
+              @touchmove="cellTouchMove"
             >
               <span v-if="cellContent(Math.floor(idx / state.cols), idx % state.cols)" :class="'n' + state.board[Math.floor(idx / state.cols)][idx % state.cols]">
                 {{ cellContent(Math.floor(idx / state.cols), idx % state.cols) }}
@@ -48,15 +51,15 @@
       <div v-if="!state.completed" class="hints-bar">
         <div class="hint-item">
           <span class="hint-icon">👆</span>
-          <span class="hint-text">左键翻开</span>
+          <span class="hint-text">点击翻开</span>
         </div>
         <div class="hint-item">
           <span class="hint-icon">🚩</span>
-          <span class="hint-text">右键标记</span>
+          <span class="hint-text">长按标记</span>
         </div>
         <div class="hint-item">
           <span class="hint-icon">⚡</span>
-          <span class="hint-text">双键和弦</span>
+          <span class="hint-text">数字和弦</span>
         </div>
       </div>
 
@@ -86,6 +89,13 @@ const boardScrollRef = ref<HTMLElement | null>(null)
 const mouseDownCell = ref<{ r: number; c: number } | null>(null)
 const isLeftMouseDown = ref(false)
 const isRightMouseDown = ref(false)
+
+// 触摸支持
+const touchStartTime = ref(0)
+const touchMoved = ref(false)
+const longPressTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const LONG_PRESS_DURATION = 500 // 长按500ms触发标记
+
 let timer: ReturnType<typeof setInterval> | null = null
 
 const difficulties = [
@@ -150,6 +160,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
+  if (longPressTimer.value) clearTimeout(longPressTimer.value)
   window.removeEventListener('mouseup', cellMouseUp)
 })
 
@@ -254,6 +265,55 @@ function cellMouseUp(e: MouseEvent) {
     isRightMouseDown.value = false
   }
   mouseDownCell.value = null
+}
+
+// 触摸事件处理
+function cellTouchStart(r: number, c: number) {
+  if (!props.state || props.state.completed) return
+  
+  touchStartTime.value = Date.now()
+  touchMoved.value = false
+  
+  // 设置长按定时器
+  longPressTimer.value = setTimeout(() => {
+    if (!touchMoved.value) {
+      // 长按触发标记操作
+      if (!props.state.revealed[r][c]) {
+        emit('action', { action: 'flag', row: r, col: c })
+        // 触觉反馈（如果支持）
+        if (navigator.vibrate) {
+          navigator.vibrate(50)
+        }
+      }
+    }
+  }, LONG_PRESS_DURATION)
+}
+
+function cellTouchMove() {
+  touchMoved.value = true
+  // 取消长按定时器
+  if (longPressTimer.value) {
+    clearTimeout(longPressTimer.value)
+    longPressTimer.value = null
+  }
+}
+
+function cellTouchEnd(r: number, c: number, e: TouchEvent) {
+  if (!props.state || props.state.completed) return
+  
+  // 清除长按定时器
+  if (longPressTimer.value) {
+    clearTimeout(longPressTimer.value)
+    longPressTimer.value = null
+  }
+  
+  // 如果是快速点击（非长按且未移动），执行点击操作
+  const touchDuration = Date.now() - touchStartTime.value
+  if (!touchMoved.value && touchDuration < LONG_PRESS_DURATION) {
+    // 阻止默认的click事件，避免重复触发
+    e.preventDefault()
+    cellClick(r, c)
+  }
 }
 
 function doAbandon() {
