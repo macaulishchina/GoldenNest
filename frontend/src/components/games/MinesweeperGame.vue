@@ -31,7 +31,11 @@
               :key="idx"
               class="cell"
               :class="cellClass(Math.floor(idx / state.cols), idx % state.cols)"
-              @click="cellClick(Math.floor(idx / state.cols), idx % state.cols)"
+              @mousedown="cellMouseDown($event, Math.floor(idx / state.cols), idx % state.cols)"
+              @mouseup="cellMouseUp($event, Math.floor(idx / state.cols), idx % state.cols)"
+              @touchstart="cellTouchStart($event, Math.floor(idx / state.cols), idx % state.cols)"
+              @touchend="cellTouchEnd($event, Math.floor(idx / state.cols), idx % state.cols)"
+              @touchmove="cellTouchMove($event)"
               @contextmenu.prevent="cellRightClick(Math.floor(idx / state.cols), idx % state.cols)"
             >
               <span v-if="cellContent(Math.floor(idx / state.cols), idx % state.cols)" :class="'n' + state.board[Math.floor(idx / state.cols)][idx % state.cols]">
@@ -78,6 +82,17 @@ const elapsedTime = ref(0)
 const showAbandonConfirm = ref(false)
 const boardScrollRef = ref<HTMLElement | null>(null)
 let timer: ReturnType<typeof setInterval> | null = null
+
+// Touch and mouse handling states
+const touchStartTime = ref(0)
+const touchStartPos = ref<{ x: number; y: number } | null>(null)
+const longPressTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const longPressTriggered = ref(false)
+const mouseDownCell = ref<{ r: number; c: number } | null>(null)
+const chordHighlight = ref<Set<string>>(new Set())
+
+const LONG_PRESS_DELAY = 500 // ms for long press to trigger flag
+const TOUCH_MOVE_THRESHOLD = 10 // pixels movement threshold
 
 const difficulties = [
   { key: 'easy', label: '入门', rows: 6, cols: 6, mines: 5, exp: 20 },
@@ -153,6 +168,11 @@ function cellClass(r: number, c: number) {
     classes.push('hidden')
     if (flagged) classes.push('flagged')
   }
+  // Add chord highlight for surrounding cells
+  const key = `${r},${c}`
+  if (chordHighlight.value.has(key)) {
+    classes.push('chord-highlight')
+  }
   return classes.join(' ')
 }
 
@@ -168,28 +188,219 @@ function cellContent(r: number, c: number): string {
   return String(val)
 }
 
-function cellClick(r: number, c: number) {
+// Clear any pending long press timer
+function clearLongPress() {
+  if (longPressTimer.value) {
+    clearTimeout(longPressTimer.value)
+    longPressTimer.value = null
+  }
+  longPressTriggered.value = false
+}
+
+// Touch event handlers - with proper long press for flagging
+function cellTouchStart(e: TouchEvent, r: number, c: number) {
   if (!props.state || props.state.completed) return
+  
+  e.preventDefault() // Prevent default touch behaviors
+  const touch = e.touches[0]
+  touchStartTime.value = Date.now()
+  touchStartPos.value = { x: touch.clientX, y: touch.clientY }
+  longPressTriggered.value = false
+  
   const revealed = props.state.revealed[r][c]
   const flagged = props.state.flagged[r][c]
-
-  if (flagMode.value) {
-    if (!revealed) {
-      emit('action', { action: 'flag', row: r, col: c })
-    }
-    return
-  }
-
+  
+  // For revealed cells with numbers, show chord highlight immediately
   if (revealed) {
     const val = props.state.board[r][c]
     if (val > 0) {
+      highlightChordCells(r, c)
+    }
+  }
+  
+  // Start long press timer for unrevealed cells (for flagging)
+  if (!revealed && !flagMode.value) {
+    longPressTimer.value = setTimeout(() => {
+      longPressTriggered.value = true
+      // Trigger flag on long press
+      emit('action', { action: 'flag', row: r, col: c })
+      // Vibrate if available (tactile feedback)
+      if (navigator.vibrate) {
+        navigator.vibrate(50)
+      }
+    }, LONG_PRESS_DELAY)
+  }
+}
+
+function cellTouchMove(e: TouchEvent) {
+  // Check if touch moved significantly - cancel long press if so
+  if (!touchStartPos.value) return
+  
+  const touch = e.touches[0]
+  const dx = touch.clientX - touchStartPos.value.x
+  const dy = touch.clientY - touchStartPos.value.y
+  const distance = Math.sqrt(dx * dx + dy * dy)
+  
+  if (distance > TOUCH_MOVE_THRESHOLD) {
+    clearLongPress()
+    chordHighlight.value.clear()
+  }
+}
+
+function cellTouchEnd(e: TouchEvent, r: number, c: number) {
+  if (!props.state || props.state.completed) return
+  
+  e.preventDefault()
+  
+  const touchDuration = Date.now() - touchStartTime.value
+  
+  // Clear chord highlight
+  chordHighlight.value.clear()
+  
+  // If long press was triggered, don't do anything else
+  if (longPressTriggered.value) {
+    clearLongPress()
+    return
+  }
+  
+  // Clear long press timer
+  clearLongPress()
+  
+  // Check if touch moved significantly
+  if (touchStartPos.value && e.changedTouches.length > 0) {
+    const touch = e.changedTouches[0]
+    const dx = touch.clientX - touchStartPos.value.x
+    const dy = touch.clientY - touchStartPos.value.y
+    const distance = Math.sqrt(dx * dx + dy * dy)
+    
+    if (distance > TOUCH_MOVE_THRESHOLD) {
+      // Touch moved too much, ignore
+      return
+    }
+  }
+  
+  // Short tap - perform action based on cell state
+  const revealed = props.state.revealed[r][c]
+  const flagged = props.state.flagged[r][c]
+  
+  if (flagMode.value) {
+    // In flag mode, tap to flag/unflag
+    if (!revealed) {
+      emit('action', { action: 'flag', row: r, col: c })
+    }
+  } else {
+    // In reveal mode
+    if (revealed) {
+      // Tap on revealed number - try chord
+      const val = props.state.board[r][c]
+      if (val > 0) {
+        emit('action', { action: 'chord', row: r, col: c })
+      }
+    } else if (!flagged) {
+      // Tap on unrevealed unflagged - reveal
+      emit('action', { action: 'reveal', row: r, col: c })
+    }
+  }
+  
+  touchStartPos.value = null
+}
+
+// Mouse event handlers - with proper chord support
+function cellMouseDown(e: MouseEvent, r: number, c: number) {
+  if (!props.state || props.state.completed) return
+  
+  mouseDownCell.value = { r, c }
+  
+  const revealed = props.state.revealed[r][c]
+  const val = props.state.board[r][c]
+  
+  // Both buttons pressed (chord) or middle click
+  if ((e.buttons === 3) || e.button === 1) {
+    e.preventDefault()
+    if (revealed && val > 0) {
+      highlightChordCells(r, c)
+    }
+  }
+  // Left button on revealed number
+  else if (e.button === 0 && revealed && val > 0) {
+    highlightChordCells(r, c)
+  }
+}
+
+function cellMouseUp(e: MouseEvent, r: number, c: number) {
+  if (!props.state || props.state.completed) return
+  
+  // Clear chord highlight
+  chordHighlight.value.clear()
+  
+  // Check if mouse up is on the same cell as mouse down
+  if (!mouseDownCell.value || mouseDownCell.value.r !== r || mouseDownCell.value.c !== c) {
+    mouseDownCell.value = null
+    return
+  }
+  
+  mouseDownCell.value = null
+  
+  const revealed = props.state.revealed[r][c]
+  const flagged = props.state.flagged[r][c]
+  const val = props.state.board[r][c]
+  
+  // Middle click or both buttons (chord)
+  if (e.button === 1 || (e.buttons === 0 && revealed && val > 0)) {
+    e.preventDefault()
+    if (revealed && val > 0) {
       emit('action', { action: 'chord', row: r, col: c })
     }
     return
   }
+  
+  // Left click
+  if (e.button === 0) {
+    if (flagMode.value) {
+      // Flag mode
+      if (!revealed) {
+        emit('action', { action: 'flag', row: r, col: c })
+      }
+    } else {
+      // Reveal mode
+      if (revealed && val > 0) {
+        // Click on revealed number - chord
+        emit('action', { action: 'chord', row: r, col: c })
+      } else if (!revealed && !flagged) {
+        // Reveal unrevealed cell
+        emit('action', { action: 'reveal', row: r, col: c })
+      }
+    }
+  }
+}
 
-  if (flagged) return
-  emit('action', { action: 'reveal', row: r, col: c })
+// Highlight cells that will be affected by chord
+function highlightChordCells(r: number, c: number) {
+  if (!props.state) return
+  
+  const rows = props.state.rows
+  const cols = props.state.cols
+  const newHighlight = new Set<string>()
+  
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue
+      const nr = r + dr
+      const nc = c + dc
+      if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+        if (!props.state.revealed[nr][nc] && !props.state.flagged[nr][nc]) {
+          newHighlight.add(`${nr},${nc}`)
+        }
+      }
+    }
+  }
+  
+  chordHighlight.value = newHighlight
+}
+
+function cellClick(r: number, c: number) {
+  // Deprecated - replaced by mouse/touch handlers
+  // Kept for backward compatibility but should not be called
 }
 
 function cellRightClick(r: number, c: number) {
@@ -299,8 +510,11 @@ function doAbandon() {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
   transition: background 0.1s;
   min-width: 0;
+  touch-action: none; /* Prevent default touch behaviors */
 }
 .cell.hidden {
   background: linear-gradient(135deg, #90a4ae, #78909c);
@@ -317,6 +531,16 @@ function doAbandon() {
 }
 .cell.mine {
   background: #ef5350;
+}
+.cell.chord-highlight {
+  background: linear-gradient(135deg, #b0c4ce, #98aeb8) !important;
+  box-shadow: inset 0 0 0 2px rgba(33, 150, 243, 0.5);
+  animation: pulse-highlight 0.3s ease-in-out;
+}
+
+@keyframes pulse-highlight {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.95); }
 }
 
 /* 数字颜色 */
