@@ -31,7 +31,7 @@ def calculate_weighted_amount(amount: float, deposit_date: datetime, rate: float
     
     # 计算存入时长（年）
     delta = calculate_date - deposit_date
-    years = delta.days / 365.0
+    years = delta.days / TimeConstants.DAYS_PER_YEAR
     
     # 如果是未来存入的（还没到存入日期），则不加权
     if years < 0:

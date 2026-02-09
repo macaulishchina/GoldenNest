@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
+from app.core.constants import NotificationConstants
 from app.models.models import (
     CalendarEvent, CalendarEventParticipant,
     CalendarEventCategory, CalendarRepeatType,
@@ -42,7 +43,7 @@ class CalendarService:
             return None
         
         # 计算提醒时间（提前7天）
-        remind_date = investment.end_date - timedelta(days=7)
+        remind_date = investment.end_date - timedelta(days=NotificationConstants.REMINDER_DAYS_BEFORE_DUE)
         if remind_date <= datetime.utcnow():
             # 如果已经过了提醒时间，则在当天提醒
             remind_date = datetime.utcnow()
@@ -92,7 +93,7 @@ class CalendarService:
             return None
         
         # 创建新提醒
-        remind_date = investment.end_date - timedelta(days=7)
+        remind_date = investment.end_date - timedelta(days=NotificationConstants.REMINDER_DAYS_BEFORE_DUE)
         if remind_date <= datetime.utcnow():
             remind_date = investment.end_date
         

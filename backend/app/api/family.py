@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.encryption import encrypt_sensitive_data, decrypt_sensitive_data
+from app.core.constants import ContentLimits
 from app.models.models import Family, FamilyMember, User
 from app.main import limiter
 from app.schemas.family import (
@@ -288,8 +289,10 @@ def mask_webhook_url(url: str) -> str:
     if not url:
         return ""
     # 保留前缀和最后8个字符
-    if len(url) > 50:
-        return url[:40] + "****" + url[-8:]
+    if len(url) > ContentLimits.WEBHOOK_URL_MASK_LENGTH:
+        return (url[:ContentLimits.WEBHOOK_URL_PREFIX_LENGTH] + 
+                "****" + 
+                url[-ContentLimits.WEBHOOK_URL_SUFFIX_LENGTH:])
     return url[:20] + "****"
 
 

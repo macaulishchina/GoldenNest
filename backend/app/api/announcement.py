@@ -10,6 +10,7 @@ from sqlalchemy import select, func, desc
 from pydantic import BaseModel
 
 from app.core.database import get_db
+from app.core.constants import ContentLimits
 from app.schemas.common import TimeRange, get_time_range_filter
 from app.api.auth import get_current_user
 from app.main import limiter
@@ -159,8 +160,8 @@ async def create_announcement(
     if not data.content or len(data.content.strip()) == 0:
         raise HTTPException(status_code=400, detail="公告内容不能为空")
     
-    if len(data.content) > 2000:
-        raise HTTPException(status_code=400, detail="公告内容不能超过2000字")
+    if len(data.content) > ContentLimits.ANNOUNCEMENT_MAX_LENGTH:
+        raise HTTPException(status_code=400, detail=f"公告内容不能超过{ContentLimits.ANNOUNCEMENT_MAX_LENGTH}字")
     
     images_json = json.dumps(data.images, ensure_ascii=False) if data.images else None
     
@@ -446,8 +447,8 @@ async def add_comment(
     if not data.content or len(data.content.strip()) == 0:
         raise HTTPException(status_code=400, detail="评论内容不能为空")
     
-    if len(data.content) > 500:
-        raise HTTPException(status_code=400, detail="评论内容不能超过500字")
+    if len(data.content) > ContentLimits.COMMENT_MAX_LENGTH:
+        raise HTTPException(status_code=400, detail=f"评论内容不能超过{ContentLimits.COMMENT_MAX_LENGTH}字")
     
     comment = AnnouncementComment(
         announcement_id=announcement_id,
