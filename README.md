@@ -326,6 +326,7 @@ golden-nest/
 - 🗄️ [数据库迁移指南](DATABASE_MIGRATION_GUIDE.md)
 - 🔐 [Webhook 加密迁移指南](WEBHOOK_ENCRYPTION_GUIDE.md)
 - 🚦 [API 速率限制配置](RATE_LIMITING_GUIDE.md)
+- ✅ [代码质量优化报告](CODE_QUALITY_REPORT.md)
 
 ## 📄 开源协议
 
