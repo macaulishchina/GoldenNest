@@ -325,6 +325,7 @@ golden-nest/
 - 🔧 [启动脚本使用指南](RUN_SCRIPTS_GUIDE.md)
 - 🗄️ [数据库迁移指南](DATABASE_MIGRATION_GUIDE.md)
 - 🔐 [Webhook 加密迁移指南](WEBHOOK_ENCRYPTION_GUIDE.md)
+- 🚦 [API 速率限制配置](RATE_LIMITING_GUIDE.md)
 
 ## 📄 开源协议
 

@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.schemas.common import TimeRange, get_time_range_filter
 from app.api.auth import get_current_user
+from app.main import limiter
 from app.models.models import (
     User, FamilyMember, Announcement, AnnouncementLike, AnnouncementComment
 )
@@ -146,6 +147,7 @@ async def build_announcement_response(
 # ==================== API ====================
 
 @router.post("", response_model=dict)
+@limiter.limit("50/day")
 async def create_announcement(
     data: AnnouncementCreate,
     current_user: User = Depends(get_current_user),
@@ -324,6 +326,7 @@ async def delete_announcement(
 
 
 @router.post("/{announcement_id}/like", response_model=dict)
+@limiter.limit("100/hour")
 async def toggle_like(
     announcement_id: int,
     current_user: User = Depends(get_current_user),

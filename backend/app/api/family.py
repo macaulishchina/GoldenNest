@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.encryption import encrypt_sensitive_data, decrypt_sensitive_data
 from app.models.models import Family, FamilyMember, User
+from app.main import limiter
 from app.schemas.family import (
     FamilyCreate, FamilyUpdate, FamilyResponse, FamilyMemberResponse, JoinFamilyRequest,
     NotificationConfigResponse, NotificationConfigUpdate, NotificationTestRequest
@@ -26,6 +27,7 @@ def generate_invite_code() -> str:
 
 
 @router.post("/create", response_model=FamilyResponse)
+@limiter.limit("1/hour")
 async def create_family(
     family_data: FamilyCreate,
     current_user: User = Depends(get_current_user),
@@ -72,6 +74,7 @@ async def create_family(
 
 
 @router.post("/join")
+@limiter.limit("5/hour")
 async def join_family(
     join_data: JoinFamilyRequest,
     current_user: User = Depends(get_current_user),
@@ -401,6 +404,7 @@ async def update_notification_config(
 
 
 @router.post("/notification/test")
+@limiter.limit("10/hour")
 async def test_notification(
     test_data: NotificationTestRequest = NotificationTestRequest(),
     current_user: User = Depends(get_current_user),

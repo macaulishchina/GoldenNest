@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.api.auth import get_current_user
+from app.main import limiter
 from app.models.models import (
     User, FamilyMember, Proposal, Vote, ProposalStatus,
     Dividend, DividendType, DividendStatus
@@ -180,6 +181,7 @@ async def handle_dividend_rejection(db: AsyncSession, proposal: Proposal):
 # ==================== API ====================
 
 @router.post("/proposals", response_model=dict)
+@limiter.limit("20/day")
 async def create_proposal(
     data: ProposalCreate,
     current_user: User = Depends(get_current_user),
@@ -381,6 +383,7 @@ async def get_proposal_detail(
 
 
 @router.post("/proposals/{proposal_id}/vote", response_model=VoteResponse)
+@limiter.limit("50/hour")
 async def cast_vote(
     proposal_id: int,
     data: VoteCreate,
@@ -536,6 +539,7 @@ async def get_dividend_pool(
 
 
 @router.post("/proposals/dividend", response_model=dict)
+@limiter.limit("10/day")
 async def create_dividend_proposal(
     data: DividendProposalCreate,
     current_user: User = Depends(get_current_user),

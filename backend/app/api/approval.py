@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
+from app.main import limiter
 from app.models.models import (
     ApprovalRequest, ApprovalRecord, ApprovalRequestType, ApprovalRequestStatus,
     FamilyMember, User, Investment, Family, ExpenseRequest, ExpenseStatus
@@ -44,6 +45,7 @@ async def get_user_family_id(user_id: int, db: AsyncSession) -> int:
 # ==================== 资金注入申请 ====================
 
 @router.post("/deposit", response_model=ApprovalRequestResponse)
+@limiter.limit("30/hour")
 async def create_deposit_approval(
     data: DepositApprovalCreate,
     current_user: User = Depends(get_current_user),
@@ -81,6 +83,7 @@ async def create_deposit_approval(
 # ==================== 资产登记申请（统一入口） ====================
 
 @router.post("/asset/create", response_model=ApprovalRequestResponse)
+@limiter.limit("50/day")
 async def create_asset_approval(
     data: AssetCreateApprovalCreate,
     current_user: User = Depends(get_current_user),
@@ -175,6 +178,7 @@ async def create_asset_approval(
 # ==================== 支出申请 ====================
 
 @router.post("/expense", response_model=ApprovalRequestResponse)
+@limiter.limit("20/day")
 async def create_expense_approval(
     data: ExpenseApprovalCreate,
     current_user: User = Depends(get_current_user),
@@ -563,6 +567,7 @@ async def create_investment_delete_approval(
 # ==================== 审批操作 ====================
 
 @router.post("/{request_id}/approve", response_model=ApprovalRequestResponse)
+@limiter.limit("100/hour")
 async def approve_request(
     request_id: int,
     current_user: User = Depends(get_current_user),
