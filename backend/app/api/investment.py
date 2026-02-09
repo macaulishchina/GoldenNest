@@ -5,6 +5,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.models.models import (
@@ -75,21 +76,21 @@ async def list_investments(
     if start_time:
         query = query.where(Investment.created_at >= start_time)
     
+    # 使用selectinload预加载关联数据，避免N+1查询
     result = await db.execute(
-        query.order_by(Investment.created_at.desc())
+        query.options(
+            selectinload(Investment.positions),
+            selectinload(Investment.income_records)
+        ).order_by(Investment.created_at.desc())
     )
     investments = result.scalars().all()
     logging.info(f"Found {len(investments)} investments for family_id={family_id}")
     
     response = []
     for inv in investments:
-        # 获取持仓记录
-        result = await db.execute(
-            select(InvestmentPosition)
-            .where(InvestmentPosition.investment_id == inv.id)
-            .order_by(InvestmentPosition.operation_date.desc())
-        )
-        positions = result.scalars().all()
+        # 直接使用预加载的关联数据（不再需要额外查询）
+        positions = inv.positions
+        positions.sort(key=lambda p: p.operation_date, reverse=True)
         
         # 计算当前持仓本金
         current_principal = sum(
@@ -98,13 +99,9 @@ async def list_investments(
             for p in positions
         )
         
-        # 获取收益记录
-        result = await db.execute(
-            select(InvestmentIncome)
-            .where(InvestmentIncome.investment_id == inv.id)
-            .order_by(InvestmentIncome.income_date.desc())
-        )
-        income_records = result.scalars().all()
+        # 直接使用预加载的收益记录（不再需要额外查询）
+        income_records = inv.income_records
+        income_records.sort(key=lambda ir: ir.income_date, reverse=True)
         
         # 计算总收益（支持新旧两种模式）
         total_return = sum(

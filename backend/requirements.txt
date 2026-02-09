@@ -23,3 +23,6 @@ zhdate>=0.1  # 农历日期转换
 
 # HTTP Client
 httpx>=0.27.0  # 异步 HTTP 客户端，用于通知服务
+
+# Rate Limiting
+slowapi>=0.1.9  # API 频率限制

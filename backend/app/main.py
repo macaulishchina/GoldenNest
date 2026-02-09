@@ -4,12 +4,19 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.database import init_db
 from app.api import auth, family, deposit, equity, investment, transaction, achievement, gift, vote, pet, announcement, report, approval, todo, calendar, asset
 from app.services.notification import set_external_base_url, detect_external_url_from_headers
+
+# 创建频率限制器
+limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
 
 
 @asynccontextmanager
@@ -33,6 +40,10 @@ app = FastAPI(
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json"
 )
+
+# 将limiter绑定到app
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # 外网地址检测中间件
 class ExternalUrlMiddleware(BaseHTTPMiddleware):
@@ -103,6 +114,22 @@ async def health_check():
         "project": settings.PROJECT_NAME,
         "version": settings.VERSION
     }
+
+
+# 全局异常处理
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """捕获所有未处理的异常"""
+    import logging
+    import traceback
+    
+    logging.error(f"Unhandled exception: {exc}")
+    logging.error(traceback.format_exc())
+    
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "服务器内部错误，请稍后重试"}
+    )
 
 
 @app.get("/")

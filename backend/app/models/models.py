@@ -179,8 +179,8 @@ class Investment(Base):
     bank_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # 🌟 NEW: 银行/机构名称
     deduct_from_cash: Mapped[bool] = mapped_column(Boolean, default=False)  # 🌟 NEW: 是否从活期扣除
     
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)  # 软删除标记
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)  # 添加索引
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)  # 添加索引
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 删除时间
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -566,7 +566,7 @@ class ApprovalRequest(Base):
     __tablename__ = "approval_requests"
     
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"), index=True)  # 添加索引
     requester_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     target_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)  # 🌟 NEW: 目标用户（用于个人专属审核）
     request_type: Mapped[ApprovalRequestType] = mapped_column(SQLEnum(ApprovalRequestType))
@@ -574,7 +574,7 @@ class ApprovalRequest(Base):
     description: Mapped[str] = mapped_column(Text)  # 申请描述
     amount: Mapped[float] = mapped_column(Float)  # 涉及金额
     request_data: Mapped[str] = mapped_column(Text)  # 申请数据（JSON格式存储具体参数）
-    status: Mapped[ApprovalRequestStatus] = mapped_column(SQLEnum(ApprovalRequestStatus), default=ApprovalRequestStatus.PENDING)
+    status: Mapped[ApprovalRequestStatus] = mapped_column(SQLEnum(ApprovalRequestStatus), default=ApprovalRequestStatus.PENDING, index=True)  # 添加索引
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     executed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 执行时间

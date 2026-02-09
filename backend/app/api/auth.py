@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.core.security import verify_password, get_password_hash, create_access_token, decode_access_token
 from app.models.models import User, FamilyMember
 from app.schemas.auth import UserCreate, UserResponse, Token, UserLogin
+from app.main import limiter
 
 router = APIRouter()
 
@@ -59,8 +60,9 @@ async def get_current_user(
 
 
 @router.post("/register", response_model=UserResponse)
-async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
-    """用户注册"""
+@limiter.limit("3/hour")  # 每小时最多3次注册尝试
+async def register(request: Request, user_data: UserCreate, db: AsyncSession = Depends(get_db)):
+    """用户注册（频率限制: 3次/小时）"""
     # 检查用户名是否已存在
     result = await db.execute(select(User).where(User.username == user_data.username))
     if result.scalar_one_or_none():
@@ -86,8 +88,9 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
-    """用户登录"""
+@limiter.limit("5/minute")  # 每分钟最多5次登录尝试
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+    """用户登录（频率限制: 5次/分钟）"""
     # 查找用户
     result = await db.execute(select(User).where(User.username == form_data.username))
     user = result.scalar_one_or_none()
