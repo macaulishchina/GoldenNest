@@ -208,6 +208,12 @@ cd backend
 # 或
 run.bat            # Windows
 
+# 脚本会自动：
+# 1. 检查并创建虚拟环境
+# 2. 安装/更新依赖
+# 3. 启动开发服务器
+# 4. 🔄 自动同步数据库schema（添加缺失字段）
+
 # 方式二：手动启动
 cd backend
 
@@ -226,6 +232,10 @@ uvicorn app.main:app --reload --port 8000
 - 主页：http://localhost:8000
 - API 文档：http://localhost:8000/api/docs
 - 健康检查：http://localhost:8000/api/health
+
+**📚 更多文档**：
+- [启动脚本使用指南](RUN_SCRIPTS_GUIDE.md) - 详细的脚本功能和端口管理
+- [数据库迁移指南](DATABASE_MIGRATION_GUIDE.md) - 模型修改和数据库同步
 
 #### 前端
 

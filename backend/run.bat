@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 REM Golden Nest Backend Startup Script for Windows
 REM This script must be run from the backend\ directory
 
@@ -46,9 +47,53 @@ if "%DEPS_INSTALLED%"=="false" (
     echo ✅ Dependencies installed
 )
 
+REM Check if port 8000 is already in use
+netstat -ano | findstr ":8000" | findstr "LISTENING" >nul 2>&1
+if not errorlevel 1 (
+    REM Port is in use, check who started it
+    if exist ".backend_owner" (
+        set /p OWNER=<.backend_owner
+        if "!OWNER!"=="AI" (
+            REM AI started it, user can terminate and restart
+            echo ⚠️  Backend server started by AI is running on port 8000
+            echo 🔄 Terminating AI service and starting user service...
+            for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8000" ^| findstr "LISTENING"') do (
+                taskkill /F /PID %%a >nul 2>&1
+            )
+            timeout /t 2 /nobreak >nul
+            del .backend_owner >nul 2>&1
+        ) else (
+            REM User started it, show info and exit
+            echo ℹ️  Backend server is already running on port 8000
+            echo 📍 Access it at: http://127.0.0.1:8000
+            echo 📚 API documentation: http://127.0.0.1:8000/api/docs
+            echo 💡 Server is already started by you
+            pause
+            exit /b 0
+        )
+    ) else (
+        REM Unknown owner, ask user
+        echo ⚠️  Backend server is already running on port 8000
+        echo 📍 Access it at: http://127.0.0.1:8000
+        set /p "CHOICE=Terminate and restart? (Y/N): "
+        if /i "!CHOICE!"=="Y" (
+            for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8000" ^| findstr "LISTENING"') do (
+                taskkill /F /PID %%a >nul 2>&1
+            )
+            timeout /t 2 /nobreak >nul
+        ) else (
+            exit /b 0
+        )
+    )
+)
+
+REM Mark this service as USER started
+echo USER>.backend_owner
+
 REM Start the backend server
 echo 🚀 Starting Golden Nest backend server...
 echo 📍 Server will be available at: http://127.0.0.1:8000
 echo 📚 API documentation: http://127.0.0.1:8000/api/docs
+echo 🔄 Database auto-migration enabled (will add missing columns)
 echo.
 uvicorn app.main:app --reload --port 8000

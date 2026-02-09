@@ -65,3 +65,15 @@ tmp/
 temp/
 *.tmp
 *.bak
+
+# 服务启动标记文件
+.backend_owner
+.frontend_owner
+backend/.backend_owner
+frontend/.frontend_owner
+
+# 临时测试服务PID文件
+.backend_test_pid
+.frontend_test_pid
+backend/.backend_test_pid
+frontend/.frontend_test_pid

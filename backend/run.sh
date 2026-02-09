@@ -51,9 +51,55 @@ if [ "$DEPS_INSTALLED" = false ]; then
     echo "✅ Dependencies installed"
 fi
 
+# Check if port 8000 is already in use
+if lsof -Pi :8000 -sTCP:LISTEN -t >/dev/null 2>&1 || netstat -tuln 2>/dev/null | grep ":8000 " | grep "LISTEN" >/dev/null; then
+    # Port is in use, check who started it
+    if [ -f ".backend_owner" ]; then
+        OWNER=$(cat .backend_owner)
+        if [ "$OWNER" = "AI" ]; then
+            # AI started it, user can terminate and restart
+            echo "⚠️  Backend server started by AI is running on port 8000"
+            echo "🔄 Terminating AI service and starting user service..."
+            if command -v lsof &> /dev/null; then
+                kill -9 $(lsof -ti:8000) 2>/dev/null
+            else
+                fuser -k 8000/tcp 2>/dev/null
+            fi
+            sleep 2
+            rm -f .backend_owner
+        else
+            # User started it, show info and exit
+            echo "ℹ️  Backend server is already running on port 8000"
+            echo "📍 Access it at: http://127.0.0.1:8000"
+            echo "📚 API documentation: http://127.0.0.1:8000/api/docs"
+            echo "💡 Server is already started by you"
+            exit 0
+        fi
+    else
+        # Unknown owner, ask user
+        echo "⚠️  Backend server is already running on port 8000"
+        echo "📍 Access it at: http://127.0.0.1:8000"
+        read -p "Terminate and restart? (y/N): " CHOICE
+        if [ "$CHOICE" = "y" ] || [ "$CHOICE" = "Y" ]; then
+            if command -v lsof &> /dev/null; then
+                kill -9 $(lsof -ti:8000) 2>/dev/null
+            else
+                fuser -k 8000/tcp 2>/dev/null
+            fi
+            sleep 2
+        else
+            exit 0
+        fi
+    fi
+fi
+
+# Mark this service as USER started
+echo "USER" > .backend_owner
+
 # Start the backend server
 echo "🚀 Starting Golden Nest backend server..."
 echo "📍 Server will be available at: http://127.0.0.1:8000"
 echo "📚 API documentation: http://127.0.0.1:8000/api/docs"
+echo "🔄 Database auto-migration enabled (will add missing columns)"
 echo ""
 uvicorn app.main:app --reload --port 8000
