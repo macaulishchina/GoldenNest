@@ -161,10 +161,6 @@
         
         <div class="pool-info" v-if="!loadingPool">
           <div class="pool-item">
-            <span class="pool-label">理财收益池:</span>
-            <span class="pool-value">{{ dividendPool.profit_pool.toFixed(2) }} 元</span>
-          </div>
-          <div class="pool-item">
             <span class="pool-label">家庭自由资金:</span>
             <span class="pool-value">{{ dividendPool.cash_pool.toFixed(2) }} 元</span>
           </div>
@@ -172,33 +168,17 @@
         <div v-else class="loading-pool">加载中...</div>
 
         <div class="form-group">
-          <label>分红类型</label>
-          <div class="radio-group">
-            <label class="radio-label">
-              <input type="radio" v-model="dividendForm.dividend_type" value="profit" @change="loadDividendPool" />
-              <span>理财收益分红</span>
-              <span class="type-desc">（清空理财产品累计收益）</span>
-            </label>
-            <label class="radio-label">
-              <input type="radio" v-model="dividendForm.dividend_type" value="cash" @change="loadDividendPool" />
-              <span>自由资金分红</span>
-              <span class="type-desc">（减少家庭自由资金）</span>
-            </label>
-          </div>
-        </div>
-
-        <div class="form-group">
           <label>分红金额 (元)</label>
           <input 
             v-model.number="dividendForm.amount" 
             type="number" 
             step="0.01" 
-            :max="dividendForm.dividend_type === 'profit' ? dividendPool.profit_pool : dividendPool.cash_pool"
+            :max="dividendPool.cash_pool"
             min="0.01"
             placeholder="请输入分红金额"
           />
           <div class="amount-hint">
-            可用金额: {{ (dividendForm.dividend_type === 'profit' ? dividendPool.profit_pool : dividendPool.cash_pool).toFixed(2) }} 元
+            可用金额: {{ dividendPool.cash_pool.toFixed(2) }} 元
           </div>
         </div>
 
@@ -324,7 +304,7 @@ const newProposal = ref({
 
 // 分红提案表单
 const dividendForm = ref({
-  dividend_type: 'profit',  // 'profit' 或 'cash'
+  dividend_type: 'cash',  // 只支持自由资金分红
   amount: 0,
   deadline_days: 7
 })

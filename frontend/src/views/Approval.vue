@@ -517,7 +517,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, h } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
-import { approvalApi, investmentApi, familyApi, transactionApi, assetApi } from '@/api'
+import { api, approvalApi, investmentApi, familyApi, transactionApi, assetApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { useApprovalStore } from '@/stores/approval'
 import { checkAndShowAchievements } from '@/utils/achievement'

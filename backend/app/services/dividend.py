@@ -15,6 +15,7 @@ from app.models.models import (
     Family, FamilyMember, User
 )
 from app.services.equity import calculate_family_equity
+from app.services.notification import NotificationType, send_approval_notification
 
 
 async def calculate_dividend_pool(
@@ -123,6 +124,9 @@ async def create_dividend_claims(
         
         # 更新claim的approval_request_id
         claim.approval_request_id = approval.id
+        
+        # 发送通知给目标用户
+        await send_approval_notification(db, NotificationType.APPROVAL_CREATED, approval)
     
     # 更新分红状态
     dividend.status = DividendStatus.DISTRIBUTING
@@ -135,7 +139,8 @@ async def clear_dividend_pool(
     family_id: int,
     dividend_type: DividendType,
     amount: float,
-    db: AsyncSession
+    db: AsyncSession,
+    already_frozen: bool = False
 ) -> None:
     """
     清空分红资金池
@@ -145,6 +150,7 @@ async def clear_dividend_pool(
         dividend_type: 分红类型
         amount: 分红金额（用于验证）
         db: 数据库会话
+        already_frozen: 是否已经冻结资金（新提案流程中为True）
     """
     if dividend_type == DividendType.PROFIT:
         # 删除所有理财收益记录（已分红的收益应该清除）
@@ -158,28 +164,31 @@ async def clear_dividend_pool(
             await db.delete(record)
     
     elif dividend_type == DividendType.CASH:
-        # 创建一笔支出Transaction，减少balance_after
-        # 获取当前余额
-        result = await db.execute(
-            select(Transaction.balance_after)
-            .where(Transaction.family_id == family_id)
-            .order_by(Transaction.created_at.desc())
-            .limit(1)
-        )
-        current_balance = result.scalar() or 0.0
-        
-        # 创建分红支出交易
-        transaction = Transaction(
-            family_id=family_id,
-            user_id=None,  # 系统操作
-            transaction_type=TransactionType.DIVIDEND,
-            amount=-amount,  # 负数表示支出
-            balance_after=current_balance - amount,
-            description=f"分红发放 - {amount:.2f}元",
-            reference_type="dividend",
-            reference_id=None  # 可以后续关联dividend_id
-        )
-        db.add(transaction)
+        # 如果资金已经冻结，则不需要再次扣除余额
+        if not already_frozen:
+            # 创建一笔支出Transaction，减少balance_after
+            # 获取当前余额
+            result = await db.execute(
+                select(Transaction.balance_after)
+                .where(Transaction.family_id == family_id)
+                .order_by(Transaction.created_at.desc())
+                .limit(1)
+            )
+            current_balance = result.scalar() or 0.0
+            
+            # 创建分红支出交易
+            transaction = Transaction(
+                family_id=family_id,
+                user_id=None,  # 系统操作
+                transaction_type=TransactionType.DIVIDEND,
+                amount=-amount,  # 负数表示支出
+                balance_after=current_balance - amount,
+                description=f"分红发放 - {amount:.2f}元",
+                reference_type="dividend",
+                reference_id=None  # 可以后续关联dividend_id
+            )
+            db.add(transaction)
+        # 如果已冻结，资金在创建提案时就已经扣除了，这里不需要额外操作
     
     await db.commit()
 
@@ -224,18 +233,19 @@ async def process_dividend_claim(
         raise ValueError(f"分红记录 {claim.dividend_id} 不存在")
     
     if reinvest:
+        # 🌟 红利再投：从冻结资金释放到自由资金，同时增加用户股权
         # 创建Deposit记录（红利再投，增加股权）
         deposit = Deposit(
             user_id=user_id,
             family_id=dividend.family_id,
             amount=claim.amount,
-            description=f"分红再投 - {claim.amount:.2f}元",
+            note=f"分红再投 - {claim.amount:.2f}元",
             deposit_date=datetime.utcnow()
         )
         db.add(deposit)
         await db.flush()
         
-        # 创建Transaction记录，增加家庭自由资金
+        # 创建Transaction记录：从冻结资金转回自由资金
         result = await db.execute(
             select(Transaction.balance_after)
             .where(Transaction.family_id == dividend.family_id)
@@ -247,12 +257,12 @@ async def process_dividend_claim(
         transaction = Transaction(
             family_id=dividend.family_id,
             user_id=user_id,
-            transaction_type=TransactionType.DEPOSIT,
-            amount=claim.amount,
+            transaction_type=TransactionType.UNFREEZE,  # 使用UNFREEZE而非DEPOSIT
+            amount=claim.amount,  # 正数，表示解冻
             balance_after=current_balance + claim.amount,
-            description=f"分红再投 - {claim.amount:.2f}元",
-            reference_type="deposit",
-            reference_id=deposit.id
+            description=f"分红再投（解冻） - {claim.amount:.2f}元",
+            reference_type="dividend_claim",
+            reference_id=claim.id
         )
         db.add(transaction)
         
@@ -261,7 +271,30 @@ async def process_dividend_claim(
         claim.reinvest = True
         claim.deposit_id = deposit.id
     else:
-        # 提现，不做任何资金变动（资金已在分红时从池中扣除）
+        # 🌟 取现：从冻结资金中扣除，创建流水记录但不增加自由资金
+        # 获取当前余额
+        result = await db.execute(
+            select(Transaction.balance_after)
+            .where(Transaction.family_id == dividend.family_id)
+            .order_by(Transaction.created_at.desc())
+            .limit(1)
+        )
+        current_balance = result.scalar() or 0.0
+        
+        # 创建Transaction记录：WITHDRAW类型，余额不变（因为钱已经在FREEZE时扣除）
+        transaction = Transaction(
+            family_id=dividend.family_id,
+            user_id=user_id,
+            transaction_type=TransactionType.WITHDRAW,
+            amount=-claim.amount,  # 负数表示取出
+            balance_after=current_balance,  # 余额不变（已在冻结时扣除）
+            description=f"分红提现 - {claim.amount:.2f}元",
+            reference_type="dividend_claim",
+            reference_id=claim.id
+        )
+        db.add(transaction)
+        
+        # 更新claim记录
         claim.status = DividendClaimStatus.WITHDRAWN
         claim.reinvest = False
     
@@ -306,3 +339,55 @@ async def get_dividend_by_proposal(
         select(Dividend).where(Dividend.proposal_id == proposal_id)
     )
     return result.scalar_one_or_none()
+
+
+async def calculate_frozen_dividend_amount(
+    family_id: int,
+    db: AsyncSession
+) -> float:
+    """
+    计算家庭冻结的分红资金总额
+    
+    冻结资金 = 所有状态为 VOTING 或 APPROVED 的分红提案中，
+    尚未处理（PENDING）或已再投（REINVESTED）的claim总额
+    
+    Args:
+        family_id: 家庭ID
+        db: 数据库会话
+    
+    Returns:
+        冻结资金总额
+    """
+    # 获取所有投票中或已通过的分红记录
+    result = await db.execute(
+        select(Dividend.id, Dividend.total_amount, Dividend.status)
+        .where(
+            Dividend.family_id == family_id,
+            Dividend.status.in_([DividendStatus.VOTING, DividendStatus.APPROVED])
+        )
+    )
+    dividends = result.all()
+    
+    if not dividends:
+        return 0.0
+    
+    frozen_amount = 0.0
+    
+    for dividend_id, total_amount, status in dividends:
+        if status == DividendStatus.VOTING:
+            # 投票中：整笔金额都冻结
+            frozen_amount += total_amount
+        elif status == DividendStatus.APPROVED:
+            # 已通过：只有未处理的claim金额仍然冻结
+            # （已取现的claim从冻结资金中扣除，已再投的解冻到自由资金）
+            result = await db.execute(
+                select(func.sum(DividendClaim.amount))
+                .where(
+                    DividendClaim.dividend_id == dividend_id,
+                    DividendClaim.status == DividendClaimStatus.PENDING
+                )
+            )
+            pending_amount = result.scalar() or 0.0
+            frozen_amount += pending_amount
+    
+    return round(frozen_amount, 2)

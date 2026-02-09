@@ -11,13 +11,18 @@ class EncryptionService:
     
     def __init__(self):
         """初始化加密服务"""
-        if not settings.ENCRYPTION_KEY:
-            raise ValueError("ENCRYPTION_KEY not configured")
+        self.fernet = None
         
-        try:
-            self.fernet = Fernet(settings.ENCRYPTION_KEY.encode())
-        except Exception as e:
-            raise ValueError(f"Invalid ENCRYPTION_KEY: {e}")
+        if settings.ENCRYPTION_KEY:
+            try:
+                self.fernet = Fernet(settings.ENCRYPTION_KEY.encode())
+            except Exception as e:
+                import logging
+                logging.warning(f"Invalid ENCRYPTION_KEY, encryption disabled: {e}")
+                self.fernet = None
+        else:
+            import logging
+            logging.info("ENCRYPTION_KEY not configured, sensitive data will be stored in plaintext")
     
     def encrypt(self, plaintext: str) -> str:
         """
@@ -27,16 +32,22 @@ class EncryptionService:
             plaintext: 明文字符串
             
         Returns:
-            加密后的字符串（Base64编码）
+            加密后的字符串（Base64编码），如果未配置密钥则返回明文
         """
         if not plaintext:
+            return plaintext
+        
+        # 如果没有配置加密，直接返回明文
+        if self.fernet is None:
             return plaintext
         
         try:
             encrypted_bytes = self.fernet.encrypt(plaintext.encode())
             return encrypted_bytes.decode()
         except Exception as e:
-            raise ValueError(f"Encryption failed: {e}")
+            import logging
+            logging.error(f"Encryption failed: {e}")
+            return plaintext
     
     def decrypt(self, encrypted_text: str) -> str:
         """
@@ -46,16 +57,23 @@ class EncryptionService:
             encrypted_text: 加密的字符串
             
         Returns:
-            解密后的明文字符串
+            解密后的明文字符串，如果未配置密钥则返回原文
         """
         if not encrypted_text:
+            return encrypted_text
+        
+        # 如果没有配置加密，直接返回原文
+        if self.fernet is None:
             return encrypted_text
         
         try:
             decrypted_bytes = self.fernet.decrypt(encrypted_text.encode())
             return decrypted_bytes.decode()
         except Exception as e:
-            raise ValueError(f"Decryption failed: {e}")
+            # 如果解密失败，可能是未加密的数据，直接返回原文
+            import logging
+            logging.warning(f"Decryption failed, returning original text: {e}")
+            return encrypted_text
 
 
 # 全局加密服务实例

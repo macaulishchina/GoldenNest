@@ -282,3 +282,9 @@ export const assetApi = {
   // 获取实时汇率
   getExchangeRate: (currency: string) => api.get(`/asset/exchange-rate/${currency}`)
 }
+
+// 投票 API
+export const voteApi = {
+  // 获取待投票数量（用于红点显示）
+  getPendingCount: () => api.get('/vote/pending-count')
+}

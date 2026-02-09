@@ -98,6 +98,12 @@ class NotificationType(str, Enum):
     GIFT_REJECTED = "gift_rejected"              # 赠送被拒绝
     GIFT_CANCELLED = "gift_cancelled"            # 赠送被取消
     
+    # 投票相关
+    VOTE_PROPOSAL_CREATED = "vote_proposal_created"  # 新投票提案创建
+    VOTE_CAST = "vote_cast"                          # 成员投票
+    VOTE_PASSED = "vote_passed"                      # 投票通过
+    VOTE_REJECTED = "vote_rejected"                  # 投票被拒绝
+    
     # 其他通知类型（预留扩展）
     MEMBER_JOINED = "member_joined"              # 新成员加入
     MEMBER_REMOVED = "member_removed"            # 成员被移除
@@ -121,6 +127,9 @@ class NotificationContext:
     request_type: Optional[str] = None
     request_id: Optional[int] = None       # 审批请求 ID，用于生成详情链接
     gift_id: Optional[int] = None          # 股权赠送 ID，用于生成详情链接
+    proposal_id: Optional[int] = None      # 投票提案 ID，用于生成详情链接
+    voter_name: Optional[str] = None       # 投票人名称
+    vote_option: Optional[str] = None      # 投票选项
     base_url: Optional[str] = None         # 外网基础 URL
     extra_data: Optional[Dict[str, Any]] = None
     
@@ -138,6 +147,13 @@ class NotificationContext:
             if self.gift_id:
                 return f"{self.base_url}/gift?highlight={self.gift_id}"
             return f"{self.base_url}/gift"
+        return None
+    
+    def get_vote_url(self) -> Optional[str]:
+        """获取投票详情页面 URL"""
+        if self.base_url and self.proposal_id:
+            # 前端路由：/vote?id=xxx
+            return f"{self.base_url}/vote?highlight={self.proposal_id}"
         return None
 
 
@@ -193,8 +209,13 @@ class WeChatWorkChannel(NotificationChannel):
         # 股权赠送
         NotificationType.GIFT_SENT: "🎁 股权赠送",
         NotificationType.GIFT_ACCEPTED: "✅ 赠送已接受",
-        NotificationType.GIFT_REJECTED: "❌ 赠送被拒绝",
+        NotificationType.GIFT_REJECTED: "❌ 赠送已拒绝",
         NotificationType.GIFT_CANCELLED: "🚫 赠送已取消",
+        # 投票相关
+        NotificationType.VOTE_PROPOSAL_CREATED: "🗳️ 新投票提案",
+        NotificationType.VOTE_CAST: "✅ 成员已投票",
+        NotificationType.VOTE_PASSED: "🎉 投票通过",
+        NotificationType.VOTE_REJECTED: "❌ 投票未通过",
         # 宠物
         NotificationType.PET_EVOLVED: "🎊 宠物进化",
     }
@@ -215,8 +236,15 @@ class WeChatWorkChannel(NotificationChannel):
             logging.debug("WeChatWork webhook URL not configured, skipping notification")
             return False
         
+        logging.info(f"Building markdown message for {context.notification_type}")
+        
         # 构建 Markdown 消息内容
-        markdown_content = self._build_markdown_message(context)
+        try:
+            markdown_content = self._build_markdown_message(context)
+            logging.debug(f"Markdown content built, length={len(markdown_content)}")
+        except Exception as e:
+            logging.error(f"Failed to build markdown message: {e}", exc_info=True)
+            return False
         
         # 构建请求体
         payload = {
@@ -227,23 +255,24 @@ class WeChatWorkChannel(NotificationChannel):
         }
         
         try:
+            logging.info(f"Sending to WeChatWork webhook: {webhook_url[:50]}...")
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(webhook_url, json=payload)
                 response.raise_for_status()
                 
                 result = response.json()
                 if result.get("errcode") == 0:
-                    logging.info(f"WeChatWork notification sent successfully: {context.notification_type}")
+                    logging.info(f"✅ WeChatWork notification sent successfully: {context.notification_type}")
                     return True
                 else:
-                    logging.warning(f"WeChatWork notification failed: {result}")
+                    logging.warning(f"❌ WeChatWork notification failed: {result}")
                     return False
                     
         except httpx.HTTPError as e:
-            logging.error(f"WeChatWork notification HTTP error: {e}")
+            logging.error(f"❌ WeChatWork notification HTTP error: {e}", exc_info=True)
             return False
         except Exception as e:
-            logging.error(f"WeChatWork notification error: {e}")
+            logging.error(f"❌ WeChatWork notification error: {e}", exc_info=True)
             return False
     
     def _build_markdown_message(self, context: NotificationContext) -> str:
@@ -256,8 +285,18 @@ class WeChatWorkChannel(NotificationChannel):
             NotificationType.GIFT_CANCELLED,
         }
         
+        # 判断是否为投票通知
+        vote_types = {
+            NotificationType.VOTE_PROPOSAL_CREATED,
+            NotificationType.VOTE_CAST,
+            NotificationType.VOTE_PASSED,
+            NotificationType.VOTE_REJECTED,
+        }
+        
         if context.notification_type in gift_types:
             return self._build_gift_markdown(context)
+        elif context.notification_type in vote_types:
+            return self._build_vote_markdown(context)
         else:
             return self._build_approval_markdown(context)
     
@@ -318,6 +357,67 @@ class WeChatWorkChannel(NotificationChannel):
         elif context.notification_type == NotificationType.GIFT_ACCEPTED:
             lines.append("")
             lines.append("<font color=\"info\">股权已自动转移</font>")
+        
+        return "\n".join(lines)
+    
+    def _build_vote_markdown(self, context: NotificationContext) -> str:
+        """构建投票通知的 Markdown 消息"""
+        status_label = self.STATUS_LABELS.get(context.notification_type, "🗳️ 投票")
+        
+        # 基础消息头
+        lines = [
+            f"### {status_label}",
+            f"**{context.title}**",
+            "",
+        ]
+        
+        # 家庭信息
+        lines.append(f"> 家庭：{context.family_name}")
+        
+        # 根据不同的投票类型添加信息
+        if context.notification_type == NotificationType.VOTE_PROPOSAL_CREATED:
+            # 新提案创建
+            if context.requester_name:
+                lines.append(f"> 发起人：<font color=\"info\">{context.requester_name}</font>")
+        elif context.notification_type == NotificationType.VOTE_CAST:
+            # 成员投票
+            if context.voter_name:
+                lines.append(f"> 投票人：{context.voter_name}")
+            if context.vote_option:
+                lines.append(f"> 选择：<font color=\"warning\">{context.vote_option}</font>")
+        elif context.notification_type in [NotificationType.VOTE_PASSED, NotificationType.VOTE_REJECTED]:
+            # 投票结果
+            result_icon = "✅" if context.notification_type == NotificationType.VOTE_PASSED else "❌"
+            result_text = "通过" if context.notification_type == NotificationType.VOTE_PASSED else "未通过"
+            lines.append(f"> 结果：{result_icon} <font color=\"warning\">{result_text}</font>")
+            if context.requester_name:
+                lines.append(f"> 发起人：{context.requester_name}")
+        
+        # 金额信息（分红提案）
+        if context.amount and context.amount > 0:
+            lines.append(f"> 金额：<font color=\"warning\">¥{context.amount:,.2f}</font>")
+        
+        # 添加内容描述
+        if context.content:
+            lines.append("")
+            lines.append(context.content)
+        
+        # 添加详情链接
+        vote_url = context.get_vote_url()
+        if vote_url:
+            lines.append("")
+            lines.append(f"📎 [查看详情]({vote_url})")
+        
+        # 额外提示
+        if context.notification_type == NotificationType.VOTE_PROPOSAL_CREATED:
+            lines.append("")
+            if vote_url:
+                lines.append("<font color=\"info\">点击上方链接进行投票</font>")
+            else:
+                lines.append("<font color=\"info\">请登录小金库进行投票</font>")
+        elif context.notification_type == NotificationType.VOTE_PASSED:
+            lines.append("")
+            lines.append("<font color=\"info\">提案已自动执行</font>")
         
         return "\n".join(lines)
     
@@ -446,11 +546,26 @@ class NotificationService:
         family: Family
     ) -> None:
         """通知：新申请创建"""
+        # 如果有target_user_id，获取目标用户昵称
+        target_user_name = None
+        if request.target_user_id:
+            result = await self.db.execute(
+                select(User).where(User.id == request.target_user_id)
+            )
+            target_user = result.scalar_one_or_none()
+            if target_user:
+                target_user_name = target_user.nickname
+        
+        # 构建标题：如果有目标用户，标明是给谁的
+        title = request.title
+        if target_user_name:
+            title = f"@{target_user_name} {request.title}"
+        
         context = NotificationContext(
             notification_type=NotificationType.APPROVAL_CREATED,
             family_id=family.id,
             family_name=family.name,
-            title=request.title,
+            title=title,
             content=request.description,
             amount=request.amount,
             requester_name=requester.nickname,
@@ -645,6 +760,89 @@ class NotificationService:
         )
         await self._send_to_all_channels(context)
     
+    # ==================== 投票通知方法 ====================
+    
+    async def notify_vote_proposal_created(
+        self,
+        proposal,  # Proposal对象
+        creator: User,
+        family: Family
+    ) -> None:
+        """通知：投票提案创建"""
+        import json
+        import logging
+        
+        logging.info(f"notify_vote_proposal_created called for proposal {proposal.id}")
+        
+        options = json.loads(proposal.options) if isinstance(proposal.options, str) else proposal.options
+        
+        context = NotificationContext(
+            notification_type=NotificationType.VOTE_PROPOSAL_CREATED,
+            family_id=family.id,
+            family_name=family.name,
+            title=proposal.title,
+            content=f"{proposal.description}\n\n投票选项：{'、'.join(options)}",
+            requester_name=creator.nickname,
+            proposal_id=proposal.id,
+            base_url=get_external_base_url(),
+        )
+        
+        logging.info(f"Sending vote proposal notification to channels, family_id={family.id}")
+        await self._send_to_all_channels(context)
+        logging.info(f"Vote proposal notification sent for proposal {proposal.id}")
+    
+    async def notify_vote_cast(
+        self,
+        proposal,  # Proposal对象
+        voter: User,
+        vote_option: str,
+        family: Family
+    ) -> None:
+        """通知：成员投票"""
+        import logging
+        
+        logging.info(f"notify_vote_cast called for proposal {proposal.id}, voter={voter.nickname}")
+        
+        context = NotificationContext(
+            notification_type=NotificationType.VOTE_CAST,
+            family_id=family.id,
+            family_name=family.name,
+            title=proposal.title,
+            content=f"{voter.nickname} 已投票",
+            voter_name=voter.nickname,
+            vote_option=vote_option,
+            proposal_id=proposal.id,
+            base_url=get_external_base_url(),
+        )
+
+        await self._send_to_all_channels(context)
+    
+    async def notify_vote_result(
+        self,
+        proposal,  # Proposal对象
+        passed: bool,
+        creator: User,
+        family: Family,
+        amount: float = None
+    ) -> None:
+        """通知：投票结果"""        
+        notification_type = NotificationType.VOTE_PASSED if passed else NotificationType.VOTE_REJECTED
+        result_text = "通过" if passed else "未通过"
+
+        context = NotificationContext(
+            notification_type=notification_type,
+            family_id=family.id,
+            family_name=family.name,
+            title=f"{proposal.title} - {result_text}",
+            content=proposal.description,
+            requester_name=creator.nickname,
+            amount=amount,
+            proposal_id=proposal.id,
+            base_url=get_external_base_url(),
+        )
+        
+        await self._send_to_all_channels(context)
+    
     async def _send_to_all_channels(self, context: NotificationContext) -> None:
         """
         向所有已配置的渠道发送通知
@@ -652,11 +850,15 @@ class NotificationService:
         注意：通知失败不应影响主业务逻辑
         """
         try:
+            logging.info(f"_send_to_all_channels called for {context.notification_type}, family_id={context.family_id}")
+            
             config = await self.get_family_notification_config(context.family_id)
+            
+            logging.debug(f"Notification config loaded: notification_enabled={config.get('notification_enabled')}, has_webhook={bool(config.get('wechat_work_webhook_url'))}")
             
             # 检查是否启用通知
             if not config.get("notification_enabled", True):
-                logging.debug(f"Notifications disabled for family {context.family_id}")
+                logging.warning(f"Notifications disabled for family {context.family_id}")
                 return
             
             # 优先使用配置的外网地址，否则使用自动检测的地址
@@ -670,22 +872,30 @@ class NotificationService:
                 logging.debug("Using default localhost URL")
             
             # 向所有配置的渠道发送
+            sent_count = 0
             for channel_name, channel in self.channels.items():
                 if channel.is_configured(config):
+                    logging.info(f"Channel {channel_name} is configured, attempting to send")
                     try:
                         success = await channel.send(context, config)
                         if success:
-                            logging.info(f"Notification sent via {channel_name}")
+                            logging.info(f"✅ Notification sent successfully via {channel_name}")
+                            sent_count += 1
                         else:
-                            logging.warning(f"Notification via {channel_name} returned false")
+                            logging.warning(f"❌ Notification via {channel_name} returned false")
                     except Exception as e:
-                        logging.error(f"Error sending notification via {channel_name}: {e}")
+                        logging.error(f"❌ Error sending notification via {channel_name}: {e}", exc_info=True)
                 else:
                     logging.debug(f"Channel {channel_name} not configured, skipping")
+            
+            if sent_count == 0:
+                logging.warning(f"No notifications sent for {context.notification_type} (no channels configured)")
+            else:
+                logging.info(f"Notification sent to {sent_count} channel(s)")
                     
         except Exception as e:
             # 通知失败不应该影响主业务
-            logging.error(f"Notification service error: {e}")
+            logging.error(f"Notification service error: {e}", exc_info=True)
 
 
 # ==================== 便捷函数 ====================
@@ -706,14 +916,18 @@ async def send_approval_notification(
         approver: 审批人（可选）
     """
     try:
-        # 获取申请人信息
-        result = await db.execute(
-            select(User).where(User.id == request.requester_id)
-        )
-        requester = result.scalar_one_or_none()
-        if not requester:
-            logging.warning(f"Requester not found for request {request.id}")
-            return
+        # 获取申请人信息（系统发起时requester_id=0）
+        if request.requester_id == 0:
+            # 系统发起的申请，创建虚拟用户对象
+            requester = User(id=0, username="system", nickname="系统", email="")
+        else:
+            result = await db.execute(
+                select(User).where(User.id == request.requester_id)
+            )
+            requester = result.scalar_one_or_none()
+            if not requester:
+                logging.warning(f"Requester not found for request {request.id}")
+                return
         
         # 获取家庭信息
         result = await db.execute(

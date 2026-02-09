@@ -19,6 +19,8 @@ class TransactionType(str, enum.Enum):
     WITHDRAW = "withdraw"        # 支出
     INCOME = "income"            # 理财收益
     DIVIDEND = "dividend"        # 分红
+    FREEZE = "freeze"            # 冻结（用于分红提案）
+    UNFREEZE = "unfreeze"        # 解冻（投票未通过时）
 
 
 class ExpenseStatus(str, enum.Enum):

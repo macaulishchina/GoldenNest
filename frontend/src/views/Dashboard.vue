@@ -123,6 +123,19 @@
             <span class="summary-value">¥{{ formatNumber(investmentTotal) }}</span>
           </div>
         </div>
+        
+        <!-- 冻结资金说明（如果存在） -->
+        <div v-if="frozenAmount > 0" class="frozen-amount-notice">
+          <n-alert type="info" :bordered="false">
+            <template #icon>
+              <span style="font-size: 18px;">🔒</span>
+            </template>
+            冻结资金（投票中）：<strong>¥{{ formatNumber(frozenAmount) }}</strong>
+            <div style="font-size: 12px; margin-top: 4px; opacity: 0.8;">
+              该资金已从自由资金中扣除，正在股东大会投票表决中，不计入家庭总资产
+            </div>
+          </n-alert>
+        </div>
       </n-card>
       
       <!-- 股权与储蓄 -->
@@ -219,6 +232,11 @@ const freeBalance = computed(() => {
 const investmentTotal = computed(() => {
   // 理财总额（当前持仓本金）
   return investmentSummary.value?.total_principal || 0
+})
+
+const frozenAmount = computed(() => {
+  // 冻结资金（投票中的分红）
+  return equity.value?.frozen_amount || 0
 })
 
 const investmentIncome = computed(() => {
@@ -553,6 +571,15 @@ onMounted(() => {
   font-size: 20px;
   color: var(--theme-text-tertiary);
   font-weight: 600;
+}
+
+.frozen-amount-notice {
+  margin-top: 16px;
+}
+
+.frozen-amount-notice :deep(.n-alert) {
+  background: var(--theme-info-light);
+  border-radius: 8px;
 }
 
 /* 股权与储蓄区域 */

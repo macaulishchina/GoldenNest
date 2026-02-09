@@ -2,6 +2,8 @@
 小金库 (Golden Nest) - 通用审批路由
 """
 import json
+import logging
+import traceback
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -1124,24 +1126,28 @@ async def handle_dividend_claim(
         # 执行分红处理
         await service._execute_request(request)
         
-        # 获取申请人信息（系统）
-        result = await db.execute(
-            select(User).where(User.id == request.requester_id)
-        )
-        requester = result.scalar_one()
-        
         # 提交所有更改
         await db.commit()
+        await db.refresh(request)
         
+        # 对于系统发起的申请（requester_id=0），使用特殊响应
         return await service.get_request_response(
             request,
-            requester.nickname,
-            requester.avatar_version or 0
+            "系统",  # 系统发起的申请
+            0  # 无头像
         )
         
     except ValueError as e:
+        logging.error(f"分红领取处理失败 (ValueError) - request_id={request_id}, user_id={current_user.id}: {str(e)}")
+        logging.error(traceback.format_exc())
         await db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        # 不记录已知的HTTP异常，直接抛出
+        await db.rollback()
+        raise
     except Exception as e:
+        logging.error(f"分红领取处理失败 (Exception) - request_id={request_id}, user_id={current_user.id}: {str(e)}")
+        logging.error(traceback.format_exc())
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")

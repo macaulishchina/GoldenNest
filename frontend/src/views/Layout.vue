@@ -267,6 +267,13 @@
               <div class="drawer-menu-item" @click="navigateAndClose('/vote')">
                 <n-icon :size="20"><CheckboxOutline /></n-icon>
                 <span>股东大会</span>
+                <n-badge
+                  v-if="voteStore.pendingCount > 0"
+                  :value="voteStore.pendingCount"
+                  :max="99"
+                  type="error"
+                  style="margin-left: auto"
+                />
               </div>
               <div class="drawer-menu-item" @click="navigateAndClose('/family')">
                 <n-icon :size="20"><PeopleOutline /></n-icon>
@@ -324,6 +331,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useMessage, NIcon, NBadge } from 'naive-ui'
 import { useUserStore } from '@/stores/user'
 import { useApprovalStore } from '@/stores/approval'
+import { useVoteStore } from '@/stores/vote'
 import { familyApi } from '@/api'
 import { getHolidayGreeting } from '@/utils/holiday'
 import { compressImage, getAvatarColor } from '@/utils/avatar'
@@ -363,6 +371,7 @@ const route = useRoute()
 const message = useMessage()
 const userStore = useUserStore()
 const approvalStore = useApprovalStore()
+const voteStore = useVoteStore()
 
 const collapsed = ref(false)
 const family = ref<any>(null)
@@ -561,6 +570,61 @@ function renderApprovalLabel() {
   )
 }
 
+// 自定义渲染股东大会菜单项（带徽章）
+function renderVoteLabel() {
+  return h(
+    'div',
+    { style: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%' } },
+    [
+      h('span', '股东大会'),
+      voteStore.pendingCount > 0
+        ? h(NBadge, {
+            value: voteStore.pendingCount,
+            type: 'error',
+            max: 99,
+            showZero: false
+          })
+        : null
+    ]
+  )
+}
+
+// 自定义渲染财务管理分组（带红点）
+function renderFinanceGroupLabel() {
+  return h(
+    'div',
+    { style: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%' } },
+    [
+      h('span', '财务管理'),
+      approvalStore.pendingCount > 0
+        ? h(NBadge, {
+            dot: true,
+            type: 'error',
+            showZero: false
+          })
+        : null
+    ]
+  )
+}
+
+// 自定义渲染家庭治理分组（带红点）
+function renderGovernanceGroupLabel() {
+  return h(
+    'div',
+    { style: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%' } },
+    [
+      h('span', '家庭治理'),
+      voteStore.pendingCount > 0
+        ? h(NBadge, {
+            dot: true,
+            type: 'error',
+            showZero: false
+          })
+        : null
+    ]
+  )
+}
+
 // 菜单选项 - 方案B三分类: 财务管理、家庭治理、生活协作
 const menuOptions = computed<MenuOption[]>(() => [
   {
@@ -573,7 +637,7 @@ const menuOptions = computed<MenuOption[]>(() => [
     key: 'd1'
   },
   {
-    label: '财务管理',
+    label: renderFinanceGroupLabel,
     key: 'finance-group',
     icon: renderIcon(CashOutline),
     children: [
@@ -615,7 +679,7 @@ const menuOptions = computed<MenuOption[]>(() => [
     ]
   },
   {
-    label: '家庭治理',
+    label: renderGovernanceGroupLabel,
     key: 'governance-group',
     icon: renderIcon(PieChartOutline),
     children: [
@@ -630,7 +694,7 @@ const menuOptions = computed<MenuOption[]>(() => [
         icon: renderIcon(GiftOutline)
       },
       {
-        label: '股东大会',
+        label: renderVoteLabel,
         key: 'vote',
         icon: renderIcon(CheckboxOutline)
       },
@@ -799,14 +863,20 @@ onMounted(async () => {
     await approvalStore.fetchPendingCount()
     // 启动轮询（保底机制）
     approvalStore.startPolling()
+    
+    // 初始加载投票徽章计数
+    await voteStore.fetchPendingCount()
+    // 启动轮询（保底机制）
+    voteStore.startPolling()
   }
 })
 
-// 路由变化时刷新审批计数
+// 路由变化时刷新审批计数和投票计数
 watch(() => route.path, async () => {
   if (userStore.isLoggedIn) {
     // 每次路由切换都查询一次
     await approvalStore.refreshNow()
+    await voteStore.refreshNow()
   }
 })
 
@@ -814,6 +884,7 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   // 停止轮询
   approvalStore.stopPolling()
+  voteStore.stopPolling()
 })
 </script>
 

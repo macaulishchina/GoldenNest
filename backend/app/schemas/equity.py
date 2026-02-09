@@ -25,7 +25,8 @@ class EquitySummary(BaseModel):
     family_id: int
     family_name: str
     savings_target: float  # 储蓄目标
-    total_savings: float  # 当前总储蓄
+    total_savings: float  # 当前总储蓄（不含冻结资金）
+    frozen_amount: float = 0.0  # 冻结资金（分红提案投票中）
     total_weighted: float  # 时间加权后总额
     daily_weighted_growth: float = 0.0  # 今日加权增长额
     target_progress: float  # 目标完成进度 (0-1)

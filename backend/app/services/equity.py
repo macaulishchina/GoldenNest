@@ -10,7 +10,7 @@ import math
 from app.models.models import (
     Deposit, Family, FamilyMember, User,
     Transaction, Investment, InvestmentPosition, InvestmentIncome,
-    PositionOperationType
+    PositionOperationType, Dividend, DividendStatus, DividendClaim, DividendClaimStatus
 )
 from app.schemas.equity import MemberEquity, EquitySummary
 
@@ -181,6 +181,37 @@ async def calculate_family_equity(family_id: int, db: AsyncSession) -> EquitySum
     # 3. 当前储蓄 = 家庭自由资金 + 理财实际价值
     total_savings = free_cash + investment_value
     
+    # 4. 计算冻结资金（投票中或已通过但未处理的分红）
+    frozen_amount = 0.0
+    
+    # 获取所有投票中或已通过的分红记录
+    result = await db.execute(
+        select(Dividend.id, Dividend.total_amount, Dividend.status)
+        .where(
+            Dividend.family_id == family.id,
+            Dividend.status.in_([DividendStatus.VOTING, DividendStatus.APPROVED])
+        )
+    )
+    dividends = result.all()
+    
+    for dividend_id, total_amount, status in dividends:
+        if status == DividendStatus.VOTING:
+            # 投票中：整笔金额都冻结
+            frozen_amount += total_amount
+        elif status == DividendStatus.APPROVED:
+            # 已通过：只有未处理的claim金额仍然冻结
+            result = await db.execute(
+                select(func.sum(DividendClaim.amount))
+                .where(
+                    DividendClaim.dividend_id == dividend_id,
+                    DividendClaim.status == DividendClaimStatus.PENDING
+                )
+            )
+            pending_amount = result.scalar() or 0.0
+            frozen_amount += pending_amount
+    
+    frozen_amount = round(frozen_amount, 2)
+    
     # 计算目标进度
     target_progress = min(total_savings / family.savings_target, 1.0) if family.savings_target > 0 else 0
     
@@ -194,5 +225,6 @@ async def calculate_family_equity(family_id: int, db: AsyncSession) -> EquitySum
         target_progress=round(target_progress, 4),
         time_value_rate=family.time_value_rate,
         members=member_equity_list,
-        calculated_at=now
+        calculated_at=now,
+        frozen_amount=frozen_amount
     )

@@ -501,25 +501,26 @@ onMounted(() => {
 }
 
 .gift-send-card {
-  background: linear-gradient(135deg, #fff9f0 0%, #fff0f5 100%);
+  background: var(--theme-card-gradient, linear-gradient(135deg, var(--theme-bg-elevated) 0%, var(--theme-bg-elevated) 100%));
+  border: 1px solid var(--theme-border);
 }
 
 .gift-item {
   padding: 16px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
-  border: 1px solid #eee;
+  background: var(--theme-bg-elevated);
+  border: 1px solid var(--theme-border);
   transition: all 0.3s ease;
 }
 
 .gift-item:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 12px var(--theme-shadow);
 }
 
 .gift-pending {
-  background: linear-gradient(135deg, var(--theme-warning-bg) 0%, #fff7e6 100%);
-  border-color: #ffe58f;
+  background: var(--theme-warning-bg);
+  border-color: var(--theme-warning-border, #ffe58f);
 }
 
 .gift-header {
@@ -547,7 +548,7 @@ onMounted(() => {
 
 .gift-time {
   font-size: 12px;
-  color: #999;
+  color: var(--theme-text-tertiary);
   margin-top: 4px;
 }
 
@@ -558,7 +559,7 @@ onMounted(() => {
 .gift-actions {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px dashed #eee;
+  border-top: 1px dashed var(--theme-border);
 }
 
 .empty-state {

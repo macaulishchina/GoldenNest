@@ -4,6 +4,7 @@
 from datetime import datetime, timedelta
 from typing import List, Optional
 import json
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -13,8 +14,8 @@ from app.core.database import get_db
 from app.core.limiter import limiter
 from app.api.auth import get_current_user
 from app.models.models import (
-    User, FamilyMember, Proposal, Vote, ProposalStatus,
-    Dividend, DividendType, DividendStatus
+    User, FamilyMember, Family, Proposal, Vote, ProposalStatus,
+    Dividend, DividendType, DividendStatus, Transaction, TransactionType
 )
 from app.schemas.common import TimeRange, get_time_range_filter
 
@@ -125,12 +126,18 @@ async def check_proposal_result(db: AsyncSession, proposal: Proposal, family_id:
             
             # 🌟 检查是否是分红提案，如果是则触发分红分配
             await handle_dividend_approval(db, proposal)
+            
+            # 发送投票通过通知
+            await send_vote_result_notification(db, proposal, passed=True)
         else:
             proposal.status = ProposalStatus.REJECTED
             proposal.closed_at = datetime.utcnow()
             
             # 🌟 如果是分红提案被拒绝，更新分红状态
             await handle_dividend_rejection(db, proposal)
+            
+            # 发送投票未通过通知
+            await send_vote_result_notification(db, proposal, passed=False)
         
         await db.commit()
 
@@ -154,11 +161,13 @@ async def handle_dividend_approval(db: AsyncSession, proposal: Proposal):
     await db.commit()
     
     # 先清空分红资金池（在分配前清空，避免资金重复计算）
+    # 注意：资金已在创建提案时冻结，这里不需要再次扣除
     await clear_dividend_pool(
         dividend.family_id,
         dividend.type,
         dividend.total_amount,
-        db
+        db,
+        already_frozen=True  # 资金已冻结
     )
     
     # 创建个人分红审核
@@ -175,7 +184,103 @@ async def handle_dividend_rejection(db: AsyncSession, proposal: Proposal):
     
     # 更新分红状态为已拒绝
     dividend.status = DividendStatus.REJECTED
+    
+    # 解冻资金
+    await unfreeze_dividend_amount(db, dividend)
+    
     await db.commit()
+
+
+async def freeze_dividend_amount(db: AsyncSession, dividend: Dividend) -> None:
+    """冻结分红金额"""
+    # 获取当前余额
+    result = await db.execute(
+        select(Transaction)
+        .where(Transaction.family_id == dividend.family_id)
+        .order_by(Transaction.created_at.desc())
+        .limit(1)
+    )
+    last_transaction = result.scalar_one_or_none()
+    current_balance = last_transaction.balance_after if last_transaction else 0
+    
+    # 创建冻结交易记录
+    freeze_transaction = Transaction(
+        family_id=dividend.family_id,
+        user_id=None,
+        transaction_type=TransactionType.FREEZE,
+        amount=-dividend.total_amount,  # 负数表示扣除
+        balance_after=current_balance - dividend.total_amount,
+        description=f"冻结分红资金：{dividend.total_amount:.2f}元",
+        reference_id=dividend.id,
+        reference_type="dividend"
+    )
+    db.add(freeze_transaction)
+    logging.info(f"💰 Frozen {dividend.total_amount} for dividend {dividend.id}")
+
+
+async def unfreeze_dividend_amount(db: AsyncSession, dividend: Dividend) -> None:
+    """解冻分红金额（投票未通过时）"""
+    # 获取当前余额
+    result = await db.execute(
+        select(Transaction)
+        .where(Transaction.family_id == dividend.family_id)
+        .order_by(Transaction.created_at.desc())
+        .limit(1)
+    )
+    last_transaction = result.scalar_one_or_none()
+    current_balance = last_transaction.balance_after if last_transaction else 0
+    
+    # 创建解冻交易记录
+    unfreeze_transaction = Transaction(
+        family_id=dividend.family_id,
+        user_id=None,
+        transaction_type=TransactionType.UNFREEZE,
+        amount=dividend.total_amount,  # 正数表示归还
+        balance_after=current_balance + dividend.total_amount,
+        description=f"解冻分红资金（投票未通过）：{dividend.total_amount:.2f}元",
+        reference_id=dividend.id,
+        reference_type="dividend"
+    )
+    db.add(unfreeze_transaction)
+    logging.info(f"💰 Unfrozen {dividend.total_amount} for dividend {dividend.id}")
+
+
+async def send_vote_result_notification(db: AsyncSession, proposal: Proposal, passed: bool):
+    """发送投票结果通知"""
+    from app.services.notification import NotificationService
+    from app.services.dividend import get_dividend_by_proposal
+    
+    # 获取家庭和创建者信息
+    result = await db.execute(select(Family).where(Family.id == proposal.family_id))
+    family = result.scalar_one_or_none()
+    
+    result = await db.execute(select(User).where(User.id == proposal.creator_id))
+    creator = result.scalar_one_or_none()
+    
+    if not family or not creator:
+        logging.warning(f"Cannot send vote result: family={family}, creator={creator}")
+        return
+    
+    # 如果是分红提案，获取分红金额
+    amount = None
+    dividend = await get_dividend_by_proposal(proposal.id, db)
+    if dividend:
+        amount = dividend.total_amount
+    
+    # 发送通知
+    try:
+        service = NotificationService(db)
+        await service.notify_vote_result(
+            proposal=proposal,
+            passed=passed,
+            creator=creator,
+            family=family,
+            amount=amount
+        )
+        result_text = "通过" if passed else "未通过"
+        logging.info(f"✅ Vote result notification sent: {proposal.id} - {result_text}")
+    except Exception as e:
+        logging.error(f"❌ Failed to send vote result notification: {e}", exc_info=True)
 
 
 # ==================== API ====================
@@ -207,6 +312,23 @@ async def create_proposal(
     db.add(proposal)
     await db.commit()
     await db.refresh(proposal)
+    
+    # 发送新提案创建通知
+    from app.services.notification import NotificationService
+    
+    result = await db.execute(select(Family).where(Family.id == family_id))
+    family = result.scalar_one_or_none()
+    if family:
+        try:
+            service = NotificationService(db)
+            await service.notify_vote_proposal_created(
+                proposal=proposal,
+                creator=current_user,
+                family=family
+            )
+            logging.info(f"✅ Proposal {proposal.id} notification sent successfully")
+        except Exception as e:
+            logging.error(f"❌ Failed to send proposal notification: {e}", exc_info=True)
     
     return {
         "success": True,
@@ -442,6 +564,25 @@ async def cast_vote(
     db.add(vote)
     await db.commit()
     
+    # 🔕 投票通知已禁用：成员投票不需要通知其他人
+    # 发送投票通知
+    # from app.services.notification import NotificationService
+    
+    # result = await db.execute(select(Family).where(Family.id == family_id))
+    # family = result.scalar_one_or_none()
+    # if family:
+    #     try:
+    #         service = NotificationService(db)
+    #         await service.notify_vote_cast(
+    #             proposal=proposal,
+    #             voter=current_user,
+    #             vote_option=options[data.option_index],
+    #             family=family
+    #         )
+    #         logging.info(f"✅ Vote cast notification sent for proposal {proposal_id}")
+    #     except Exception as e:
+    #         logging.error(f"❌ Failed to send vote cast notification: {e}", exc_info=True)
+    
     # 检查是否所有人都投票了
     await check_proposal_result(db, proposal, family_id)
     
@@ -519,6 +660,44 @@ async def get_vote_stats(
     }
 
 
+@router.get("/pending-count", response_model=dict)
+async def get_pending_count(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取待投票提案数量（用于显示红点）"""
+    family_id = await get_user_family_id(current_user.id, db)
+    
+    # 获取投票中的提案
+    result = await db.execute(
+        select(Proposal.id)
+        .where(
+            Proposal.family_id == family_id,
+            Proposal.status == ProposalStatus.VOTING,
+            Proposal.deadline >= datetime.utcnow()
+        )
+    )
+    voting_proposal_ids = [row[0] for row in result.fetchall()]
+    
+    if not voting_proposal_ids:
+        return {"pending_count": 0}
+    
+    # 检查哪些提案用户还没有投票
+    result = await db.execute(
+        select(Vote.proposal_id)
+        .where(
+            Vote.proposal_id.in_(voting_proposal_ids),
+            Vote.user_id == current_user.id
+        )
+    )
+    voted_proposal_ids = {row[0] for row in result.fetchall()}
+    
+    # 计算未投票数量
+    pending_count = len(voting_proposal_ids) - len(voted_proposal_ids)
+    
+    return {"pending_count": pending_count}
+
+
 # ==================== 分红投票 ====================
 
 @router.get("/dividend-pool", response_model=dict)
@@ -526,16 +705,15 @@ async def get_dividend_pool(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """获取可用于分红的资金池"""
+    """获取可用于分红的资金池（只支持自由资金分红）"""
     from app.services.dividend import calculate_dividend_pool
     
     family_id = await get_user_family_id(current_user.id, db)
     
-    profit_pool = await calculate_dividend_pool(family_id, DividendType.PROFIT, db)
     cash_pool = await calculate_dividend_pool(family_id, DividendType.CASH, db)
     
     return {
-        "profit_pool": round(profit_pool, 2),
+        "profit_pool": 0,  # 已废弃，保留兼容
         "cash_pool": round(cash_pool, 2)
     }
 
@@ -548,12 +726,15 @@ async def create_dividend_proposal(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """创建分红提案"""
+    """创建分红提案（只支持自由资金分红）"""
     from app.services.dividend import calculate_dividend_pool
     
     family_id = await get_user_family_id(current_user.id, db)
     
-    # 验证分红类型
+    # 验证分红类型，只支持cash
+    if data.dividend_type != "cash":
+        raise HTTPException(status_code=400, detail="现在只支持自由资金分红")
+    
     try:
         dividend_type = DividendType(data.dividend_type)
     except ValueError:
@@ -571,7 +752,7 @@ async def create_dividend_proposal(
         raise HTTPException(status_code=400, detail="分红金额必须大于0")
     
     # 创建投票提案
-    type_name = "理财收益" if dividend_type == DividendType.PROFIT else "家庭自由资金"
+    type_name = "家庭自由资金"  # 只支持自由资金分红
     proposal = Proposal(
         family_id=family_id,
         creator_id=current_user.id,
@@ -594,8 +775,30 @@ async def create_dividend_proposal(
         created_by=current_user.id
     )
     db.add(dividend)
+    await db.flush()
+    
+    # 冻结分红金额
+    await freeze_dividend_amount(db, dividend)
+    
     await db.commit()
     await db.refresh(proposal)
+    
+    # 发送分红提案创建通知
+    from app.services.notification import NotificationService
+    
+    result = await db.execute(select(Family).where(Family.id == family_id))
+    family = result.scalar_one_or_none()
+    if family:
+        try:
+            service = NotificationService(db)
+            await service.notify_vote_proposal_created(
+                proposal=proposal,
+                creator=current_user,
+                family=family
+            )
+            logging.info(f"✅ Dividend proposal {proposal.id} notification sent successfully")
+        except Exception as e:
+            logging.error(f"❌ Failed to send dividend proposal notification: {e}", exc_info=True)
     
     return {
         "success": True,
