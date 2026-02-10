@@ -29,3 +29,6 @@ httpx>=0.27.0  # 异步 HTTP 客户端，用于通知服务
 
 # Rate Limiting
 slowapi>=0.1.9  # API 频率限制
+
+# Image Processing
+Pillow>=10.0.0  # 图片压缩处理

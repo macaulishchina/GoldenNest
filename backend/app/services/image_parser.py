@@ -5,7 +5,9 @@
 import json
 import logging
 import base64
+import io
 import re
+import asyncio
 from typing import Optional, Dict, Any
 
 import httpx
@@ -112,6 +114,9 @@ class ImageParserService:
                 raise
             raise ValueError(f"无效的图片数据: {str(e)}")
         
+        # 压缩图片以减少 token 消耗（目标: 短边不超过 768px）
+        image_data, mime_type = self._compress_image(decoded, mime_type)
+        
         # 构建请求
         data_url = f"data:{mime_type};base64,{image_data}"
         
@@ -133,7 +138,7 @@ class ImageParserService:
                             "type": "image_url",
                             "image_url": {
                                 "url": data_url,
-                                "detail": "high"
+                                "detail": "low"
                             }
                         }
                     ]
@@ -149,22 +154,41 @@ class ImageParserService:
         
         logger.info(f"Calling AI vision API: {api_url}, model: {settings.AI_MODEL}")
         
-        try:
-            response = await client.post(
-                api_url,
-                json=request_body,
-                headers={
-                    "Authorization": f"Bearer {settings.AI_API_KEY}",
-                    "Content-Type": "application/json"
-                }
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            logger.error(f"AI API HTTP error: {e.response.status_code} - {e.response.text}")
-            raise ValueError(f"AI 服务调用失败: HTTP {e.response.status_code}")
-        except httpx.RequestError as e:
-            logger.error(f"AI API request error: {e}")
-            raise ValueError(f"AI 服务连接失败: {str(e)}")
+        # 带重试的 API 调用（429 自动重试最多2次）
+        max_retries = 2
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                response = await client.post(
+                    api_url,
+                    json=request_body,
+                    headers={
+                        "Authorization": f"Bearer {settings.AI_API_KEY}",
+                        "Content-Type": "application/json"
+                    }
+                )
+                response.raise_for_status()
+                break  # 成功，跳出重试循环
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                if e.response.status_code == 429 and attempt < max_retries:
+                    # 从响应头提取等待时间，默认等 5 秒
+                    retry_after = int(e.response.headers.get("retry-after", "5"))
+                    retry_after = min(retry_after, 30)  # 最多等 30 秒
+                    logger.warning(f"AI API rate limited (429), retry after {retry_after}s (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(retry_after)
+                    continue
+                logger.error(f"AI API HTTP error: {e.response.status_code} - {e.response.text}")
+                if e.response.status_code == 429:
+                    raise ValueError("AI 服务请求频率超限，请稍后再试（建议等待 30 秒）")
+                raise ValueError(f"AI 服务调用失败: HTTP {e.response.status_code}")
+            except httpx.RequestError as e:
+                logger.error(f"AI API request error: {e}")
+                raise ValueError(f"AI 服务连接失败: {str(e)}")
+        else:
+            # 所有重试都失败
+            if last_error:
+                raise ValueError("AI 服务请求频率超限，请稍后再试（建议等待 30 秒）")
         
         # 解析响应
         result = response.json()
@@ -299,6 +323,48 @@ class ImageParserService:
             return f"{year}-{int(month):02d}-{int(day):02d}"
         
         return None
+    
+    def _compress_image(self, image_bytes: bytes, mime_type: str) -> tuple:
+        """
+        压缩图片以减少 token 消耗
+        短边缩放到不超过 768px，转为 JPEG 质量 85
+        
+        Returns:
+            (base64_str, mime_type)
+        """
+        try:
+            from PIL import Image
+            
+            img = Image.open(io.BytesIO(image_bytes))
+            
+            # 如果是 RGBA，转为 RGB
+            if img.mode in ("RGBA", "LA", "P"):
+                img = img.convert("RGB")
+            
+            # 短边不超过 768px
+            max_short = 768
+            w, h = img.size
+            short_side = min(w, h)
+            if short_side > max_short:
+                scale = max_short / short_side
+                new_w = int(w * scale)
+                new_h = int(h * scale)
+                img = img.resize((new_w, new_h), Image.LANCZOS)
+                logger.info(f"Image resized: {w}x{h} -> {new_w}x{new_h}")
+            
+            # 压缩为 JPEG
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=85, optimize=True)
+            compressed = buf.getvalue()
+            
+            logger.info(f"Image compressed: {len(image_bytes)} -> {len(compressed)} bytes")
+            return base64.b64encode(compressed).decode("utf-8"), "image/jpeg"
+        except ImportError:
+            logger.warning("Pillow not installed, skipping image compression")
+            return base64.b64encode(image_bytes).decode("utf-8"), mime_type
+        except Exception as e:
+            logger.warning(f"Image compression failed, using original: {e}")
+            return base64.b64encode(image_bytes).decode("utf-8"), mime_type
     
     async def close(self):
         """关闭 HTTP 客户端"""
