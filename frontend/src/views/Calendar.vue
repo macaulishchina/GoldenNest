@@ -584,6 +584,7 @@ onMounted(() => {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
+  color: var(--theme-text-primary);
 }
 
 .page-header {
@@ -593,7 +594,7 @@ onMounted(() => {
 .page-header h1 {
   font-size: 28px;
   margin: 0 0 8px 0;
-  color: #1a1a2e;
+  color: var(--theme-text-primary);
 }
 
 .page-header p {
@@ -608,15 +609,16 @@ onMounted(() => {
   gap: 16px;
   margin-bottom: 16px;
   flex-wrap: wrap;
-  background: white;
+  background: var(--theme-bg-card);
   padding: 12px 16px;
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--theme-border-light);
+  box-shadow: 0 12px 32px var(--theme-shadow);
 }
 
 .view-switcher {
   display: flex;
-  background: #f3f4f6;
+  background: var(--theme-bg-secondary);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -632,7 +634,7 @@ onMounted(() => {
 }
 
 .view-switcher button.active {
-  background: #3B82F6;
+  background: var(--theme-primary);
   color: white;
 }
 
@@ -646,14 +648,14 @@ onMounted(() => {
   width: 32px;
   height: 32px;
   border: none;
-  background: #f3f4f6;
+  background: var(--theme-bg-secondary);
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
 }
 
 .nav-btn:hover {
-  background: #e5e7eb;
+  background: var(--theme-card-hover, rgba(0,0,0,0.04));
 }
 
 .current-period {
@@ -664,15 +666,15 @@ onMounted(() => {
 
 .today-btn {
   padding: 6px 12px;
-  border: 1px solid #ddd;
-  background: white;
+  border: 1px solid var(--theme-border);
+  background: var(--theme-bg-card);
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
 }
 
 .today-btn:hover {
-  background: #f3f4f6;
+  background: var(--theme-bg-secondary);
 }
 
 .actions {
@@ -684,21 +686,21 @@ onMounted(() => {
 .sync-btn {
   padding: 8px 16px;
   border: none;
-  background: #f0f9ff;
-  color: #3B82F6;
+  background: var(--theme-info-bg);
+  color: var(--theme-info);
   border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
 }
 
 .sync-btn:hover {
-  background: #dbeafe;
+  background: var(--theme-card-hover, rgba(0,0,0,0.04));
 }
 
 .add-btn {
   padding: 8px 16px;
   border: none;
-  background: #3B82F6;
+  background: var(--theme-primary);
   color: white;
   border-radius: 8px;
   cursor: pointer;
@@ -706,7 +708,7 @@ onMounted(() => {
 }
 
 .add-btn:hover {
-  background: #2563eb;
+  background: var(--theme-primary-hover);
 }
 
 /* 分类筛选 */
@@ -723,7 +725,7 @@ onMounted(() => {
   font-size: 13px;
   cursor: pointer;
   border: 2px solid;
-  background: white;
+  background: var(--theme-bg-card);
   opacity: 0.6;
   transition: all 0.2s;
 }
@@ -738,9 +740,10 @@ onMounted(() => {
 
 /* 月视图 */
 .month-view {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--theme-border-light);
+  box-shadow: 0 12px 32px var(--theme-shadow);
   overflow: hidden;
 }
 
@@ -766,8 +769,8 @@ onMounted(() => {
 
 .calendar-cell {
   min-height: 90px;
-  border-right: 1px solid #f0f0f0;
-  border-bottom: 1px solid #f0f0f0;
+  border-right: 1px solid var(--theme-border-light);
+  border-bottom: 1px solid var(--theme-border-light);
   padding: 8px;
   cursor: pointer;
   transition: background 0.2s;
@@ -782,19 +785,19 @@ onMounted(() => {
 }
 
 .calendar-cell.other-month {
-  background: #fafafa;
+  background: var(--theme-bg-secondary);
 }
 
 .calendar-cell.other-month .day-number {
-  color: #bbb;
+  color: var(--theme-text-tertiary);
 }
 
 .calendar-cell.today {
-  background: #eff6ff;
+  background: var(--theme-info-bg);
 }
 
 .calendar-cell.today .day-number {
-  background: #3B82F6;
+  background: var(--theme-info);
   color: white;
   width: 24px;
   height: 24px;
@@ -805,7 +808,7 @@ onMounted(() => {
 }
 
 .calendar-cell.selected {
-  background: #dbeafe;
+  background: var(--theme-primary-light, rgba(24,160,88,0.15));
 }
 
 .day-number {
@@ -854,23 +857,24 @@ onMounted(() => {
 
 .more-events {
   font-size: 11px;
-  color: #3B82F6;
+  color: var(--theme-info);
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 4px;
-  background: #eff6ff;
+  background: var(--theme-info-bg);
   text-align: center;
 }
 
 .more-events:hover {
-  background: #dbeafe;
+  background: var(--theme-card-hover, rgba(0,0,0,0.04));
 }
 
 /* 周视图 */
 .week-view {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--theme-border-light);
+  box-shadow: 0 12px 32px var(--theme-shadow);
   overflow: hidden;
 }
 
@@ -887,13 +891,13 @@ onMounted(() => {
 }
 
 .week-day-header.today {
-  background: #eff6ff;
+  background: var(--theme-info-bg);
 }
 
 .week-day-header .day-name {
   display: block;
   font-size: 12px;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 .week-day-header .day-num {
@@ -909,7 +913,7 @@ onMounted(() => {
 }
 
 .week-day-column {
-  border-right: 1px solid #f0f0f0;
+  border-right: 1px solid var(--theme-border-light);
   padding: 8px;
 }
 
@@ -940,16 +944,17 @@ onMounted(() => {
 
 /* 列表视图 */
 .list-view {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--theme-border-light);
+  box-shadow: 0 12px 32px var(--theme-shadow);
   padding: 16px;
 }
 
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 .empty-icon {
@@ -967,7 +972,7 @@ onMounted(() => {
   gap: 8px;
   margin-bottom: 8px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--theme-border-light);
 }
 
 .group-date {
@@ -976,7 +981,7 @@ onMounted(() => {
 }
 
 .group-weekday {
-  color: #999;
+  color: var(--theme-text-tertiary);
   font-size: 13px;
 }
 
@@ -1011,7 +1016,7 @@ onMounted(() => {
 
 .event-meta {
   font-size: 12px;
-  color: #666;
+  color: var(--theme-text-secondary);
   display: flex;
   gap: 12px;
 }
@@ -1035,18 +1040,21 @@ onMounted(() => {
 }
 
 .modal-content {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   padding: 24px;
   width: 90%;
   max-width: 480px;
   max-height: 90vh;
   overflow-y: auto;
+  border: 1px solid var(--theme-border-light);
+  box-shadow: 0 16px 40px var(--theme-shadow);
 }
 
 .modal-content h2 {
   margin: 0 0 20px 0;
   font-size: 20px;
+  color: var(--theme-text-primary);
 }
 
 .form-group {
@@ -1058,7 +1066,7 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 500;
   margin-bottom: 6px;
-  color: #333;
+  color: var(--theme-text-secondary);
 }
 
 .form-group input,
@@ -1066,17 +1074,19 @@ onMounted(() => {
 .form-group textarea {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--theme-border);
   border-radius: 8px;
   font-size: 14px;
   box-sizing: border-box;
+  background: var(--theme-bg-card);
+  color: var(--theme-text-primary);
 }
 
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #3B82F6;
+  border-color: var(--theme-primary);
 }
 
 .form-row {
@@ -1118,7 +1128,7 @@ onMounted(() => {
 }
 
 .color-option.selected {
-  border-color: #1a1a2e;
+  border-color: var(--theme-text-primary);
 }
 
 .modal-actions {
@@ -1127,7 +1137,7 @@ onMounted(() => {
   gap: 12px;
   margin-top: 24px;
   padding-top: 16px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--theme-border-light);
 }
 
 .spacer {
@@ -1137,34 +1147,34 @@ onMounted(() => {
 .btn-danger {
   padding: 10px 20px;
   border: none;
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--theme-error-bg);
+  color: var(--theme-error);
   border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
 }
 
 .btn-danger:hover {
-  background: #fecaca;
+  background: rgba(220, 38, 38, 0.15);
 }
 
 .btn-cancel {
   padding: 10px 20px;
-  border: 1px solid #ddd;
-  background: white;
+  border: 1px solid var(--theme-border);
+  background: var(--theme-bg-card);
   border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
 }
 
 .btn-cancel:hover {
-  background: #f3f4f6;
+  background: var(--theme-bg-secondary);
 }
 
 .btn-submit {
   padding: 10px 20px;
   border: none;
-  background: #3B82F6;
+  background: var(--theme-primary);
   color: white;
   border-radius: 8px;
   cursor: pointer;
@@ -1172,11 +1182,11 @@ onMounted(() => {
 }
 
 .btn-submit:hover {
-  background: #2563eb;
+  background: var(--theme-primary-hover);
 }
 
 .btn-submit:disabled {
-  background: #9ca3af;
+  background: var(--theme-border);
   cursor: not-allowed;
 }
 

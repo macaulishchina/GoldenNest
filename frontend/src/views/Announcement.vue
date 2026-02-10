@@ -390,6 +390,7 @@ onUnmounted(() => {
   padding: 20px;
   max-width: 700px;
   margin: 0 auto;
+  color: var(--theme-text-primary);
 }
 
 .page-header {
@@ -400,6 +401,7 @@ onUnmounted(() => {
 .page-header h1 {
   font-size: 28px;
   margin-bottom: 8px;
+  color: var(--theme-text-primary);
 }
 
 .page-header p {
@@ -417,10 +419,11 @@ onUnmounted(() => {
 }
 
 .publish-card {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   padding: 20px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  border: 1px solid var(--theme-border-light);
+  box-shadow: 0 12px 32px var(--theme-shadow);
 }
 
 .publish-card textarea {
@@ -431,6 +434,8 @@ onUnmounted(() => {
   padding: 0;
   margin-bottom: 12px;
   box-sizing: border-box;
+  background: transparent;
+  color: var(--theme-text-primary);
 }
 
 .publish-card textarea:focus {
@@ -445,7 +450,7 @@ onUnmounted(() => {
 
 .upload-btn {
   padding: 8px 16px;
-  background: #f5f5f5;
+  background: var(--theme-bg-secondary);
   border-radius: 20px;
   cursor: pointer;
   font-size: 14px;
@@ -453,12 +458,12 @@ onUnmounted(() => {
 }
 
 .upload-btn:hover {
-  background: #e8e8e8;
+  background: var(--theme-card-hover, rgba(0,0,0,0.04));
 }
 
 .btn-publish {
   padding: 10px 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--theme-primary) 0%, var(--theme-primary-hover) 100%);
   color: white;
   border: none;
   border-radius: 20px;
@@ -498,7 +503,7 @@ onUnmounted(() => {
   right: -8px;
   width: 20px;
   height: 20px;
-  background: #f44336;
+  background: var(--theme-error);
   color: white;
   border: none;
   border-radius: 50%;
@@ -517,8 +522,8 @@ onUnmounted(() => {
   display: inline-block;
   width: 30px;
   height: 30px;
-  border: 3px solid #f3f3f3;
-  border-top: 3px solid #667eea;
+  border: 3px solid var(--theme-border);
+  border-top: 3px solid var(--theme-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -532,7 +537,7 @@ onUnmounted(() => {
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 .empty-icon {
@@ -548,20 +553,21 @@ onUnmounted(() => {
 }
 
 .announcement-card {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  border: 1px solid var(--theme-border-light);
+  box-shadow: 0 12px 32px var(--theme-shadow);
 }
 
 .announcement-card.pinned {
-  border: 2px solid #ffc107;
+  border: 2px solid var(--theme-warning);
 }
 
 .pin-badge {
   display: inline-block;
   background: var(--theme-warning-light);
-  color: #ff9800;
+  color: var(--theme-warning);
   padding: 4px 12px;
   border-radius: 12px;
   font-size: 12px;
@@ -578,7 +584,7 @@ onUnmounted(() => {
 .avatar {
   width: 40px;
   height: 40px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--theme-primary) 0%, var(--theme-primary-hover) 100%);
   color: white;
   border-radius: 50%;
   display: flex;
@@ -597,7 +603,7 @@ onUnmounted(() => {
 
 .author-name {
   font-weight: 500;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .post-time {
@@ -616,18 +622,19 @@ onUnmounted(() => {
   font-size: 20px;
   cursor: pointer;
   padding: 4px 8px;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 .menu-dropdown {
   position: absolute;
   right: 0;
   top: 100%;
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   overflow: hidden;
   z-index: 10;
+  border: 1px solid var(--theme-border-light);
 }
 
 .menu-dropdown button {
@@ -642,18 +649,18 @@ onUnmounted(() => {
 }
 
 .menu-dropdown button:hover {
-  background: #f5f5f5;
+  background: var(--theme-bg-secondary);
 }
 
 .menu-dropdown button.danger {
-  color: #f44336;
+  color: var(--theme-error);
 }
 
 /* 公告内容 */
 .content {
   font-size: 15px;
   line-height: 1.6;
-  color: #333;
+  color: var(--theme-text-primary);
   margin-bottom: 12px;
   white-space: pre-wrap;
 }
@@ -684,7 +691,7 @@ onUnmounted(() => {
   display: flex;
   gap: 20px;
   padding-top: 12px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--theme-border-light);
 }
 
 .like-btn,
@@ -692,7 +699,7 @@ onUnmounted(() => {
   background: none;
   border: none;
   font-size: 14px;
-  color: #666;
+  color: var(--theme-text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -704,18 +711,18 @@ onUnmounted(() => {
 
 .like-btn:hover,
 .comment-btn:hover {
-  background: #f5f5f5;
+  background: var(--theme-bg-secondary);
 }
 
 .like-btn.liked {
-  color: #f44336;
+  color: var(--theme-error);
 }
 
 /* 评论区 */
 .comments-section {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--theme-border-light);
 }
 
 .comment-input {
@@ -727,19 +734,21 @@ onUnmounted(() => {
 .comment-input input {
   flex: 1;
   padding: 10px 16px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--theme-border);
   border-radius: 20px;
   font-size: 14px;
+  background: var(--theme-bg-card);
+  color: var(--theme-text-primary);
 }
 
 .comment-input input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--theme-primary);
 }
 
 .comment-input button {
   padding: 10px 20px;
-  background: #667eea;
+  background: var(--theme-primary);
   color: white;
   border: none;
   border-radius: 20px;
@@ -761,29 +770,29 @@ onUnmounted(() => {
 .comment-item {
   font-size: 14px;
   padding: 8px;
-  background: #f9f9f9;
+  background: var(--theme-bg-secondary);
   border-radius: 8px;
 }
 
 .comment-author {
   font-weight: 500;
-  color: #667eea;
+  color: var(--theme-primary);
   margin-right: 8px;
 }
 
 .comment-content {
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .comment-time {
   float: right;
   font-size: 12px;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 .no-comments {
   text-align: center;
-  color: #999;
+  color: var(--theme-text-tertiary);
   padding: 12px;
   font-size: 14px;
 }

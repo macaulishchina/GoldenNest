@@ -560,6 +560,7 @@ onMounted(async () => {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
+  color: var(--theme-text-primary);
 }
 
 .page-header {
@@ -570,6 +571,7 @@ onMounted(async () => {
 .page-header h1 {
   font-size: 28px;
   margin: 0;
+  color: var(--theme-text-primary);
 }
 
 .page-header p {
@@ -588,26 +590,27 @@ onMounted(async () => {
 .stat-card {
   flex: 1;
   min-width: 100px;
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 12px;
   padding: 16px;
   text-align: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  border: 1px solid var(--theme-border-light);
+  box-shadow: 0 12px 32px var(--theme-shadow);
 }
 
 .stat-card.urgent {
-  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  background: linear-gradient(135deg, var(--theme-warning-light, #fde68a) 0%, rgba(253, 230, 138, 0.6) 100%);
 }
 
 .stat-card.success {
-  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  background: linear-gradient(135deg, var(--theme-success-light, #a7f3d0) 0%, rgba(167, 243, 208, 0.6) 100%);
 }
 
 .stat-number {
   display: block;
   font-size: 28px;
   font-weight: bold;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .stat-label {
@@ -627,10 +630,11 @@ onMounted(async () => {
 /* 左侧清单面板 */
 .lists-panel {
   width: 260px;
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   padding: 16px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  border: 1px solid var(--theme-border-light);
+  box-shadow: 0 12px 32px var(--theme-shadow);
   display: flex;
   flex-direction: column;
 }
@@ -652,7 +656,7 @@ onMounted(async () => {
   width: 28px;
   height: 28px;
   border: none;
-  background: #667eea;
+  background: var(--theme-primary);
   color: white;
   border-radius: 50%;
   font-size: 18px;
@@ -660,6 +664,10 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.btn-add-list:hover {
+  background: var(--theme-primary-hover);
 }
 
 .lists-wrapper {
@@ -679,20 +687,21 @@ onMounted(async () => {
 }
 
 .list-item:hover {
-  background: #f3f4f6;
+  background: var(--theme-card-hover, rgba(0,0,0,0.03));
 }
 
 .list-item.active {
-  background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%);
+  background: linear-gradient(135deg, var(--theme-primary-light, rgba(24,160,88,0.15)) 0%, var(--theme-bg-card) 100%);
+  border: 1px solid var(--theme-primary);
 }
 
 .list-item.add-new {
-  border: 2px dashed #e5e7eb;
+  border: 2px dashed var(--theme-border);
   opacity: 0.7;
 }
 
 .list-item.add-new:hover {
-  border-color: #667eea;
+  border-color: var(--theme-primary);
   opacity: 1;
 }
 
@@ -715,12 +724,12 @@ onMounted(async () => {
 .list-name {
   flex: 1;
   font-size: 14px;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 .list-count {
-  background: #e5e7eb;
-  color: #666;
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-secondary);
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 10px;
@@ -734,6 +743,7 @@ onMounted(async () => {
   border: none;
   background: transparent;
   font-size: 16px;
+  color: var(--theme-text-secondary);
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.2s;
@@ -746,10 +756,11 @@ onMounted(async () => {
 /* 右侧任务面板 */
 .tasks-panel {
   flex: 1;
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   padding: 20px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  border: 1px solid var(--theme-border-light);
+  box-shadow: 0 12px 32px var(--theme-shadow);
   display: flex;
   flex-direction: column;
 }
@@ -771,7 +782,7 @@ onMounted(async () => {
   align-items: center;
   gap: 6px;
   font-size: 14px;
-  color: #666;
+  color: var(--theme-text-secondary);
   cursor: pointer;
 }
 
@@ -785,7 +796,7 @@ onMounted(async () => {
 .quick-add-input {
   flex: 1;
   padding: 12px 16px;
-  border: 2px solid #e5e7eb;
+  border: 2px solid var(--theme-border);
   border-radius: 10px;
   font-size: 14px;
   transition: border-color 0.2s;
@@ -793,12 +804,12 @@ onMounted(async () => {
 
 .quick-add-input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--theme-primary);
 }
 
 .btn-quick-add {
   padding: 12px 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--theme-primary) 0%, var(--theme-primary-hover) 100%);
   color: white;
   border: none;
   border-radius: 10px;
@@ -824,12 +835,13 @@ onMounted(async () => {
   padding: 12px;
   border-radius: 10px;
   margin-bottom: 8px;
-  background: var(--theme-bg-secondary);
+  background: var(--theme-bg-card);
+  border: 1px solid var(--theme-border-light);
   transition: all 0.2s;
 }
 
 .task-item:hover {
-  background: #f3f4f6;
+  background: var(--theme-card-hover, rgba(0,0,0,0.03));
 }
 
 .task-item.completed {
@@ -838,19 +850,19 @@ onMounted(async () => {
 
 .task-item.completed .task-title {
   text-decoration: line-through;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 .task-item.priority-high {
-  border-left: 3px solid #ef4444;
+  border-left: 3px solid var(--theme-error);
 }
 
 .task-item.priority-medium {
-  border-left: 3px solid #f59e0b;
+  border-left: 3px solid var(--theme-warning);
 }
 
 .task-item.priority-low {
-  border-left: 3px solid #10b981;
+  border-left: 3px solid var(--theme-success);
 }
 
 .task-checkbox {
@@ -866,14 +878,14 @@ onMounted(async () => {
 .checkbox-empty {
   width: 20px;
   height: 20px;
-  border: 2px solid #d1d5db;
+  border: 2px solid var(--theme-border);
   border-radius: 50%;
   transition: all 0.2s;
 }
 
 .task-checkbox:hover .checkbox-empty {
-  border-color: #667eea;
-  background: #667eea10;
+  border-color: var(--theme-primary);
+  background: var(--theme-primary-light, rgba(24,160,88,0.15));
 }
 
 .task-content {
@@ -883,7 +895,7 @@ onMounted(async () => {
 
 .task-title {
   font-size: 14px;
-  color: #333;
+  color: var(--theme-text-primary);
   margin-bottom: 4px;
 }
 
@@ -900,28 +912,28 @@ onMounted(async () => {
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 12px;
-  background: #e5e7eb;
-  color: #666;
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-secondary);
 }
 
 .meta-tag.assignee {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--theme-info-bg);
+  color: var(--theme-info);
 }
 
 .meta-tag.due-date {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--theme-warning-bg);
+  color: var(--theme-warning);
 }
 
 .meta-tag.due-date.overdue {
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--theme-error-bg);
+  color: var(--theme-error);
 }
 
 .meta-tag.repeat {
-  background: #f0fdf4;
-  color: #166534;
+  background: var(--theme-success-bg);
+  color: var(--theme-success);
 }
 
 .task-priority {
@@ -950,7 +962,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   padding: 60px 20px;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 .empty-icon {
@@ -975,8 +987,8 @@ onMounted(async () => {
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #e5e7eb;
-  border-top-color: #667eea;
+  border: 3px solid var(--theme-border);
+  border-top-color: var(--theme-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -1001,13 +1013,15 @@ onMounted(async () => {
 }
 
 .modal-content {
-  background: white;
+  background: var(--theme-bg-card);
+  border: 1px solid var(--theme-border-light);
   border-radius: 16px;
   padding: 24px;
   width: 100%;
   max-width: 480px;
   max-height: 90vh;
   overflow-y: auto;
+  box-shadow: 0 16px 40px var(--theme-shadow);
 }
 
 .modal-content.small {
@@ -1017,6 +1031,7 @@ onMounted(async () => {
 .modal-content h2 {
   margin: 0 0 20px;
   font-size: 20px;
+  color: var(--theme-text-primary);
 }
 
 .form-group {
@@ -1026,7 +1041,7 @@ onMounted(async () => {
 .form-group label {
   display: block;
   font-size: 14px;
-  color: #666;
+  color: var(--theme-text-secondary);
   margin-bottom: 6px;
 }
 
@@ -1035,17 +1050,19 @@ onMounted(async () => {
 .form-group textarea {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--theme-border);
   border-radius: 8px;
   font-size: 14px;
   box-sizing: border-box;
+  background: var(--theme-bg-card);
+  color: var(--theme-text-primary);
 }
 
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--theme-primary);
 }
 
 .form-row {
@@ -1071,7 +1088,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   font-size: 20px;
-  border: 2px solid #e5e7eb;
+  border: 2px solid var(--theme-border);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
@@ -1079,8 +1096,8 @@ onMounted(async () => {
 
 .icon-option:hover,
 .icon-option.selected {
-  border-color: #667eea;
-  background: #667eea10;
+  border-color: var(--theme-primary);
+  background: var(--theme-primary-light, rgba(24, 160, 88, 0.15));
 }
 
 .color-option {
@@ -1095,7 +1112,7 @@ onMounted(async () => {
 .color-option:hover,
 .color-option.selected {
   transform: scale(1.1);
-  border-color: #333;
+  border-color: var(--theme-text-primary);
 }
 
 .modal-actions {
@@ -1110,15 +1127,16 @@ onMounted(async () => {
 
 .btn-cancel {
   padding: 10px 20px;
-  background: #f3f4f6;
+  background: var(--theme-bg-secondary);
   border: none;
   border-radius: 8px;
   cursor: pointer;
+  color: var(--theme-text-primary);
 }
 
 .btn-submit {
   padding: 10px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--theme-primary) 0%, var(--theme-primary-hover) 100%);
   color: white;
   border: none;
   border-radius: 8px;
@@ -1132,8 +1150,8 @@ onMounted(async () => {
 
 .btn-danger {
   padding: 10px 20px;
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--theme-error-bg);
+  color: var(--theme-error);
   border: none;
   border-radius: 8px;
   cursor: pointer;
