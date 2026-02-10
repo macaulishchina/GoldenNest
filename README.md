@@ -234,8 +234,8 @@ uvicorn app.main:app --reload --port 8000
 - 健康检查：http://localhost:8000/api/health
 
 **📚 更多文档**：
-- [启动脚本使用指南](RUN_SCRIPTS_GUIDE.md) - 详细的脚本功能和端口管理
-- [数据库迁移指南](DATABASE_MIGRATION_GUIDE.md) - 模型修改和数据库同步
+- [启动脚本使用指南](docs/RUN_SCRIPTS_GUIDE.md) - 详细的脚本功能和端口管理
+- [数据库迁移指南](docs/DATABASE_MIGRATION_GUIDE.md) - 模型修改和数据库同步
 
 #### 前端
 
@@ -316,17 +316,17 @@ golden-nest/
 - ⚠️ 建议使用 HTTPS
 
 详细安全配置请参考：
-- [Webhook 加密配置指南](WEBHOOK_ENCRYPTION_GUIDE.md)
+- [Webhook 加密配置指南](docs/WEBHOOK_ENCRYPTION_GUIDE.md)
 - [.env.example](.env.example)
 
 ## 📚 文档
 
-- 📖 [快速开始指南](QUICKSTART.md)
-- 🔧 [启动脚本使用指南](RUN_SCRIPTS_GUIDE.md)
-- 🗄️ [数据库迁移指南](DATABASE_MIGRATION_GUIDE.md)
-- 🔐 [Webhook 加密迁移指南](WEBHOOK_ENCRYPTION_GUIDE.md)
-- 🚦 [API 速率限制配置](RATE_LIMITING_GUIDE.md)
-- ✅ [代码质量优化报告](CODE_QUALITY_REPORT.md)
+- � [启动脚本使用指南](docs/RUN_SCRIPTS_GUIDE.md) - 脚本功能、端口管理和常见问题
+- 🗄️ [数据库迁移指南](docs/DATABASE_MIGRATION_GUIDE.md) - 模型修改和数据库同步
+- 🔐 [Webhook 加密配置指南](docs/WEBHOOK_ENCRYPTION_GUIDE.md) - 微信通知加密配置
+- 🚦 [API 速率限制配置](docs/RATE_LIMITING_GUIDE.md) - 防暴力破解和滥用配置
+- 🎨 [主题系统开发指南](docs/THEME_GUIDE.md) - 主题定制和扩展
+- ✅ [代码质量优化报告](docs/CODE_QUALITY_REPORT.md) - 代码质量改进记录
 
 ## 📄 开源协议
 

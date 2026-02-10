@@ -1,6 +1,9 @@
 <template>
   <div class="page-container">
-    <h1 class="page-title"><span class="icon">🎁</span> 股权赠与</h1>
+    <h1 class="page-title">
+      <span class="icon">🎁</span> 
+      股权赠与
+    </h1>
     
     <!-- 发送赠与卡片 -->
     <n-card class="card-hover gift-send-card" style="margin-bottom: 24px">
@@ -12,7 +15,7 @@
       
       <!-- 桌面端表单 -->
       <n-form class="desktop-only" :model="formData" label-placement="left" label-width="100px">
-        <n-grid :cols="2" :x-gap="16">
+        <n-grid :cols="1" :x-gap="16">
           <n-gi>
             <n-form-item label="赠送对象">
               <n-select
@@ -22,6 +25,9 @@
               />
             </n-form-item>
           </n-gi>
+        </n-grid>
+        
+        <n-grid :cols="2" :x-gap="16">
           <n-gi>
             <n-form-item label="赠送比例">
               <n-input-number 
@@ -30,22 +36,25 @@
                 :max="myEquity * 100"
                 :step="0.1"
                 style="width: 100%"
+                placeholder="输入比例"
+                @blur="updateGiftAmount"
               >
                 <template #suffix>%</template>
               </n-input-number>
             </n-form-item>
           </n-gi>
-        </n-grid>
-        
-        <n-grid :cols="2" :x-gap="16">
           <n-gi>
-            <n-form-item label="对应金额">
-              <n-input 
-                :value="'¥' + formatMoney(calculatedAmount)" 
-                readonly 
-                placeholder="自动计算"
+            <n-form-item label="赠送金额">
+              <n-input-number 
+                v-model:value="formData.giftAmount" 
+                :min="0" 
+                :step="1"
                 style="width: 100%"
-              />
+                placeholder="输入金额"
+                @blur="updateAmount"
+              >
+                <template #prefix>¥</template>
+              </n-input-number>
             </n-form-item>
           </n-gi>
         </n-grid>
@@ -81,17 +90,20 @@
       
       <!-- 移动端紧凑表单 -->
       <div class="mobile-only mobile-gift-form">
-        <!-- 第一行：赠送对象 + 比例 -->
+        <!-- 第一行：赠送对象 -->
         <div class="form-row">
           <div class="form-col target-col">
             <label>赠送对象</label>
             <n-select
               v-model:value="formData.to_user_id"
               :options="memberOptions"
-              placeholder="选择"
+              placeholder="选择家庭成员"
               size="small"
             />
           </div>
+        </div>
+        <!-- 第二行：赠送比例 + 赠送金额 -->
+        <div class="form-row two-col-row">
           <div class="form-col amount-col">
             <label>赠送比例</label>
             <div class="amount-input-wrapper">
@@ -103,12 +115,28 @@
                 :show-button="false"
                 size="small"
                 placeholder="0.00"
+                @blur="updateGiftAmount"
               />
               <span class="amount-suffix">%</span>
             </div>
           </div>
+          <div class="form-col gift-amount-col">
+            <label>赠送金额</label>
+            <div class="amount-input-wrapper">
+              <span class="amount-prefix">¥</span>
+              <n-input-number 
+                v-model:value="formData.giftAmount" 
+                :min="0" 
+                :step="1"
+                :show-button="false"
+                size="small"
+                placeholder="0"
+                @blur="updateAmount"
+              />
+            </div>
+          </div>
         </div>
-        <!-- 第二行：祝福语（单行输入） -->
+        <!-- 第三行：祝福语 -->
         <div class="form-row">
           <div class="form-col message-col">
             <label>祝福语</label>
@@ -120,7 +148,7 @@
             />
           </div>
         </div>
-        <!-- 第三行：发送按钮 + 对应金额 + 股权信息 -->
+        <!-- 第四行：发送按钮 + 股权信息 -->
         <div class="form-row submit-row">
           <n-button 
             type="primary" 
@@ -133,7 +161,6 @@
             🎁 发送赠与
           </n-button>
           <div class="submit-info">
-            <span class="calculated-amount" v-if="calculatedAmount > 0">≈ ¥{{ formatMoney(calculatedAmount) }}</span>
             <span class="my-equity">我的股权：{{ (myEquity * 100).toFixed(2) }}%</span>
           </div>
         </div>
@@ -304,11 +331,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import { giftApi, familyApi, equityApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { usePrivacyStore } from '@/stores/privacy'
+import { useGiftStore } from '@/stores/gift'
 import { formatShortDateTime } from '@/utils/date'
 import { checkAndShowAchievements } from '@/utils/achievement'
 import UserAvatar from '@/components/UserAvatar.vue'
@@ -317,6 +345,7 @@ import TimeRangeSelector from '@/components/TimeRangeSelector.vue'
 const message = useMessage()
 const userStore = useUserStore()
 const privacyStore = usePrivacyStore()
+const giftStore = useGiftStore()
 const loading = ref(false)
 const submitting = ref(false)
 const showSuccessAnimation = ref(false)
@@ -325,9 +354,11 @@ const timeRange = ref('month') // 默认最近一个月
 // 数据
 const sentGifts = ref<any[]>([])
 const receivedGifts = ref<any[]>([])
-const pendingCount = ref(0)
 const familyMembers = ref<any[]>([])
 const myEquity = ref(0)
+
+// 使用 store 的 pendingCount
+const pendingCount = computed(() => giftStore.pendingCount)
 const totalSavings = ref(0) // 家庭总储蓄
 
 const stats = ref({
@@ -340,6 +371,7 @@ const stats = ref({
 const formData = ref({
   to_user_id: null as number | null,
   amount: null as number | null,
+  giftAmount: null as number | null, // 新增：赠送金额
   message: ''
 })
 
@@ -354,24 +386,35 @@ const memberOptions = computed(() => {
 })
 
 const canSend = computed(() => {
-  return formData.value.to_user_id && 
-         formData.value.amount && 
-         formData.value.amount > 0 &&
-         formData.value.amount <= myEquity.value * 100
-})
-
-// 计算赠送股权对应的金额
-const calculatedAmount = computed(() => {
-  if (!formData.value.amount || formData.value.amount <= 0) {
-    return 0
-  }
-  return totalSavings.value * (formData.value.amount / 100)
+  const hasAmount = formData.value.amount && formData.value.amount > 0 && 
+                    formData.value.amount <= myEquity.value * 100
+  const hasGiftAmount = formData.value.giftAmount && formData.value.giftAmount > 0 &&
+                        (formData.value.giftAmount / totalSavings.value * 100) <= myEquity.value * 100
+  return formData.value.to_user_id && (hasAmount || hasGiftAmount)
 })
 
 // 格式化金额显示（支持隐私模式）
 const formatMoney = (num: number) => {
   if (privacyStore.privacyMode) return '****'
   return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// 当比例改变时，更新金额
+function updateGiftAmount() {
+  if (formData.value.amount && formData.value.amount > 0) {
+    formData.value.giftAmount = Math.round(totalSavings.value * (formData.value.amount / 100) * 100) / 100
+  }
+}
+
+// 当金额改变时，更新比例
+function updateAmount() {
+  if (formData.value.giftAmount && formData.value.giftAmount > 0 && totalSavings.value > 0) {
+    const newAmount = (formData.value.giftAmount / totalSavings.value) * 100
+    // 限制在有效范围内
+    if (newAmount <= myEquity.value * 100) {
+      formData.value.amount = Math.round(newAmount * 10) / 10 // 保留一位小数
+    }
+  }
 }
 
 // 方法
@@ -412,7 +455,8 @@ async function loadData() {
     
     sentGifts.value = giftListRes.data.sent
     receivedGifts.value = giftListRes.data.received
-    pendingCount.value = giftListRes.data.pending_count
+    // 同步 store 中的 pendingCount
+    giftStore.pendingCount = giftListRes.data.pending_count
     stats.value = statsRes.data
     familyMembers.value = familyRes.data.members || []
     
@@ -432,9 +476,20 @@ async function handleSend() {
   
   submitting.value = true
   try {
+    // 确定发送的比例：优先使用 amount，如果没有则从 giftAmount 计算
+    let sendAmount: number
+    if (formData.value.amount && formData.value.amount > 0) {
+      sendAmount = formData.value.amount / 100
+    } else if (formData.value.giftAmount && formData.value.giftAmount > 0) {
+      sendAmount = (formData.value.giftAmount / totalSavings.value)
+    } else {
+      message.error('请输入赠送比例或金额')
+      return
+    }
+
     await giftApi.send({
       to_user_id: formData.value.to_user_id!,
-      amount: formData.value.amount! / 100, // 转换为小数
+      amount: sendAmount,
       message: formData.value.message || undefined
     })
     
@@ -450,6 +505,7 @@ async function handleSend() {
     formData.value = {
       to_user_id: null,
       amount: null,
+      giftAmount: null,
       message: ''
     }
     
@@ -635,14 +691,19 @@ onMounted(() => {
 
 .mobile-gift-form .form-row {
   display: flex;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mobile-gift-form .form-row.two-col-row {
+  gap: 8px;
 }
 
 .mobile-gift-form .form-col {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1;
 }
 
 .mobile-gift-form .form-col label {
@@ -656,8 +717,11 @@ onMounted(() => {
 }
 
 .mobile-gift-form .amount-col {
-  width: 110px;
-  flex-shrink: 0;
+  flex: 0.8;
+}
+
+.mobile-gift-form .gift-amount-col {
+  flex: 1;
 }
 
 .mobile-gift-form .message-col {
@@ -667,24 +731,33 @@ onMounted(() => {
 .mobile-gift-form .amount-input-wrapper {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .mobile-gift-form .amount-input-wrapper .n-input-number {
   flex: 1;
+  min-width: 0;
 }
 
 .mobile-gift-form .amount-suffix {
   font-size: 13px;
   color: var(--theme-text-secondary);
   font-weight: 500;
+  white-space: nowrap;
+}
+
+.mobile-gift-form .amount-prefix {
+  font-size: 13px;
+  color: var(--theme-text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .mobile-gift-form .submit-row {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 4px;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .mobile-gift-form .send-btn {
@@ -696,12 +769,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-.mobile-gift-form .calculated-amount {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--theme-success);
 }
 
 .mobile-gift-form .my-equity {

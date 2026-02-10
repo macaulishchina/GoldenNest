@@ -96,7 +96,6 @@ class AssetCreateApprovalCreate(BaseModel):
     # exchange_rate由后端自动获取，前端无需传入
     
     # 资产属性
-    expected_rate: float = Field(0.0, ge=0, le=1, description="预期年化收益率")
     start_date: datetime = Field(..., description="开始日期")
     end_date: Optional[datetime] = Field(None, description="到期日期（活期为空）")
     bank_name: Optional[str] = Field(None, max_length=100, description="银行/机构名称")
@@ -131,9 +130,9 @@ class InvestmentCreateApprovalCreate(BaseModel):
     name: str = Field(..., max_length=100, description="理财产品名称")
     investment_type: str = Field(..., description="理财类型")
     principal: float = Field(..., gt=0, description="本金")
-    expected_rate: float = Field(..., ge=0, le=1, description="预期年化收益率")
     start_date: datetime = Field(..., description="开始日期")
     end_date: Optional[datetime] = Field(None, description="到期日期")
+    deduct_from_cash: bool = Field(default=False, description="是否从自由资金扣除")
     note: Optional[str] = Field(None, max_length=500, description="备注")
 
 
@@ -144,7 +143,6 @@ class InvestmentUpdateApprovalCreate(BaseModel):
     investment_id: int = Field(..., description="理财产品ID")
     name: Optional[str] = Field(None, max_length=100, description="理财产品名称")
     principal: Optional[float] = Field(None, gt=0, description="本金")
-    expected_rate: Optional[float] = Field(None, ge=0, le=1, description="预期年化收益率")
     end_date: Optional[datetime] = Field(None, description="到期日期")
     is_active: Optional[bool] = Field(None, description="是否激活")
     note: Optional[str] = Field(None, max_length=500, description="备注")
@@ -175,6 +173,7 @@ class InvestmentIncreaseApprovalCreate(BaseModel):
     amount: float = Field(..., gt=0, description="增持金额")
     operation_date: datetime = Field(..., description="增持日期")
     note: Optional[str] = Field(None, max_length=500, description="备注")
+    deduct_from_cash: bool = Field(True, description="是否从自由资金扣除（False=外部资金，计入股权）")
 
 
 # ============ 投资减持申请 ============

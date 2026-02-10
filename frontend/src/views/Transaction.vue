@@ -20,7 +20,7 @@
                 <span class="record-time">{{ formatShortDateTime(item.created_at) }}</span>
               </div>
               <div class="record-card-body">
-                <div class="record-amount" :class="item.amount > 0 ? 'positive' : 'negative'">
+                <div class="record-amount" :class="getAmountClass(item)">
                   {{ formatAmount(item.amount) }}
                 </div>
                 <div class="record-desc">{{ item.description || '无描述' }}</div>
@@ -65,15 +65,25 @@ const typeMap: Record<string, { color: string, label: string }> = {
   deposit: { color: 'var(--theme-success)', label: '存入' },
   withdraw: { color: 'var(--theme-error)', label: '支出' },
   income: { color: 'var(--theme-info)', label: '理财收益' },
-  dividend: { color: 'var(--theme-purple)', label: '分红' }
+  dividend: { color: 'var(--theme-purple)', label: '分红' },
+  investment_buy: { color: 'var(--theme-warning)', label: '投资买入' },
+  investment_redeem: { color: 'var(--theme-success)', label: '投资赎回' },
+  freeze: { color: 'var(--theme-border)', label: '冻结' },
+  unfreeze: { color: 'var(--theme-border)', label: '解冻' }
 }
 
 const columns = computed(() => [
   { title: '日期', key: 'created_at', render: (row: any) => formatShortDateTime(row.created_at) },
   { title: '类型', key: 'transaction_type', render: (row: any) => h(NTag, { size: 'small', bordered: false, style: { backgroundColor: typeMap[row.transaction_type]?.color + '20', color: typeMap[row.transaction_type]?.color } }, { default: () => typeMap[row.transaction_type]?.label || row.transaction_type }) },
   { title: '金额', key: 'amount', render: (row: any) => {
-    const isPositive = row.amount > 0
-    return h('span', { style: { color: isPositive ? 'var(--theme-success)' : 'var(--theme-error)', fontWeight: 600 } }, formatAmount(row.amount))
+    // 投资买入使用中性色，其他根据正负判断
+    let color = 'var(--theme-text-primary)'
+    if (row.transaction_type === 'investment_buy') {
+      color = 'var(--theme-warning)'
+    } else {
+      color = row.amount > 0 ? 'var(--theme-success)' : 'var(--theme-error)'
+    }
+    return h('span', { style: { color: color, fontWeight: 600 } }, formatAmount(row.amount))
   }},
   { title: '操作人', key: 'user_nickname' },
   { title: '说明', key: 'description', render: (row: any) => row.description || '-' }
@@ -85,9 +95,20 @@ function getCardClass(type: string) {
     deposit: 'deposit-card',
     withdraw: 'withdraw-card',
     income: 'income-card',
-    dividend: 'dividend-card'
+    dividend: 'dividend-card',
+    investment_buy: 'investment-card',
+    investment_redeem: 'deposit-card'
   }
   return classMap[type] || ''
+}
+
+// 获取金额样式类
+function getAmountClass(item: any) {
+  // 投资买入使用中性色，不算作支出
+  if (item.transaction_type === 'investment_buy') {
+    return 'neutral'
+  }
+  return item.amount > 0 ? 'positive' : 'negative'
 }
 
 // 获取标签类型
@@ -96,7 +117,11 @@ function getTagType(type: string) {
     deposit: 'success',
     withdraw: 'error',
     income: 'info',
-    dividend: 'warning'
+    dividend: 'warning',
+    investment_buy: 'warning',
+    investment_redeem: 'success',
+    freeze: 'default',
+    unfreeze: 'default'
   }
   return tagMap[type] || 'default'
 }
@@ -180,6 +205,11 @@ onMounted(loadData)
   border-color: var(--theme-purple-light);
 }
 
+.record-card.investment-card {
+  background: var(--theme-warning-bg);
+  border-color: var(--theme-warning-light);
+}
+
 .record-card-header {
   display: flex;
   justify-content: space-between;
@@ -208,6 +238,10 @@ onMounted(loadData)
 
 .record-amount.negative {
   color: var(--theme-error);
+}
+
+.record-amount.neutral {
+  color: var(--theme-warning);
 }
 
 .record-desc {

@@ -105,22 +105,22 @@ body.theme-purple {
 .page-container {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 16px;
 }
 
 /* 标题样式 */
 .page-title {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 600;
   color: var(--theme-text-primary);
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .page-title .icon {
-  font-size: 28px;
+  font-size: 24px;
 }
 
 /* ============================================
@@ -130,14 +130,14 @@ body.theme-purple {
 @media (max-width: 767px) {
   /* 页面容器移动端适配 */
   .page-container {
-    padding: 16px;
+    padding: 12px;
     max-width: 100%;
   }
   
   /* 标题移动端适配 */
   .page-title {
-    font-size: 20px;
-    margin-bottom: 16px;
+    font-size: 18px;
+    margin-bottom: 12px;
     gap: 8px;
   }
   

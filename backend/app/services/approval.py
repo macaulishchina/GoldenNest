@@ -561,7 +561,6 @@ class ApprovalService:
             raise ValueError("活期资产应通过资金注入接口创建，不能在此登记")
         
         currency = CurrencyType(data.get("currency", "CNY"))
-        expected_rate = data.get("expected_rate", 0.0)
         deduct_from_cash = data.get("deduct_from_cash", False)
         bank_name = data.get("bank_name")
         note = data.get("note")
@@ -613,7 +612,6 @@ class ApprovalService:
             foreign_amount=foreign_amount,
             exchange_rate=exchange_rate if currency != CurrencyType.CNY else None,
             principal=principal_cny,
-            expected_rate=expected_rate,
             start_date=start_date,
             end_date=end_date,
             bank_name=bank_name,
@@ -815,6 +813,7 @@ class ApprovalService:
             end_date = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
         
         principal = data.get("principal")
+        deduct_from_cash = data.get("deduct_from_cash", False)  # 默认使用外部资金
         
         # 获取当前余额
         result = await self.db.execute(
@@ -826,12 +825,12 @@ class ApprovalService:
         last_transaction = result.scalar_one_or_none()
         current_balance = last_transaction.balance_after if last_transaction else 0
         
-        # 检查余额是否足够
-        if current_balance < principal:
+        # 只有从自由资金扣除时才检查余额
+        if deduct_from_cash and current_balance < principal:
             logging.error(f"Insufficient balance for investment create: current={current_balance}, required={principal}")
             raise ValueError(f"余额不足，当前余额: {current_balance}，需要: {principal}")
         
-        logging.info(f"Creating investment: family_id={request.family_id}, name={data.get('name')}")
+        logging.info(f"Creating investment: family_id={request.family_id}, name={data.get('name')}, deduct_from_cash={deduct_from_cash}")
         
         now = datetime.utcnow()
         investment = Investment(
@@ -839,7 +838,6 @@ class ApprovalService:
             name=data.get("name"),
             investment_type=InvestmentType(data.get("investment_type")),
             principal=principal,
-            expected_rate=data.get("expected_rate"),
             start_date=start_date,
             end_date=end_date,
             note=data.get("note"),
@@ -856,6 +854,8 @@ class ApprovalService:
             investment_id=investment.id,
             operation_type=PositionOperationType.CREATE,
             amount=principal,
+            principal_before=0,
+            principal_after=principal,
             operation_date=start_date,
             note=f"创建投资: {investment.name}",
             approval_request_id=request.id,
@@ -864,22 +864,37 @@ class ApprovalService:
         self.db.add(position)
         await self.db.flush()
         
-        # 创建交易流水（从余额扣款）
-        transaction = Transaction(
-            family_id=request.family_id,
-            user_id=request.requester_id,
-            transaction_type=TransactionType.WITHDRAW,
-            amount=-principal,
-            balance_after=current_balance - principal,
-            description=f"创建投资: {investment.name}",
-            reference_id=investment.id,
-            reference_type="investment_create"
-        )
-        self.db.add(transaction)
-        await self.db.flush()
-        
-        # 关联交易ID到持仓记录
-        position.transaction_id = transaction.id
+        # 创建交易流水和关联
+        if deduct_from_cash:
+            # 从自由资金扣除：创建WITHDRAW交易
+            transaction = Transaction(
+                family_id=request.family_id,
+                user_id=request.requester_id,
+                transaction_type=TransactionType.WITHDRAW,
+                amount=-principal,
+                balance_after=current_balance - principal,
+                description=f"创建投资: {investment.name} (从自由资金)",
+                reference_id=investment.id,
+                reference_type="investment_create"
+            )
+            self.db.add(transaction)
+            await self.db.flush()
+            position.transaction_id = transaction.id
+        else:
+            # 外部资金：创建DEPOSIT交易记录资金进入
+            transaction = Transaction(
+                family_id=request.family_id,
+                user_id=request.requester_id,
+                transaction_type=TransactionType.DEPOSIT,
+                amount=principal,
+                balance_after=current_balance + principal,
+                description=f"创建投资: {investment.name} (外部资金)",
+                reference_id=investment.id,
+                reference_type="investment_create"
+            )
+            self.db.add(transaction)
+            await self.db.flush()
+            position.transaction_id = transaction.id
         
         # 创建存款记录（记录权益贡献）
         deposit = Deposit(
@@ -938,8 +953,6 @@ class ApprovalService:
             investment.name = data["name"]
         if data.get("principal") is not None:
             investment.principal = data["principal"]
-        if data.get("expected_rate") is not None:
-            investment.expected_rate = data["expected_rate"]
         if data.get("end_date") is not None:
             end_date = data["end_date"]
             if isinstance(end_date, str):
@@ -1102,21 +1115,36 @@ class ApprovalService:
             operation_date = datetime.fromisoformat(operation_date.replace("Z", "+00:00"))
         
         amount = data.get("amount")
+        deduct_from_cash = data.get("deduct_from_cash", True)  # 默认从自由资金扣除
         
-        # 获取当前余额
+        # 如果从自由资金扣除，需要检查余额
+        current_balance = 0
+        if deduct_from_cash:
+            # 获取当前余额
+            result = await self.db.execute(
+                select(Transaction)
+                .where(Transaction.family_id == request.family_id)
+                .order_by(Transaction.created_at.desc())
+                .limit(1)
+            )
+            last_transaction = result.scalar_one_or_none()
+            current_balance = last_transaction.balance_after if last_transaction else 0
+            
+            # 检查余额是否足够
+            if current_balance < amount:
+                logging.error(f"Insufficient balance for investment increase: current={current_balance}, required={amount}")
+                raise ValueError(f"余额不足，当前余额: {current_balance}，需要: {amount}")
+        
+        # 获取当前持仓本金
         result = await self.db.execute(
-            select(Transaction)
-            .where(Transaction.family_id == request.family_id)
-            .order_by(Transaction.created_at.desc())
+            select(InvestmentPosition)
+            .where(InvestmentPosition.investment_id == investment_id)
+            .order_by(InvestmentPosition.created_at.desc())
             .limit(1)
         )
-        last_transaction = result.scalar_one_or_none()
-        current_balance = last_transaction.balance_after if last_transaction else 0
-        
-        # 检查余额是否足够
-        if current_balance < amount:
-            logging.error(f"Insufficient balance for investment increase: current={current_balance}, required={amount}")
-            raise ValueError(f"余额不足，当前余额: {current_balance}，需要: {amount}")
+        last_position = result.scalar_one_or_none()
+        principal_before = last_position.principal_after if last_position else 0
+        principal_after = principal_before + amount
         
         now = datetime.utcnow()
         
@@ -1125,6 +1153,8 @@ class ApprovalService:
             investment_id=investment_id,
             operation_type=PositionOperationType.INCREASE,
             amount=amount,
+            principal_before=principal_before,
+            principal_after=principal_after,
             operation_date=operation_date,
             note=data.get("note") or f"增持投资: {investment.name}",
             approval_request_id=request.id,
@@ -1133,34 +1163,51 @@ class ApprovalService:
         self.db.add(position)
         await self.db.flush()
         
-        # 创建交易流水（从余额扣款）
-        transaction = Transaction(
-            family_id=request.family_id,
-            user_id=request.requester_id,
-            transaction_type=TransactionType.WITHDRAW,
-            amount=-amount,
-            balance_after=current_balance - amount,
-            description=f"投资增持: {investment.name}",
-            reference_id=investment_id,
-            reference_type="investment_increase"
-        )
-        self.db.add(transaction)
-        await self.db.flush()
-        position.transaction_id = transaction.id
+        # 只有从自由资金扣除时才创建交易流水
+        if deduct_from_cash:
+            # 创建交易流水（从余额扣款）
+            transaction = Transaction(
+                family_id=request.family_id,
+                user_id=request.requester_id,
+                transaction_type=TransactionType.INVESTMENT_BUY,
+                amount=-amount,
+                balance_after=current_balance - amount,
+                description=f"投资买入: {investment.name} (从自由资金)",
+                reference_id=investment_id,
+                reference_type="investment_increase"
+            )
+            self.db.add(transaction)
+            await self.db.flush()
+            position.transaction_id = transaction.id
+        else:
+            # 外部资金：创建DEPOSIT交易记录资金进入
+            transaction = Transaction(
+                family_id=request.family_id,
+                user_id=request.requester_id,
+                transaction_type=TransactionType.DEPOSIT,
+                amount=amount,
+                balance_after=current_balance + amount,
+                description=f"投资买入: {investment.name} (外部资金)",
+                reference_id=investment_id,
+                reference_type="investment_increase"
+            )
+            self.db.add(transaction)
+            await self.db.flush()
+            position.transaction_id = transaction.id
+            
+            # 创建存款记录（增加权益贡献）
+            deposit = Deposit(
+                user_id=request.requester_id,
+                family_id=request.family_id,
+                amount=amount,
+                deposit_date=operation_date,
+                note=f"投资增持: {investment.name} (外部资金)"
+            )
+            self.db.add(deposit)
+            await self.db.flush()
+            position.deposit_id = deposit.id
         
-        # 创建存款记录（增加权益贡献）
-        deposit = Deposit(
-            user_id=request.requester_id,
-            family_id=request.family_id,
-            amount=amount,
-            deposit_date=operation_date,
-            note=f"投资增持: {investment.name}"
-        )
-        self.db.add(deposit)
-        await self.db.flush()
-        position.deposit_id = deposit.id
-        
-        logging.info(f"Investment increase executed: investment_id={investment_id}, amount={amount}")
+        logging.info(f"Investment increase executed: investment_id={investment_id}, amount={amount}, deduct_from_cash={deduct_from_cash}")
     
     async def _execute_investment_decrease(self, request: ApprovalRequest, data: Dict[str, Any]) -> None:
         """执行投资减持"""
@@ -1183,23 +1230,22 @@ class ApprovalService:
         
         amount = data.get("amount")
         
-        # 计算当前持仓本金
-        positions_result = await self.db.execute(
-            select(InvestmentPosition).where(
-                InvestmentPosition.investment_id == investment_id
-            )
+        # 获取当前持仓本金
+        result = await self.db.execute(
+            select(InvestmentPosition)
+            .where(InvestmentPosition.investment_id == investment_id)
+            .order_by(InvestmentPosition.created_at.desc())
+            .limit(1)
         )
-        positions = positions_result.scalars().all()
-        current_principal = sum(
-            p.amount if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
-            else -p.amount
-            for p in positions
-        )
+        last_position = result.scalar_one_or_none()
+        principal_before = last_position.principal_after if last_position else 0
         
         # 检查减持金额是否超过持仓
-        if amount > current_principal:
-            logging.error(f"Decrease amount exceeds position: amount={amount}, current_principal={current_principal}")
-            raise ValueError(f"减持金额超过当前持仓，当前持仓: {current_principal}，减持金额: {amount}")
+        if amount > principal_before:
+            logging.error(f"Decrease amount exceeds position: amount={amount}, principal_before={principal_before}")
+            raise ValueError(f"减持金额超过当前持仓，当前持仓: {principal_before}，减持金额: {amount}")
+        
+        principal_after = principal_before - amount
         
         now = datetime.utcnow()
         
@@ -1208,6 +1254,8 @@ class ApprovalService:
             investment_id=investment_id,
             operation_type=PositionOperationType.DECREASE,
             amount=amount,
+            principal_before=principal_before,
+            principal_after=principal_after,
             operation_date=operation_date,
             note=data.get("note") or f"减持投资: {investment.name}",
             approval_request_id=request.id,
@@ -1230,10 +1278,10 @@ class ApprovalService:
         transaction = Transaction(
             family_id=request.family_id,
             user_id=request.requester_id,
-            transaction_type=TransactionType.INCOME,
+            transaction_type=TransactionType.INVESTMENT_REDEEM,
             amount=amount,
             balance_after=current_balance + amount,
-            description=f"投资减持: {investment.name}",
+            description=f"投资赎回: {investment.name}",
             reference_id=investment_id,
             reference_type="investment_decrease"
         )
@@ -1241,17 +1289,8 @@ class ApprovalService:
         await self.db.flush()
         position.transaction_id = transaction.id
         
-        # 创建负数存款记录（减少权益贡献）
-        deposit = Deposit(
-            user_id=request.requester_id,
-            family_id=request.family_id,
-            amount=-amount,
-            deposit_date=operation_date,
-            note=f"投资减持: {investment.name}"
-        )
-        self.db.add(deposit)
-        await self.db.flush()
-        position.deposit_id = deposit.id
+        # 注意：减持时资金回到自由资金池，不影响股权分布，因此不创建 Deposit 记录
+        # 只有当资金从家庭流出（如个人取现、支出）时才影响股权
         
         logging.info(f"Investment decrease executed: investment_id={investment_id}, amount={amount}")
     

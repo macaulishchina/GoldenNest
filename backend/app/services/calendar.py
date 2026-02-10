@@ -52,8 +52,7 @@ class CalendarService:
             family_id=family_id,
             title=f"💰 理财到期：{investment.name}",
             description=f"理财产品「{investment.name}」将于 {investment.end_date.strftime('%Y-%m-%d')} 到期\n"
-                       f"本金：¥{investment.principal:,.2f}\n"
-                       f"预期年化收益率：{investment.expected_rate * 100:.2f}%",
+                       f"本金：¥{investment.principal:,.2f}",
             category=CalendarEventCategory.FINANCE,
             start_time=remind_date,
             is_all_day=True,
@@ -101,8 +100,7 @@ class CalendarService:
             family_id=family_id,
             title=f"💰 理财到期：{investment.name}",
             description=f"理财产品「{investment.name}」将于 {investment.end_date.strftime('%Y-%m-%d')} 到期\n"
-                       f"本金：¥{investment.principal:,.2f}\n"
-                       f"预期年化收益率：{investment.expected_rate * 100:.2f}%",
+                       f"本金：¥{investment.principal:,.2f}",
             category=CalendarEventCategory.FINANCE,
             start_time=remind_date,
             is_all_day=True,

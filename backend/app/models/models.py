@@ -21,6 +21,8 @@ class TransactionType(str, enum.Enum):
     DIVIDEND = "dividend"        # 分红
     FREEZE = "freeze"            # 冻结（用于分红提案）
     UNFREEZE = "unfreeze"        # 解冻（投票未通过时）
+    INVESTMENT_BUY = "investment_buy"       # 投资买入（从自由资金购买理财）
+    INVESTMENT_REDEEM = "investment_redeem" # 投资赎回（理财赎回到自由资金）
 
 
 class ExpenseStatus(str, enum.Enum):
@@ -175,7 +177,6 @@ class Investment(Base):
     exchange_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 🌟 NEW: 汇率（外币→CNY）
     
     principal: Mapped[float] = mapped_column(Float)  # 本金（CNY，用于股权计算）
-    expected_rate: Mapped[float] = mapped_column(Float, default=0.0)  # 预期年化收益率
     start_date: Mapped[datetime] = mapped_column(DateTime)  # 开始日期
     end_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 到期日期
     bank_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # 🌟 NEW: 银行/机构名称

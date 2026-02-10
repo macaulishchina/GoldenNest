@@ -14,7 +14,8 @@ from app.core.database import get_db
 from app.core.limiter import limiter
 from app.models.models import (
     ApprovalRequest, ApprovalRecord, ApprovalRequestType, ApprovalRequestStatus,
-    FamilyMember, User, Investment, Family, ExpenseRequest, ExpenseStatus
+    FamilyMember, User, Investment, Family, ExpenseRequest, ExpenseStatus,
+    Transaction
 )
 from app.schemas.approval import (
     ApprovalRequestResponse, ApprovalRecordCreate, ApprovalRequestListResponse,
@@ -157,7 +158,6 @@ async def create_asset_approval(
             "currency": data.currency.value,
             "amount": data.amount,  # CNY金额（如果是CNY）
             "foreign_amount": data.foreign_amount,  # 外币金额（如果是外币）
-            "expected_rate": data.expected_rate,
             "start_date": data.start_date.isoformat(),
             "end_date": data.end_date.isoformat() if data.end_date else None,
             "bank_name": data.bank_name,
@@ -272,15 +272,15 @@ async def create_investment_create_approval(
         requester_id=current_user.id,
         request_type=ApprovalRequestType.INVESTMENT_CREATE,
         title=f"创建理财产品: {data.name}",
-        description=f"{current_user.nickname}申请创建理财产品「{data.name}」，本金{data.principal}元，预期年化收益率{data.expected_rate*100:.2f}%",
+        description=f"{current_user.nickname}申请创建理财产品「{data.name}」，本金{data.principal}元",
         amount=data.principal,
         request_data={
             "name": data.name,
             "investment_type": data.investment_type,
             "principal": data.principal,
-            "expected_rate": data.expected_rate,
             "start_date": data.start_date.isoformat(),
             "end_date": data.end_date.isoformat() if data.end_date else None,
+            "deduct_from_cash": data.deduct_from_cash,
             "note": data.note
         }
     )
@@ -325,8 +325,6 @@ async def create_investment_update_approval(
         changes.append(f"名称改为「{data.name}」")
     if data.principal is not None:
         changes.append(f"本金改为{data.principal}元")
-    if data.expected_rate is not None:
-        changes.append(f"预期收益率改为{data.expected_rate*100:.2f}%")
     if data.is_active is not None:
         changes.append("激活" if data.is_active else "停用")
     
@@ -342,7 +340,6 @@ async def create_investment_update_approval(
             "investment_id": data.investment_id,
             "name": data.name,
             "principal": data.principal,
-            "expected_rate": data.expected_rate,
             "end_date": data.end_date.isoformat() if data.end_date else None,
             "is_active": data.is_active,
             "note": data.note
@@ -429,21 +426,25 @@ async def create_investment_increase_approval(
     if not investment:
         raise HTTPException(status_code=404, detail="理财产品不存在或已删除")
     
-    # 验证余额是否足够
-    result = await db.execute(
-        select(Transaction)
-        .where(Transaction.family_id == family_id)
-        .order_by(Transaction.created_at.desc())
-        .limit(1)
-    )
-    last_transaction = result.scalar_one_or_none()
-    current_balance = last_transaction.balance_after if last_transaction else 0
-    
-    if current_balance < data.amount:
-        raise HTTPException(
-            status_code=400,
-            detail=f"家庭余额不足，当前余额: {current_balance}元，需要: {data.amount}元"
+    # 只有从自由资金扣除时才需要验证余额
+    if data.deduct_from_cash:
+        result = await db.execute(
+            select(Transaction)
+            .where(Transaction.family_id == family_id)
+            .order_by(Transaction.created_at.desc())
+            .limit(1)
         )
+        last_transaction = result.scalar_one_or_none()
+        current_balance = last_transaction.balance_after if last_transaction else 0
+        
+        if current_balance < data.amount:
+            raise HTTPException(
+                status_code=400,
+                detail=f"家庭余额不足，当前余额: {current_balance}元，需要: {data.amount}元"
+            )
+    
+    # 构建描述信息
+    funding_source = "从自由资金扣除" if data.deduct_from_cash else "外部资金"
     
     service = ApprovalService(db)
     request = await service.create_request(
@@ -451,13 +452,14 @@ async def create_investment_increase_approval(
         requester_id=current_user.id,
         request_type=ApprovalRequestType.INVESTMENT_INCREASE,
         title=f"投资增持: {investment.name}",
-        description=f"{current_user.nickname}申请对理财产品「{investment.name}」增持{data.amount}元",
+        description=f"{current_user.nickname}申请对理财产品「{investment.name}」增持{data.amount}元（{funding_source}）",
         amount=data.amount,
         request_data={
             "investment_id": data.investment_id,
             "amount": data.amount,
             "operation_date": data.operation_date.isoformat(),
-            "note": data.note
+            "note": data.note,
+            "deduct_from_cash": data.deduct_from_cash
         }
     )
     
@@ -1151,3 +1153,79 @@ async def handle_dividend_claim(
         logging.error(traceback.format_exc())
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
+
+
+@router.post("/{request_id}/retry", response_model=ApprovalRequestResponse)
+@limiter.limit("20/hour")
+async def retry_failed_execution(
+    request: Request,
+    request_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """重试执行失败的审批申请"""
+    try:
+        service = ApprovalService(db)
+        
+        # 获取审批申请
+        result = await db.execute(
+            select(ApprovalRequest).where(ApprovalRequest.id == request_id)
+        )
+        approval_request = result.scalar_one_or_none()
+        
+        if not approval_request:
+            raise HTTPException(status_code=404, detail="审批申请不存在")
+        
+        # 检查是否是家庭成员
+        result = await db.execute(
+            select(FamilyMember).where(
+                FamilyMember.family_id == approval_request.family_id,
+                FamilyMember.user_id == current_user.id
+            )
+        )
+        if not result.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="您不是该家庭成员")
+        
+        # 检查申请状态
+        if approval_request.status != ApprovalRequestStatus.APPROVED:
+            raise HTTPException(status_code=400, detail="只能重试已通过的申请")
+        
+        # 检查是否执行失败
+        if not approval_request.execution_failed:
+            raise HTTPException(status_code=400, detail="该申请未执行失败，无需重试")
+        
+        # 重置执行失败标记
+        approval_request.execution_failed = False
+        approval_request.failure_reason = None
+        approval_request.executed_at = None  # 重置执行时间，允许重新执行
+        
+        await db.flush()
+        
+        # 重新执行申请
+        await service._execute_request(approval_request)
+        
+        # 提交所有更改
+        await db.commit()
+        await db.refresh(approval_request)
+        
+        # 获取申请人昵称和头像版本号
+        result = await db.execute(
+            select(User).where(User.id == approval_request.requester_id)
+        )
+        requester = result.scalar_one_or_none()
+        
+        # 返回响应
+        return await service.get_request_response(
+            approval_request,
+            requester.nickname if requester else "未知用户",
+            requester.avatar_version if requester else 0
+        )
+        
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        logging.error(f"重试执行失败 - request_id={request_id}, user_id={current_user.id}: {str(e)}")
+        logging.error(traceback.format_exc())
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"重试失败: {str(e)}")

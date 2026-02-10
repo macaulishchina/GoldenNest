@@ -109,7 +109,6 @@ async def list_assets(
         "principal": asset.principal,  # CNY
         "foreign_amount": asset.foreign_amount,
         "exchange_rate": asset.exchange_rate,
-        "expected_rate": asset.expected_rate,
         "start_date": asset.start_date.isoformat(),
         "end_date": asset.end_date.isoformat() if asset.end_date else None,
         "bank_name": asset.bank_name,

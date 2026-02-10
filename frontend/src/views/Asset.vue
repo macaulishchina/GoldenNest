@@ -66,18 +66,6 @@
               <template #prefix>{{ currencySymbol }}</template>
             </n-input-number>
           </n-form-item>
-          <n-form-item label="预期年化" class="form-item-half">
-            <n-input-number 
-              v-model:value="formData.expected_rate" 
-              :min="0" 
-              :max="100"
-              :precision="2"
-              placeholder="0.00"
-              style="width: 100%"
-            >
-              <template #suffix>%</template>
-            </n-input-number>
-          </n-form-item>
         </div>
         
         <!-- 汇率信息显示（外币时） -->
@@ -277,9 +265,8 @@
                 </span>
               </div>
               <div class="asset-info">
-                <span>年化: {{ asset.expected_rate }}%</span>
-                <span v-if="asset.bank_name"> | {{ asset.bank_name }}</span>
-                <span v-if="asset.end_date"> | 到期: {{ formatDate(asset.end_date) }}</span>
+                <span v-if="asset.bank_name">{{ asset.bank_name }}</span>
+                <span v-if="asset.end_date">{{ asset.bank_name ? ' | ' : '' }}到期: {{ formatDate(asset.end_date) }}</span>
               </div>
               <div v-if="asset.note" class="asset-note">
                 <n-text depth="3">{{ asset.note }}</n-text>
@@ -325,7 +312,6 @@ const formData = ref({
   currency: 'CNY' as 'CNY' | 'USD' | 'HKD' | 'JPY' | 'EUR' | 'GBP' | 'AUD' | 'CAD' | 'SGD' | 'KRW',
   amount: null as number | null,
   foreign_amount: null as number | null,
-  expected_rate: 0,
   start_date: Date.now(),
   end_date: null as number | null,
   bank_name: '',
@@ -553,7 +539,6 @@ const handleSubmit = async () => {
       name: formData.value.name,
       asset_type: formData.value.asset_type,
       currency: formData.value.currency,
-      expected_rate: formData.value.expected_rate,
       start_date: new Date(formData.value.start_date).toISOString(),
       deduct_from_cash: formData.value.deduct_from_cash
     }
@@ -598,7 +583,6 @@ const resetForm = () => {
     currency: 'CNY',
     amount: null,
     foreign_amount: null,
-    expected_rate: 0,
     start_date: Date.now(),
     end_date: null,
     bank_name: '',

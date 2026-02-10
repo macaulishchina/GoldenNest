@@ -105,6 +105,7 @@
                 :key="eq.member_id"
                 class="equity-item"
               >
+                <UserAvatar :user-id="eq.member_id" :name="eq.name" size="small" />
                 <span class="member-name">{{ eq.name }}</span>
                 <div class="equity-bar-wrapper">
                   <div class="equity-bar" :style="{ width: eq.percentage + '%' }"></div>
@@ -122,6 +123,7 @@
                 :key="eq.member_id"
                 class="equity-item"
               >
+                <UserAvatar :user-id="eq.member_id" :name="eq.name" size="small" />
                 <span class="member-name">{{ eq.name }}</span>
                 <div class="equity-bar-wrapper">
                   <div class="equity-bar" :style="{ width: eq.percentage + '%' }"></div>
@@ -178,10 +180,10 @@
         <div class="dividend-card">
           <div class="dividend-header">
             <div class="dividend-total">
-              <span class="dividend-label">可分配投资收益</span>
+              <span class="dividend-label">建议分红</span>
               <span class="dividend-amount">¥{{ formatMoney(report.dividend_suggestion.total_investment_income) }}</span>
             </div>
-            <div class="dividend-note">按年末持股比例分配</div>
+            <div class="dividend-note">基于过去一年的投资收益，按年末持股比例分配</div>
           </div>
           <div class="dividend-list">
             <div 
@@ -363,18 +365,19 @@ onMounted(() => {
 
 .year-btn {
   padding: 10px 24px;
-  border: 2px solid #e0e0e0;
-  background: white;
+  border: 2px solid var(--theme-border);
+  background: var(--theme-bg-card);
   border-radius: 24px;
   font-size: 16px;
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
   flex-shrink: 0;
+  color: var(--theme-text-primary);
 }
 
 .year-btn.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--theme-purple);
   color: white;
   border-color: transparent;
 }
@@ -414,8 +417,8 @@ onMounted(() => {
   display: inline-block;
   width: 40px;
   height: 40px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #667eea;
+  border: 4px solid var(--theme-border-light);
+  border-top: 4px solid var(--theme-purple);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -442,13 +445,13 @@ onMounted(() => {
 }
 
 .overview-card {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   padding: 20px;
   display: flex;
   align-items: center;
   gap: 16px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  box-shadow: var(--theme-shadow-sm);
 }
 
 .overview-card.income {
@@ -482,22 +485,22 @@ onMounted(() => {
 
 .card-label {
   font-size: 14px;
-  color: #888;
+  color: var(--theme-text-secondary);
 }
 
 .card-value {
   font-size: 22px;
   font-weight: bold;
-  color: #333;
+  color: var(--theme-text-primary);
 }
 
 /* 月度趋势 */
 .trend-section {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   padding: 24px;
   margin-bottom: 32px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  box-shadow: var(--theme-shadow-sm);
 }
 
 .trend-section h2 {
@@ -515,7 +518,7 @@ onMounted(() => {
   gap: 16px;
   min-height: 160px;
   padding: 20px 0;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--theme-border-light);
 }
 
 .chart-bar-group {
@@ -555,7 +558,7 @@ onMounted(() => {
 .bar-label {
   margin-top: 8px;
   font-size: 12px;
-  color: #888;
+  color: var(--theme-text-secondary);
 }
 
 .chart-legend {
@@ -570,7 +573,7 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 .legend-item .dot {
@@ -589,11 +592,11 @@ onMounted(() => {
 
 /* 股权变化 */
 .equity-section {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   padding: 24px;
   margin-bottom: 32px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  box-shadow: var(--theme-shadow-sm);
 }
 
 .equity-section h2 {
@@ -613,13 +616,13 @@ onMounted(() => {
 
 .equity-col h4 {
   margin: 0 0 12px 0;
-  color: #666;
+  color: var(--theme-text-secondary);
   font-size: 14px;
 }
 
 .equity-arrow {
   font-size: 24px;
-  color: #ccc;
+  color: var(--theme-border);
 }
 
 .equity-list {
@@ -631,19 +634,24 @@ onMounted(() => {
 .equity-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+}
+
+.equity-item .user-avatar {
+  flex-shrink: 0;
 }
 
 .member-name {
-  width: 60px;
+  min-width: 60px;
   font-size: 14px;
-  color: #333;
+  color: var(--theme-text-primary);
+  white-space: nowrap;
 }
 
 .equity-bar-wrapper {
   flex: 1;
   height: 12px;
-  background: #f0f0f0;
+  background: var(--theme-bg-secondary);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -659,7 +667,7 @@ onMounted(() => {
   width: 50px;
   text-align: right;
   font-size: 14px;
-  color: #666;
+  color: var(--theme-text-secondary);
 }
 
 /* 财务亮点 */
@@ -679,12 +687,12 @@ onMounted(() => {
 }
 
 .highlight-card {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   padding: 20px;
   display: flex;
   gap: 16px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  box-shadow: var(--theme-shadow-sm);
 }
 
 .highlight-icon {
@@ -698,19 +706,19 @@ onMounted(() => {
 
 .highlight-label {
   font-size: 13px;
-  color: #888;
+  color: var(--theme-text-secondary);
 }
 
 .highlight-value {
   font-size: 18px;
   font-weight: bold;
-  color: #333;
+  color: var(--theme-text-primary);
   margin: 4px 0;
 }
 
 .highlight-detail {
   font-size: 12px;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 /* 建议分红 */
@@ -724,10 +732,10 @@ onMounted(() => {
 }
 
 .dividend-card {
-  background: white;
+  background: var(--theme-bg-card);
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  box-shadow: var(--theme-shadow-sm);
 }
 
 .dividend-header {
@@ -745,7 +753,7 @@ onMounted(() => {
 
 .dividend-label {
   font-size: 14px;
-  color: #555;
+  color: rgba(0, 0, 0, 0.7);
 }
 
 .dividend-amount {
@@ -756,7 +764,7 @@ onMounted(() => {
 
 .dividend-note {
   font-size: 13px;
-  color: #666;
+  color: rgba(0, 0, 0, 0.6);
 }
 
 .dividend-list {
@@ -768,7 +776,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 16px 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--theme-border-light);
 }
 
 .dividend-item:last-child {
@@ -788,14 +796,14 @@ onMounted(() => {
 .dividend-section .member-name {
   font-size: 16px;
   font-weight: 500;
-  color: #333;
+  color: var(--theme-text-primary);
   width: auto;
 }
 
 .member-equity {
   font-size: 13px;
-  color: #888;
-  background: #f5f5f5;
+  color: var(--theme-text-secondary);
+  background: var(--theme-bg-secondary);
   padding: 4px 8px;
   border-radius: 12px;
 }
@@ -807,18 +815,18 @@ onMounted(() => {
 .dividend-value {
   font-size: 20px;
   font-weight: bold;
-  color: #f5a623;
+  color: var(--theme-warning);
 }
 
 .dividend-footer {
-  background: #fafafa;
+  background: var(--theme-bg-secondary);
   padding: 12px 24px;
   text-align: center;
 }
 
 .dividend-tip {
   font-size: 13px;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 /* 年度总结 */
@@ -854,9 +862,9 @@ onMounted(() => {
 
 .btn-share {
   padding: 14px 32px;
-  background: white;
-  color: #667eea;
-  border: 2px solid #667eea;
+  background: var(--theme-bg-card);
+  color: var(--theme-purple);
+  border: 2px solid var(--theme-purple);
   border-radius: 24px;
   font-size: 16px;
   cursor: pointer;
@@ -864,7 +872,7 @@ onMounted(() => {
 }
 
 .btn-share:hover {
-  background: #667eea;
+  background: var(--theme-purple);
   color: white;
 }
 
@@ -872,7 +880,7 @@ onMounted(() => {
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: #999;
+  color: var(--theme-text-tertiary);
 }
 
 .empty-icon {
@@ -883,7 +891,7 @@ onMounted(() => {
 .btn-primary {
   margin-top: 16px;
   padding: 12px 24px;
-  background: #667eea;
+  background: var(--theme-purple);
   color: white;
   border: none;
   border-radius: 24px;
@@ -901,12 +909,55 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
   
+  /* 移动端股权变化：保持左右布局但紧凑显示 */
+  .equity-section {
+    padding: 16px;
+  }
+  
+  .equity-section h2 {
+    font-size: 18px;
+    margin-bottom: 12px;
+  }
+  
   .equity-comparison {
-    flex-direction: column;
+    gap: 12px;
   }
   
   .equity-arrow {
-    transform: rotate(90deg);
+    font-size: 20px;
+  }
+  
+  .equity-col h4 {
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+  
+  .equity-list {
+    gap: 6px;
+  }
+  
+  .equity-item {
+    gap: 6px;
+  }
+  
+  .equity-item .user-avatar {
+    width: 24px !important;
+    height: 24px !important;
+    font-size: 12px !important;
+  }
+  
+  .member-name {
+    min-width: 40px;
+    font-size: 12px;
+  }
+  
+  .equity-bar-wrapper {
+    height: 8px;
+  }
+  
+  .equity-pct {
+    width: 40px;
+    font-size: 12px;
   }
 }
 </style>

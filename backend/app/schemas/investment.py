@@ -12,7 +12,6 @@ class InvestmentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="理财产品名称")
     investment_type: InvestmentType = Field(..., description="理财类型")
     principal: float = Field(..., gt=0, description="本金")
-    expected_rate: float = Field(..., ge=0, le=1, description="预期年化收益率")
     start_date: datetime = Field(..., description="开始日期")
     end_date: Optional[datetime] = Field(None, description="到期日期")
     note: Optional[str] = Field(None, max_length=500, description="备注")
@@ -22,7 +21,6 @@ class InvestmentUpdate(BaseModel):
     """更新理财配置请求"""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     principal: Optional[float] = Field(None, gt=0)
-    expected_rate: Optional[float] = Field(None, ge=0, le=1)
     end_date: Optional[datetime] = None
     is_active: Optional[bool] = None
     note: Optional[str] = Field(None, max_length=500)
@@ -74,7 +72,6 @@ class InvestmentResponse(BaseModel):
     name: str
     investment_type: InvestmentType
     principal: float  # 初始本金
-    expected_rate: float
     start_date: datetime
     end_date: Optional[datetime] = None
     is_active: bool
@@ -88,6 +85,8 @@ class InvestmentResponse(BaseModel):
     current_principal: Optional[float] = None  # 当前持仓本金
     total_return: Optional[float] = None  # 总收益
     roi: Optional[float] = None  # 投资回报率
+    annualized_return: Optional[float] = None  # 平均年化收益率
+    holding_days: Optional[int] = None  # 持有天数
     income_records: List[InvestmentIncomeResponse] = []
     positions: List[InvestmentPositionResponse] = []
     
@@ -101,6 +100,7 @@ class InvestmentSummary(BaseModel):
     total_principal: float  # 总本金
     total_income: float  # 总收益
     active_count: int  # 活跃理财数量
+    average_annualized_return: Optional[float] = None  # 综合平均年化收益率
     investments: List[InvestmentResponse]
 
 

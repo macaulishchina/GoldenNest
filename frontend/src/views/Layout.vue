@@ -8,11 +8,16 @@
       :collapsed-width="64"
       :width="220"
       :collapsed="collapsed"
-      show-trigger
+      :show-trigger="false"
       @collapse="collapsed = true"
       @expand="collapsed = false"
       class="sider"
     >
+      <div class="sider-trigger" @click="collapsed = !collapsed">
+        <n-icon :size="18">
+          <component :is="collapsed ? ChevronForwardOutline : ChevronBackOutline" />
+        </n-icon>
+      </div>
       <div class="logo" @click="router.push('/')">
         <span class="logo-icon">🏠</span>
         <span v-show="!collapsed" class="logo-text">小金库</span>
@@ -26,7 +31,6 @@
         :value="activeKey"
         @update:value="handleMenuClick"
       />
-      
     </n-layout-sider>
     
     <!-- 主内容区 -->
@@ -65,7 +69,9 @@
             <!-- 主题切换按钮 -->
             <ThemeSelector />
             <div class="hamburger-btn" @click="showDrawer = true">
-              <n-icon :size="24"><MenuOutline /></n-icon>
+              <n-badge dot type="error" :show="drawerHasPending" :offset="[4, 2]">
+                <n-icon :size="24"><MenuOutline /></n-icon>
+              </n-badge>
             </div>
           </div>
         </div>
@@ -113,9 +119,17 @@
               @touchcancel="handleShortcutTouchEnd"
               @contextmenu.prevent="showShortcutPicker"
             >
-              <n-icon :size="24">
-                <component :is="customShortcut?.icon || AddOutline" />
-              </n-icon>
+              <n-badge 
+                type="error" 
+                :show="shortcutBadgeValue > 0" 
+                :value="shortcutBadgeValue"
+                :max="99"
+                :offset="[4, 0]"
+              >
+                <n-icon :size="24">
+                  <component :is="customShortcut?.icon || AddOutline" />
+                </n-icon>
+              </n-badge>
               <span class="tabbar-label">{{ customShortcut?.label || '快捷' }}</span>
             </div>
             
@@ -212,7 +226,15 @@
           
           <!-- 💰 财务管理 -->
           <div class="drawer-section">
-            <div class="drawer-section-title">💰 财务管理</div>
+            <div class="drawer-section-title">
+              💰 财务管理
+              <n-badge
+                v-if="hasPending('finance-group')"
+                dot
+                type="error"
+                class="drawer-title-dot"
+              />
+            </div>
             <div class="drawer-menu-items">
               <div class="drawer-menu-item" @click="navigateAndClose('/approval')">
                 <n-icon :size="20"><DocumentTextOutline /></n-icon>
@@ -254,7 +276,15 @@
           
           <!-- �️ 家庭治理 -->
           <div class="drawer-section">
-            <div class="drawer-section-title">🏛️ 家庭治理</div>
+            <div class="drawer-section-title">
+              🏛️ 家庭治理
+              <n-badge
+                v-if="hasPending('governance-group')"
+                dot
+                type="error"
+                class="drawer-title-dot"
+              />
+            </div>
             <div class="drawer-menu-items">
               <div class="drawer-menu-item" @click="navigateAndClose('/equity')">
                 <n-icon :size="20"><PieChartOutline /></n-icon>
@@ -263,6 +293,13 @@
               <div class="drawer-menu-item" @click="navigateAndClose('/gift')">
                 <n-icon :size="20"><GiftOutline /></n-icon>
                 <span>股权赠与</span>
+                <n-badge
+                  v-if="giftStore.pendingCount > 0"
+                  :value="giftStore.pendingCount"
+                  :max="99"
+                  type="error"
+                  style="margin-left: auto"
+                />
               </div>
               <div class="drawer-menu-item" @click="navigateAndClose('/vote')">
                 <n-icon :size="20"><CheckboxOutline /></n-icon>
@@ -332,6 +369,7 @@ import { useMessage, NIcon, NBadge } from 'naive-ui'
 import { useUserStore } from '@/stores/user'
 import { useApprovalStore } from '@/stores/approval'
 import { useVoteStore } from '@/stores/vote'
+import { useGiftStore } from '@/stores/gift'
 import { familyApi } from '@/api'
 import { getHolidayGreeting } from '@/utils/holiday'
 import { compressImage, getAvatarColor } from '@/utils/avatar'
@@ -358,6 +396,8 @@ import {
   DocumentTextOutline,
   PersonOutline,
   MenuOutline,
+  ChevronBackOutline,
+  ChevronForwardOutline,
   LogOutOutline,
   AddOutline,
   CameraOutline,
@@ -372,6 +412,7 @@ const message = useMessage()
 const userStore = useUserStore()
 const approvalStore = useApprovalStore()
 const voteStore = useVoteStore()
+const giftStore = useGiftStore()
 
 const collapsed = ref(false)
 const family = ref<any>(null)
@@ -417,6 +458,20 @@ const availableModules = [
 
 // 用户自定义的快捷模块
 const customShortcut = ref<{ key: string; label: string; icon: any } | null>(null)
+
+const shortcutBadgeValue = computed(() => {
+  if (!customShortcut.value) return 0
+  switch (customShortcut.value.key) {
+    case 'gift':
+      return giftStore.pendingCount || 0
+    case 'approval':
+      return approvalStore.pendingCount || 0
+    case 'vote':
+      return voteStore.pendingCount || 0
+    default:
+      return 0
+  }
+})
 
 // 长按计时器
 let longPressTimer: ReturnType<typeof setTimeout> | null = null
@@ -546,83 +601,78 @@ const holidayGreeting = computed(() => {
   return getHolidayGreeting()
 })
 
+// 徽章状态聚合，确保移动端/桌面端一致
+const badgeState = computed(() => ({
+  approval: approvalStore.pendingCount || 0,
+  gift: giftStore.pendingCount || 0,
+  vote: voteStore.pendingCount || 0,
+  'finance-group': approvalStore.pendingCount || 0,
+  'governance-group': Math.max(voteStore.pendingCount || 0, giftStore.pendingCount || 0)
+}))
+
+const drawerHasPending = computed(() =>
+  hasPending('finance-group') || hasPending('governance-group')
+)
+
+function hasPending(key?: string) {
+  if (!key) return false
+  const map = badgeState.value as Record<string, number>
+  return (map[key] || 0) > 0
+}
+
+function getBadgeValue(key?: string) {
+  if (!key) return 0
+  const map = badgeState.value as Record<string, number>
+  return map[key] || 0
+}
+
 // 渲染图标
-function renderIcon(icon: any) {
-  return () => h(NIcon, null, { default: () => h(icon) })
+function renderIcon(icon: any, badgeKey?: string) {
+  return () => {
+    const iconVNode = h(NIcon, null, { default: () => h(icon) })
+    if (!badgeKey) {
+      return iconVNode
+    }
+    return h(
+      NBadge,
+      {
+        dot: true,
+        type: 'error',
+        offset: [6, 0],
+        show: hasPending(badgeKey)
+      },
+      { default: () => iconVNode }
+    )
+  }
 }
 
-// 自定义渲染审批中心菜单项（带徽章）
-function renderApprovalLabel() {
-  return h(
-    'div',
-    { style: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%' } },
-    [
-      h('span', '审批中心'),
-      approvalStore.pendingCount > 0
-        ? h(NBadge, {
-            value: approvalStore.pendingCount,
-            type: 'error',
-            max: 99,
-            showZero: false
-          })
-        : null
-    ]
-  )
-}
-
-// 自定义渲染股东大会菜单项（带徽章）
-function renderVoteLabel() {
-  return h(
-    'div',
-    { style: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%' } },
-    [
-      h('span', '股东大会'),
-      voteStore.pendingCount > 0
-        ? h(NBadge, {
-            value: voteStore.pendingCount,
-            type: 'error',
-            max: 99,
-            showZero: false
-          })
-        : null
-    ]
-  )
+function createBadgeLabel(text: string, getCount: () => number) {
+  return () =>
+    h(
+      'div',
+      { style: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%' } },
+      [
+        h('span', text),
+        getCount() > 0
+          ? h(NBadge, {
+              value: getCount(),
+              type: 'error',
+              max: 99,
+              showZero: false
+            })
+          : null
+      ]
+    )
 }
 
 // 自定义渲染财务管理分组（带红点）
 function renderFinanceGroupLabel() {
-  return h(
-    'div',
-    { style: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%' } },
-    [
-      h('span', '财务管理'),
-      approvalStore.pendingCount > 0
-        ? h(NBadge, {
-            dot: true,
-            type: 'error',
-            showZero: false
-          })
-        : null
-    ]
-  )
+  return h('span', '财务管理')
 }
 
 // 自定义渲染家庭治理分组（带红点）
 function renderGovernanceGroupLabel() {
-  return h(
-    'div',
-    { style: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%' } },
-    [
-      h('span', '家庭治理'),
-      voteStore.pendingCount > 0
-        ? h(NBadge, {
-            dot: true,
-            type: 'error',
-            showZero: false
-          })
-        : null
-    ]
-  )
+  return h('span', '家庭治理')
 }
 
 // 菜单选项 - 方案B三分类: 财务管理、家庭治理、生活协作
@@ -639,10 +689,10 @@ const menuOptions = computed<MenuOption[]>(() => [
   {
     label: renderFinanceGroupLabel,
     key: 'finance-group',
-    icon: renderIcon(CashOutline),
+    icon: renderIcon(CashOutline, 'finance-group'),
     children: [
       {
-        label: renderApprovalLabel,
+        label: createBadgeLabel('审批中心', () => approvalStore.pendingCount),
         key: 'approval',
         icon: renderIcon(DocumentTextOutline)
       },
@@ -681,7 +731,7 @@ const menuOptions = computed<MenuOption[]>(() => [
   {
     label: renderGovernanceGroupLabel,
     key: 'governance-group',
-    icon: renderIcon(PieChartOutline),
+    icon: renderIcon(PieChartOutline, 'governance-group'),
     children: [
       {
         label: '股权结构',
@@ -689,12 +739,12 @@ const menuOptions = computed<MenuOption[]>(() => [
         icon: renderIcon(PieChartOutline)
       },
       {
-        label: '股权赠与',
+        label: createBadgeLabel('股权赠与', () => giftStore.pendingCount),
         key: 'gift',
         icon: renderIcon(GiftOutline)
       },
       {
-        label: renderVoteLabel,
+        label: createBadgeLabel('股东大会', () => voteStore.pendingCount),
         key: 'vote',
         icon: renderIcon(CheckboxOutline)
       },
@@ -791,7 +841,7 @@ async function handleDrawerAvatarChange(event: Event) {
     return
   }
   
-  // 验证原始文件大小（限制20MB，防止浏览器卡死）
+  // 验证原始文件大小（限制20MB，防止浏览器卡顿）
   if (file.size > 20 * 1024 * 1024) {
     message.error('图片大小不能超过 20MB')
     return
@@ -800,24 +850,18 @@ async function handleDrawerAvatarChange(event: Event) {
   avatarUploading.value = true
   
   try {
-    // 先压缩图片为适合头像的大小（200x200）
+    // 压缩图片（默认 200x200 / 0.8 质量）
     const base64 = await compressImage(file)
-    
-    // 压缩后检查大小（2MB限制，Base64约为原始数据的1.37倍）
-    const compressedSize = base64.length * 0.75 // 估算实际字节数
+    const compressedSize = base64.length * 0.75 // Base64 转字节的估算
     if (compressedSize > 2 * 1024 * 1024) {
       message.error('图片压缩后仍超过 2MB，请选择更小的图片')
-      avatarUploading.value = false
       return
     }
     
-    // 上传到服务器
     const res = await api.put('/auth/avatar', { avatar: base64 })
     
     if (res.data.success) {
-      // 更新本地用户信息
       await userStore.fetchUser()
-      // 刷新头像缓存
       selfAvatarError.value = false
       avatarCacheKey.value = Date.now()
       message.success('头像更新成功！')
@@ -826,8 +870,9 @@ async function handleDrawerAvatarChange(event: Event) {
     message.error(e.response?.data?.detail || '头像上传失败')
   } finally {
     avatarUploading.value = false
-    // 清空 input，允许再次选择相同文件
-    input.value = ''
+    if (input) {
+      input.value = ''
+    }
   }
 }
 
@@ -868,15 +913,21 @@ onMounted(async () => {
     await voteStore.fetchPendingCount()
     // 启动轮询（保底机制）
     voteStore.startPolling()
+    
+    // 初始加载礼物徽章计数
+    await giftStore.fetchPendingCount()
+    // 启动轮询（保底机制）
+    giftStore.startPolling()
   }
 })
 
-// 路由变化时刷新审批计数和投票计数
+// 路由变化时刷新审批计数、投票计数和礼物计数
 watch(() => route.path, async () => {
   if (userStore.isLoggedIn) {
     // 每次路由切换都查询一次
     await approvalStore.refreshNow()
     await voteStore.refreshNow()
+    await giftStore.refreshNow()
   }
 })
 
@@ -885,6 +936,7 @@ onUnmounted(() => {
   // 停止轮询
   approvalStore.stopPolling()
   voteStore.stopPolling()
+  giftStore.stopPolling()
 })
 </script>
 
@@ -901,6 +953,30 @@ onUnmounted(() => {
   flex-direction: column;
   background: var(--theme-bg-card, white);
   border-right: 1px solid var(--theme-border, #f0f0f0);
+  position: relative;
+}
+
+.sider-trigger {
+  position: absolute;
+  top: 70px; /* 调整到偏上的位置 */
+  right: -15px;
+  z-index: 10;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--theme-bg-card);
+  border: 1px solid var(--theme-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  transition: all 0.2s;
+}
+
+.sider-trigger:hover {
+  background: var(--theme-bg-hover);
+  transform: scale(1.1);
 }
 
 .logo {
@@ -1219,6 +1295,13 @@ onUnmounted(() => {
   padding: 0 4px 12px;
   border-bottom: 1px solid var(--theme-border, #f3f4f6);
   margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.drawer-title-dot {
+  margin-left: auto;
 }
 
 .drawer-menu-items {

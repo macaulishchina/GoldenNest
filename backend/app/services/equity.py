@@ -221,9 +221,7 @@ async def calculate_family_equity(family_id: int, db: AsyncSession) -> EquitySum
         savings_target=family.savings_target,
         total_savings=total_savings,
         total_weighted=total_original,  # 不再使用时间加权，与 total_savings 相同
-        daily_weighted_growth=0.0,  # 不再计算时间加权增长
         target_progress=round(target_progress, 4),
-        time_value_rate=family.time_value_rate,
         members=member_equity_list,
         calculated_at=now,
         frozen_amount=frozen_amount

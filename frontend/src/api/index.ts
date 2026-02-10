@@ -85,7 +85,6 @@ export const investmentApi = {
     name: string
     investment_type: 'fund' | 'stock' | 'bond' | 'deposit' | 'other'
     principal: number
-    expected_rate: number
     start_date: string
     end_date?: string
     note?: string
@@ -94,14 +93,15 @@ export const investmentApi = {
   update: (id: number, data: {
     name?: string
     principal?: number
-    expected_rate?: number
     end_date?: string
     is_active?: boolean
     note?: string
   }) => api.put(`/investment/${id}`, data),
   addIncome: (id: number, data: { amount: number; income_date: string; note?: string }) => 
     api.post(`/investment/${id}/income`, data),
-  getSummary: () => api.get('/investment/summary')
+  getSummary: () => api.get('/investment/summary'),
+  // 获取投资的操作历史
+  getHistory: (id: number) => api.get(`/investment/${id}/history`)
 }
 
 // expenseApi 已废弃，支出申请请使用 approvalApi.createExpense()
@@ -156,9 +156,9 @@ export const approvalApi = {
     name: string
     investment_type: string
     principal: number
-    expected_rate: number
     start_date: string
     end_date?: string
+    deduct_from_cash?: boolean
     note?: string
   }) => api.post('/approval/investment/create', data),
   
@@ -167,7 +167,6 @@ export const approvalApi = {
     investment_id: number
     name?: string
     principal?: number
-    expected_rate?: number
     end_date?: string
     is_active?: boolean
     note?: string
@@ -212,7 +211,7 @@ export const approvalApi = {
     currency: 'CNY' | 'USD' | 'HKD' | 'JPY' | 'EUR' | 'GBP' | 'AUD' | 'CAD' | 'SGD' | 'KRW'
     amount?: number  // CNY金额
     foreign_amount?: number  // 外币金额
-    expected_rate: number
+
     start_date: string
     end_date?: string
     bank_name?: string
@@ -257,7 +256,10 @@ export const approvalApi = {
   cancel: (id: number) => api.post(`/approval/${id}/cancel`),
   
   // 催促审核
-  remind: (id: number) => api.post(`/approval/${id}/remind`)
+  remind: (id: number) => api.post(`/approval/${id}/remind`),
+  
+  // 重试执行失败的申请
+  retry: (id: number) => api.post(`/approval/${id}/retry`)
 }
 
 // 资产管理 API（统一入口）

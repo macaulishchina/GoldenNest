@@ -266,6 +266,16 @@
               🚫 取消申请
             </button>
           </div>
+          <!-- 执行失败的重试按钮 -->
+          <div class="card-actions" v-if="item.status === 'approved' && item.execution_failed">
+            <button 
+              @click="handleRetry(item.id)" 
+              class="btn-retry"
+              :disabled="processingApprovalId === item.id"
+            >
+              {{ processingApprovalId === item.id ? '⏳ 重试中...' : '🔄 重试' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -330,10 +340,6 @@
               <input v-model.number="createForm.principal" type="number" min="0" step="0.01" placeholder="请输入本金">
             </div>
             <div class="form-group">
-              <label>预期年化收益率 (%)</label>
-              <input v-model.number="createForm.expected_rate" type="number" min="0" max="100" step="0.01" placeholder="如: 3.5">
-            </div>
-            <div class="form-group">
               <label>资金来源</label>
               <select v-model="createForm.deduct_from_cash">
                 <option :value="false">外部资金（计入股权）</option>
@@ -392,10 +398,6 @@
           <!-- 投资增持表单 -->
           <template v-if="createForm.type === 'investment_increase'">
             <div class="form-group">
-              <label>当前余额</label>
-              <div class="info-text">¥{{ formatAmount(balance) }}</div>
-            </div>
-            <div class="form-group">
               <label>理财产品</label>
               <select v-model="createForm.investment_id">
                 <option v-for="inv in investments" :key="inv.id" :value="inv.id">
@@ -404,9 +406,30 @@
               </select>
             </div>
             <div class="form-group">
+              <label>资金来源</label>
+              <div class="radio-group">
+                <label class="radio-label">
+                  <input type="radio" :value="false" v-model="createForm.deduct_from_cash">
+                  <span>外部资金</span>
+                  <span class="hint-inline">（计入股权贡献）</span>
+                </label>
+                <label class="radio-label">
+                  <input type="radio" :value="true" v-model="createForm.deduct_from_cash">
+                  <span>从自由资金扣除</span>
+                  <span class="hint-inline">（不计股权）</span>
+                </label>
+              </div>
+            </div>
+            <div class="form-group" v-if="createForm.deduct_from_cash">
+              <label>当前余额</label>
+              <div class="info-text">¥{{ formatAmount(balance) }}</div>
+            </div>
+            <div class="form-group">
               <label>增持金额 (元)</label>
-              <input v-model.number="createForm.amount" type="number" step="0.01" placeholder="请输入增持金额" :max="balance">
-              <div class="hint-text">增持将从家庭余额扣款，并增加您的权益贡献</div>
+              <input v-model.number="createForm.amount" type="number" step="0.01" placeholder="请输入增持金额" 
+                :max="createForm.deduct_from_cash ? balance : undefined">
+              <div class="hint-text" v-if="createForm.deduct_from_cash">从家庭自由资金扣除，不计入股权贡献</div>
+              <div class="hint-text" v-else>外部资金增持，将计入您的股权贡献</div>
             </div>
             <div class="form-group">
               <label>增持日期</label>
@@ -624,7 +647,6 @@ const createForm = ref({
   name: '',
   investment_type: 'fund',
   principal: 0,
-  expected_rate: 0,
   start_date: new Date().toISOString().split('T')[0],
   end_date: '',
   deduct_from_cash: false,  // 新增：是否从家庭自由资金扣除
@@ -942,6 +964,28 @@ const handleRemind = async (id: number) => {
   }
 }
 
+const handleRetry = async (id: number) => {
+  dialog.warning({
+    title: '确认重试',
+    content: '确定要重试执行这个失败的申请吗？',
+    positiveText: '确认重试',
+    negativeText: '返回',
+    onPositiveClick: async () => {
+      processingApprovalId.value = id
+      try {
+        await approvalApi.retry(id)
+        message.success('已重试执行申请，请稍候...')
+        loadApprovals()
+      } catch (error: unknown) {
+        const errMsg = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '重试失败'
+        message.error(errMsg)
+      } finally {
+        processingApprovalId.value = null
+      }
+    }
+  })
+}
+
 const submitCreate = async () => {
   submitting.value = true
   try {
@@ -962,13 +1006,10 @@ const submitCreate = async () => {
         }
       }
       
-      await approvalApi.createAsset({
-        user_id: userStore.user?.id || 0,
+      await approvalApi.createInvestment({
         name: createForm.value.name,
-        asset_type: createForm.value.investment_type as any,
-        currency: 'CNY',
-        amount: createForm.value.principal,
-        expected_rate: createForm.value.expected_rate / 100,
+        investment_type: createForm.value.investment_type,
+        principal: createForm.value.principal,
         start_date: createForm.value.start_date,
         end_date: createForm.value.end_date || undefined,
         deduct_from_cash: createForm.value.deduct_from_cash,
@@ -993,7 +1034,8 @@ const submitCreate = async () => {
         submitting.value = false
         return
       }
-      if (createForm.value.amount > balance.value) {
+      // 只有从自由资金扣除时才检查余额
+      if (createForm.value.deduct_from_cash && createForm.value.amount > balance.value) {
         message.warning(`增持金额不能超过当前余额 ¥${formatAmount(balance.value)}`)
         submitting.value = false
         return
@@ -1002,7 +1044,8 @@ const submitCreate = async () => {
         investment_id: createForm.value.investment_id,
         amount: createForm.value.amount,
         operation_date: createForm.value.operation_date,
-        note: createForm.value.note || undefined
+        note: createForm.value.note || undefined,
+        deduct_from_cash: createForm.value.deduct_from_cash
       })
     } else if (createForm.value.type === 'investment_decrease') {
       if (!createForm.value.amount || createForm.value.amount <= 0) {
@@ -1087,7 +1130,6 @@ const resetForm = () => {
     name: '',
     investment_type: 'fund',
     principal: 0,
-    expected_rate: 0,
     start_date: new Date().toISOString().split('T')[0],
     end_date: '',
     investment_id: 0,
@@ -1758,6 +1800,26 @@ onMounted(() => {
 
 .btn-cancel:hover { background: #e5e7eb; }
 
+.btn-retry {
+  padding: 10px 20px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-retry:hover {
+  background: #2563eb;
+}
+
+.btn-retry:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
 .btn-remind {
   padding: 6px 12px;
   background: #f59e0b;
@@ -1805,7 +1867,7 @@ onMounted(() => {
 }
 
 .modal-content {
-  background: white;
+  background: var(--theme-bg-primary);
   border-radius: 16px;
   width: 90%;
   max-width: 520px;
@@ -1813,6 +1875,7 @@ onMounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--theme-border);
 }
 
 .modal-header {
@@ -1820,25 +1883,33 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--theme-border);
 }
 
 .modal-header h2 {
   margin: 0;
   font-size: 20px;
+  color: var(--theme-text-primary);
 }
 
 .close-btn {
   width: 32px;
   height: 32px;
   border: none;
-  background: #f3f4f6;
+  background: var(--theme-bg-secondary);
   border-radius: 50%;
   font-size: 20px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--theme-text-primary);
+  transition: all 0.3s ease;
+}
+
+.close-btn:hover {
+  background: var(--theme-border);
+  transform: scale(1.1);
 }
 
 .modal-body {
@@ -1856,7 +1927,7 @@ onMounted(() => {
   margin-bottom: 8px;
   font-weight: 600;
   font-size: 14px;
-  color: #374151;
+  color: var(--theme-text-primary);
 }
 
 .form-group input,
@@ -1864,10 +1935,21 @@ onMounted(() => {
 .form-group textarea {
   width: 100%;
   padding: 12px 16px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--theme-border);
   border-radius: 8px;
   font-size: 14px;
   box-sizing: border-box;
+  background-color: var(--theme-bg-secondary);
+  color: var(--theme-text-primary);
+  transition: all 0.3s ease;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--theme-info);
+  box-shadow: 0 0 0 2px rgba(50, 151, 211, 0.1);
 }
 
 .form-group textarea {
@@ -1879,6 +1961,45 @@ onMounted(() => {
   font-size: 12px;
   color: var(--theme-text-tertiary);
   margin-top: 4px;
+}
+
+.hint-inline {
+  font-size: 11px;
+  color: var(--theme-text-tertiary);
+  margin-left: 4px;
+}
+
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.radio-label:hover {
+  border-color: var(--theme-purple);
+  background: var(--theme-bg-secondary);
+}
+
+.radio-label input[type="radio"] {
+  margin-right: 8px;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.radio-label input[type="radio"]:checked + span {
+  color: var(--theme-purple);
+  font-weight: 600;
 }
 
 .info-text {
@@ -1908,8 +2029,9 @@ onMounted(() => {
 
 .type-btn {
   padding: 10px 16px;
-  border: 2px solid #e5e7eb;
-  background: white;
+  border: 2px solid var(--theme-border);
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-primary);
   border-radius: 8px;
   font-size: 14px;
   cursor: pointer;
@@ -1917,13 +2039,15 @@ onMounted(() => {
 }
 
 .type-btn.active {
-  border-color: #f59e0b;
-  background: #fef3c7;
-  color: #d97706;
+  border-color: var(--theme-warning);
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--theme-warning);
+  font-weight: 600;
 }
 
 .type-btn:hover {
-  border-color: #f59e0b;
+  border-color: var(--theme-warning);
+  background: rgba(245, 158, 11, 0.08);
 }
 
 .modal-footer {
@@ -1931,21 +2055,24 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 12px;
   padding: 20px 24px;
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid var(--theme-border);
 }
 
 .btn-secondary {
   padding: 12px 24px;
-  background: #f3f4f6;
-  color: #374151;
-  border: none;
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-primary);
+  border: 1px solid var(--theme-border);
   border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.3s ease;
 }
 
-.btn-secondary:hover { background: #e5e7eb; }
+.btn-secondary:hover { 
+  background: var(--theme-border);
+}
 
 /* 支出比例列表（弹窗用） */
 .ratio-list {

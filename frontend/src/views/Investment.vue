@@ -34,11 +34,6 @@
             <template #prefix>¥</template>
           </n-input-number>
         </n-form-item>
-        <n-form-item label="预期年化">
-          <n-input-number v-model:value="formData.expected_rate" :min="0" :max="100" placeholder="%" style="width: 100px">
-            <template #suffix>%</template>
-          </n-input-number>
-        </n-form-item>
         <n-form-item label="资金来源">
           <n-radio-group v-model:value="formData.deduct_from_cash" size="small">
             <n-radio :value="false">外部资金</n-radio>
@@ -65,18 +60,12 @@
             <n-select v-model:value="formData.investment_type" :options="typeOptions" size="small" />
           </div>
         </div>
-        <!-- 第二行：投资本金 + 预期年化 + 提交按钮 -->
+        <!-- 第二行：投资本金 + 提交按钮 -->
         <div class="form-row">
-          <div class="form-col principal-col">
+          <div class="form-col principal-col" style="flex: 1;">
             <label>本金</label>
             <n-input-number v-model:value="formData.principal" :min="1" placeholder="0" size="small">
               <template #prefix>¥</template>
-            </n-input-number>
-          </div>
-          <div class="form-col rate-col">
-            <label>年化</label>
-            <n-input-number v-model:value="formData.expected_rate" :min="0" :max="100" placeholder="0" size="small">
-              <template #suffix>%</template>
             </n-input-number>
           </div>
           <div class="form-col btn-col">
@@ -139,6 +128,7 @@
                 <n-tag :type="item.is_deleted ? 'error' : (item.is_active ? 'success' : 'default')" size="small">
                   {{ item.is_deleted ? '已删除' : (item.is_active ? '持有中' : '已结束') }}
                 </n-tag>
+                <n-button v-if="!item.is_deleted" class="detail-btn" size="small" type="primary" secondary round @click="openHistoryModal(item)">详细</n-button>
               </div>
               <div class="card-type">
                 <n-tag size="small" :bordered="false">{{ typeLabels[item.investment_type] || item.investment_type }}</n-tag>
@@ -152,6 +142,8 @@
                   <span class="stat-label">当前持仓</span>
                   <span class="stat-value">¥{{ formatMoney(item.current_principal || item.principal) }}</span>
                 </div>
+              </div>
+              <div class="card-stats-row">
                 <div class="stat-item">
                   <span class="stat-label">总收益</span>
                   <span class="stat-value" :class="(item.total_return || 0) >= 0 ? 'profit' : 'loss'">
@@ -162,6 +154,12 @@
                   <span class="stat-label">ROI</span>
                   <span class="stat-value" :class="(item.roi || 0) >= 0 ? 'profit' : 'loss'">
                     {{ (item.roi || 0).toFixed(2) }}%
+                  </span>
+                </div>
+                <div class="stat-item" v-if="item.annualized_return != null">
+                  <span class="stat-label">年化</span>
+                  <span class="stat-value profit">
+                    {{ item.annualized_return.toFixed(2) }}%
                   </span>
                 </div>
               </div>
@@ -224,11 +222,22 @@
         <n-form-item label="当前持仓">
           <n-text type="info">¥{{ formatMoney(selectedInvestment?.current_principal || 0) }}</n-text>
         </n-form-item>
-        <n-form-item label="可用余额">
+        <n-form-item label="资金来源">
+          <n-radio-group v-model:value="increaseForm.deduct_from_cash" size="small">
+            <n-radio :value="false">外部资金</n-radio>
+            <n-radio :value="true">从自由资金扣除</n-radio>
+          </n-radio-group>
+          <template #feedback>
+            <n-text depth="3" style="font-size: 12px">
+              外部资金=计入股权 | 从自由资金扣除=不计股权
+            </n-text>
+          </template>
+        </n-form-item>
+        <n-form-item label="可用余额" v-if="increaseForm.deduct_from_cash">
           <n-text type="warning">¥{{ formatMoney(currentBalance) }}</n-text>
         </n-form-item>
         <n-form-item label="增持金额">
-          <n-input-number v-model:value="increaseForm.amount" style="width: 100%" :min="1" :max="currentBalance">
+          <n-input-number v-model:value="increaseForm.amount" style="width: 100%" :min="1" :max="increaseForm.deduct_from_cash ? currentBalance : undefined">
             <template #prefix>¥</template>
           </n-input-number>
         </n-form-item>
@@ -267,6 +276,66 @@
         </n-form-item>
       </n-form>
     </n-modal>
+
+    <!-- 历史详情模态框 -->
+    <n-modal v-model:show="showHistoryModal" preset="card" title="操作历史" style="max-width: 600px; max-height: 80vh; overflow-y: auto">
+      <n-spin :show="historyLoading">
+        <div v-if="historyData.history && historyData.history.length > 0" class="history-list">
+          <div v-for="(item, index) in historyData.history" :key="index" class="history-item">
+            <div class="history-icon">
+              <n-tag 
+                v-if="item.type === 'position'" 
+                :type="item.operation_type === 'CREATE' ? 'success' : (item.operation_type === 'INCREASE' ? 'info' : 'warning')"
+                size="small"
+              >
+                {{ operationTypeLabels[item.operation_type] || item.operation_type }}
+              </n-tag>
+              <n-tag 
+                v-else-if="item.type === 'transaction'" 
+                :type="item.transaction_type === 'DEPOSIT' ? 'success' : 'error'"
+                size="small"
+              >
+                {{ transactionTypeLabels[item.transaction_type] || item.transaction_type }}
+              </n-tag>
+              <n-tag 
+                v-else-if="item.type === 'income'" 
+                type="info"
+                size="small"
+              >
+                收益记录
+              </n-tag>
+            </div>
+            <div class="history-content">
+              <div class="history-date">{{ formatHistoryTime(item.timestamp) }}</div>
+              <div v-if="item.type === 'position'" class="history-details">
+                <span class="label">金额:</span>
+                <span class="value">¥{{ formatMoney(item.amount) }}</span>
+                <span class="label" style="margin-left: 16px">本金变化:</span>
+                <span class="value">¥{{ formatMoney(item.principal_before || 0) }} → ¥{{ formatMoney(item.principal_after || 0) }}</span>
+                <div v-if="item.note" class="note">{{ item.note }}</div>
+              </div>
+              <div v-else-if="item.type === 'transaction'" class="history-details">
+                <span class="label">金额:</span>
+                <span :class="['value', item.transaction_type === 'DEPOSIT' ? 'profit' : 'loss']">
+                  {{ item.transaction_type === 'DEPOSIT' ? '+' : '' }}¥{{ formatMoney(Math.abs(item.amount)) }}
+                </span>
+                <span class="label" style="margin-left: 16px">余额:</span>
+                <span class="value">¥{{ formatMoney(item.balance_after) }}</span>
+                <div v-if="item.description" class="note">{{ item.description }}</div>
+              </div>
+              <div v-else-if="item.type === 'income'" class="history-details">
+                <span class="label">收益:</span>
+                <span class="value profit">¥{{ formatMoney(item.amount) }}</span>
+                <span v-if="item.current_value" class="label" style="margin-left: 16px">当前价值:</span>
+                <span v-if="item.current_value" class="value">¥{{ formatMoney(item.current_value) }}</span>
+                <div v-if="item.note" class="note">{{ item.note }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <n-empty v-else description="暂无操作记录" />
+      </n-spin>
+    </n-modal>
   </div>
 </template>
 
@@ -282,6 +351,11 @@ import { SendOutline } from '@vicons/ionicons5'
 import { formatShortDateTime, formatLocalDate } from '@/utils/date'
 import { checkAndShowAchievements } from '@/utils/achievement'
 import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc'
+import timezone from 'dayjs/plugin/timezone'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 const message = useMessage()
 const dialog = useDialog()
@@ -293,6 +367,11 @@ const loading = ref(false)
 
 // 隐私模式格式化金额
 const formatMoney = (num: number) => privacyStore.formatMoney(num)
+
+// 格式化时间（处理时区）
+const formatHistoryTime = (timestamp: string) => {
+  return dayjs.utc(timestamp).local().format('YYYY-MM-DD HH:mm:ss')
+}
 
 // 计算需要的审批人数
 const getRequiredCount = (item: any): number => {
@@ -310,8 +389,7 @@ const pendingApprovals = ref<any[]>([])
 const formData = ref({ 
   name: '', 
   investment_type: 'fund' as 'fund' | 'stock' | 'bond' | 'other',
-  principal: null as number | null, 
-  expected_rate: null as number | null,
+  principal: null as number | null,
   deduct_from_cash: false
 })
 
@@ -327,10 +405,17 @@ const incomeForm = ref({
 // 增持/减持相关
 const showIncreaseModal = ref(false)
 const showDecreaseModal = ref(false)
+const showHistoryModal = ref(false)
+const historyLoading = ref(false)
+const historyData = ref({
+  investment: null as any,
+  history: [] as any[]
+})
 const increaseForm = ref({
   amount: null as number | null,
   operation_date: Date.now(),
-  note: ''
+  note: '',
+  deduct_from_cash: true  // 默认从自由资金扣除
 })
 const decreaseForm = ref({
   amount: null as number | null,
@@ -364,6 +449,22 @@ const typeLabels: Record<string, string> = {
   other: '其他'
 }
 
+const operationTypeLabels: Record<string, string> = {
+  CREATE: '创建投资',
+  INCREASE: '增持',
+  DECREASE: '减持',
+  DELETE: '删除'
+}
+
+const transactionTypeLabels: Record<string, string> = {
+  DEPOSIT: '资金注入',
+  WITHDRAW: '资金提取',
+  INVESTMENT_BUY: '投资买入',
+  INVESTMENT_SELL: '投资卖出',
+  TRANSFER: '资金转账',
+  EXPENSE: '支出'
+}
+
 const requestTypeLabels: Record<string, string> = {
   asset_create: '资产登记',
   investment_create: '登记产品',
@@ -384,6 +485,11 @@ const columns = computed(() => [
     const roi = row.roi || 0
     return h('span', { style: { color: roi >= 0 ? 'var(--theme-success)' : 'var(--theme-error)' } }, `${roi.toFixed(2)}%`)
   }},
+  { title: '年化', key: 'annualized_return', render: (row: any) => {
+    const rate = row.annualized_return || 0
+    if (rate <= 0) return '-'
+    return h('span', { style: { color: 'var(--theme-info)', fontWeight: 600 } }, `${rate.toFixed(2)}%`)
+  }},
   { title: '状态', key: 'is_active', render: (row: any) => {
     if (row.is_deleted) return h(NTag, { type: 'error', size: 'small' }, { default: () => '已删除' })
     return h(NTag, { type: row.is_active ? 'success' : 'default', size: 'small' }, { default: () => row.is_active ? '持有中' : '已结束' })
@@ -399,6 +505,7 @@ const columns = computed(() => [
           h(NButton, { size: 'small', text: true, type: 'primary', onClick: () => openIncomeModal(row) }, { default: () => '更新价值' }),
           h(NButton, { size: 'small', text: true, type: 'info', onClick: () => openIncreaseModal(row) }, { default: () => '增持' }),
           h(NButton, { size: 'small', text: true, type: 'warning', onClick: () => openDecreaseModal(row) }, { default: () => '减持' }),
+          h(NButton, { size: 'small', text: true, type: 'default', onClick: () => openHistoryModal(row) }, { default: () => '详细' }),
           h(NButton, { size: 'small', text: true, type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' })
         ]
       })
@@ -508,12 +615,11 @@ async function handleSubmit() {
       asset_type: formData.value.investment_type as any,
       currency: 'CNY',
       amount: formData.value.principal,
-      expected_rate: (formData.value.expected_rate || 0) / 100,
       start_date: new Date().toISOString(),
       deduct_from_cash: formData.value.deduct_from_cash
     })
     message.success('申请已提交，等待审批！📈')
-    formData.value = { name: '', investment_type: 'fund', principal: null, expected_rate: null, deduct_from_cash: false }
+    formData.value = { name: '', investment_type: 'fund', principal: null, deduct_from_cash: false }
     // 延迟加载数据，给后端时间处理（单人家庭自动执行）
     setTimeout(() => {
       loadData()
@@ -569,7 +675,8 @@ function openIncreaseModal(investment: any) {
   increaseForm.value = {
     amount: null,
     operation_date: Date.now(),
-    note: ''
+    note: '',
+    deduct_from_cash: true
   }
   showIncreaseModal.value = true
 }
@@ -579,7 +686,8 @@ async function submitIncrease() {
     message.warning('请输入增持金额')
     return false
   }
-  if (increaseForm.value.amount > currentBalance.value) {
+  // 只有从自由资金扣除时才检查余额
+  if (increaseForm.value.deduct_from_cash && increaseForm.value.amount > currentBalance.value) {
     message.warning('余额不足')
     return false
   }
@@ -588,7 +696,8 @@ async function submitIncrease() {
       investment_id: selectedInvestment.value.id,
       amount: increaseForm.value.amount,
       operation_date: new Date(increaseForm.value.operation_date).toISOString(),
-      note: increaseForm.value.note
+      note: increaseForm.value.note,
+      deduct_from_cash: increaseForm.value.deduct_from_cash
     })
     message.success('增持申请已提交！')
     showIncreaseModal.value = false
@@ -612,6 +721,21 @@ function openDecreaseModal(investment: any) {
     note: ''
   }
   showDecreaseModal.value = true
+}
+
+async function openHistoryModal(investment: any) {
+  selectedInvestment.value = investment
+  showHistoryModal.value = true
+  historyLoading.value = true
+  try {
+    const response = await investmentApi.getHistory(investment.id)
+    historyData.value = response.data
+  } catch (e: any) {
+    console.error('History fetch error:', e)
+    message.error(e.response?.data?.detail || '获取历史记录失败')
+  } finally {
+    historyLoading.value = false
+  }
 }
 
 async function submitDecrease() {
@@ -850,11 +974,17 @@ onMounted(loadData)
     padding: 10px 8px !important;
   }
   
-  /* 弹窗全屏 */
+  /* 弹窗样式适配 */
   :deep(.n-modal-mask .n-dialog) {
     width: 100% !important;
     max-width: calc(100vw - 32px);
     margin: 16px;
+    background-color: var(--theme-bg-primary) !important;
+  }
+  
+  :deep(.n-dialog__title) {
+    color: var(--theme-text-primary) !important;
+    font-weight: 600;
   }
   
   :deep(.n-dialog .n-form-item) {
@@ -868,6 +998,36 @@ onMounted(loadData)
     text-align: left;
     padding-bottom: 8px;
     width: auto !important;
+    color: var(--theme-text-primary) !important;
+    font-weight: 500;
+  }
+  
+  :deep(.n-dialog .n-input) {
+    background-color: var(--theme-bg-secondary) !important;
+  }
+  
+  :deep(.n-dialog .n-input__input) {
+    color: var(--theme-text-primary) !important;
+  }
+  
+  :deep(.n-dialog .n-input-number) {
+    background-color: var(--theme-bg-secondary) !important;
+  }
+  
+  :deep(.n-dialog .n-input-number__input) {
+    color: var(--theme-text-primary) !important;
+  }
+  
+  :deep(.n-dialog .n-date-picker) {
+    background-color: var(--theme-bg-secondary) !important;
+  }
+  
+  :deep(.n-dialog .n-text) {
+    color: var(--theme-text-primary) !important;
+  }
+  
+  :deep(.n-dialog .n-button) {
+    border-color: var(--theme-border) !important;
   }
   
   /* 卡片间距 */
@@ -884,54 +1044,93 @@ onMounted(loadData)
 
   .investment-card {
     background: linear-gradient(135deg, var(--theme-bg-secondary) 0%, var(--theme-border-light) 100%);
-    border-radius: 12px;
-    padding: 14px;
+    border-radius: 16px;
+    padding: 12px;
     border: 1px solid var(--theme-border);
+    position: relative;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease;
+  }
+  
+  .investment-card:hover {
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
+    border-color: var(--theme-success);
   }
 
   .investment-card .card-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
+    gap: 8px;
+    min-height: 24px;
+  }
+  
+  .investment-card .detail-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    opacity: 0.8;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(50, 151, 211, 0.15);
+  }
+  
+  .investment-card:hover .detail-btn {
+    opacity: 1;
+    box-shadow: 0 4px 12px rgba(50, 151, 211, 0.25);
+    transform: translateY(-1px);
   }
 
   .investment-card .product-name {
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--theme-text-primary);
+    flex-shrink: 0;
   }
 
   .investment-card .card-type {
-    margin-bottom: 12px;
+    margin-bottom: 10px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
   }
 
   .investment-card .card-stats {
     display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 10px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 12px;
+    padding: 10px;
+  }
+
+  .investment-card .card-stats-row {
+    display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin-bottom: 12px;
-    background: var(--theme-bg-card);
-    border-radius: 8px;
+    gap: 10px;
+    margin-bottom: 10px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 12px;
     padding: 10px;
   }
 
   .investment-card .stat-item {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    text-align: center;
+    gap: 3px;
   }
 
   .investment-card .stat-label {
     font-size: 11px;
     color: var(--theme-text-secondary);
-    margin-bottom: 4px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
   }
 
   .investment-card .stat-value {
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 15px;
+    font-weight: 700;
     color: var(--theme-text-primary);
   }
 
@@ -947,13 +1146,16 @@ onMounted(loadData)
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding-top: 10px;
-    border-top: 1px solid var(--theme-border);
+    padding-top: 8px;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    gap: 8px;
   }
 
   .investment-card .start-date {
     font-size: 12px;
-    color: var(--theme-text-tertiary);
+    color: var(--theme-text-secondary);
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   /* ===== 待审批卡片样式 ===== */
@@ -964,10 +1166,10 @@ onMounted(loadData)
   }
 
   .approval-card {
-    background: #fffbeb;
+    background: var(--theme-warning-bg);
     border-radius: 10px;
     padding: 12px;
-    border: 1px solid #fde68a;
+    border: 1px solid var(--theme-warning);
   }
 
   .approval-card-header {
@@ -1119,5 +1321,75 @@ onMounted(loadData)
     font-size: 14px !important;
     width: auto !important;
   }
+}
+
+/* 历史列表样式 */
+.history-list {
+  padding: 0;
+}
+
+.history-item {
+  display: flex;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--theme-bg-border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.history-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  padding-top: 2px;
+}
+
+.history-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-date {
+  font-size: 12px;
+  color: var(--theme-text-tertiary);
+  margin-bottom: 4px;
+}
+
+.history-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.history-details .label {
+  color: var(--theme-text-tertiary);
+  font-size: 12px;
+}
+
+.history-details .value {
+  color: var(--theme-text-primary);
+  font-weight: 500;
+}
+
+.history-details .value.profit {
+  color: var(--theme-success);
+}
+
+.history-details .value.loss {
+  color: var(--theme-error);
+}
+
+.history-details .note {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background-color: var(--theme-bg-secondary);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--theme-text-secondary);
 }
 </style>
