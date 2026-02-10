@@ -79,6 +79,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { stockSound } from '../../utils/gameSound'
 
 const props = defineProps<{ state: any }>()
 const emit = defineEmits<{ (e: 'action', action: any): void }>()
@@ -139,6 +140,9 @@ function formatNum(n: number) {
 }
 
 function doAction(act: string) {
+  if (act === 'buy') stockSound.buy()
+  else if (act === 'sell') stockSound.sell()
+  else stockSound.hold()
   emit('action', { action: act, quantity: act === 'hold' ? 0 : quantity.value })
 }
 

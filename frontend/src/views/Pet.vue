@@ -329,6 +329,11 @@
           >🏳️</button>
           <div class="game-header-actions">
             <button
+              class="game-mute-btn"
+              @click="gameMuted = toggleMute()"
+              :title="gameMuted ? '开启音效' : '关闭音效'"
+            >{{ gameMuted ? '🔇' : '🔊' }}</button>
+            <button
               v-if="activeGame === 'minesweeper' && activeGameState"
               class="game-fullscreen-btn"
               @click="gameFullscreen = !gameFullscreen"
@@ -400,6 +405,7 @@ import MemoryGame from '@/components/games/MemoryGame.vue'
 import StockGame from '@/components/games/StockGame.vue'
 import AdventureGame from '@/components/games/AdventureGame.vue'
 import MinesweeperGame from '@/components/games/MinesweeperGame.vue'
+import { toggleMute, isMuted, warmUp } from '@/utils/gameSound'
 
 const userStore = useUserStore()
 const message = useMessage()
@@ -427,6 +433,10 @@ const gameCompleted = ref(false)
 const showAbandonConfirm = ref(false)
 
 const gameFullscreen = ref(false)
+const gameMuted = ref(false)
+
+// 移动端检测 - 用于扫雷自动全屏
+const isMobile = computed(() => window.innerWidth <= 768 || 'ontouchstart' in window)
 
 // 难度选择状态
 const showDifficultyModal = ref(false)
@@ -455,10 +465,10 @@ const GAME_DIFFICULTIES = {
   adventure: {
     name: '宠物探险',
     difficulties: [
-      { key: 'easy', label: '入门', desc: '5层 低难度', exp: '30~50 EXP' },
-      { key: 'medium', label: '普通', desc: '10层 中难度', exp: '60~100 EXP' },
-      { key: 'hard', label: '困难', desc: '15层 高难度', exp: '150~250 EXP' },
-      { key: 'expert', label: '地狱', desc: '25层 极高难度', exp: '500~1000 EXP' },
+      { key: 'easy', label: '入门', desc: '5层 低难度', exp: '25~50 EXP' },
+      { key: 'medium', label: '普通', desc: '8层 中难度', exp: '50~100 EXP' },
+      { key: 'hard', label: '困难', desc: '12层 高难度', exp: '115~250 EXP' },
+      { key: 'expert', label: '地狱', desc: '18层 极高难度', exp: '500~1000 EXP' },
     ]
   },
   minesweeper: {
@@ -467,7 +477,7 @@ const GAME_DIFFICULTIES = {
       { key: 'easy', label: '入门', desc: '6×6 (5雷)', exp: '20 EXP' },
       { key: 'medium', label: '普通', desc: '9×9 (12雷)', exp: '60 EXP' },
       { key: 'hard', label: '困难', desc: '12×12 (30雷)', exp: '200 EXP' },
-      { key: 'expert', label: '地狱', desc: '16×16 (60雷)', exp: '1000 EXP' },
+      { key: 'expert', label: '地狱', desc: '16×16 (55雷)', exp: '1000 EXP' },
     ]
   }
 }
@@ -615,6 +625,10 @@ const startGame = async (gameType, difficulty = null) => {
       activeGameState.value = res.data.state
       activeGameName.value = res.data.game_name
       showGamePanel.value = false
+      // 扫雷在移动端自动全屏
+      if (gameType === 'minesweeper' && isMobile.value) {
+        gameFullscreen.value = true
+      }
     } catch (err) {
       message.error(err.response?.data?.detail || '启动游戏失败')
     } finally {
@@ -642,6 +656,10 @@ const startGame = async (gameType, difficulty = null) => {
     activeGameName.value = res.data.game_name
     showGamePanel.value = false
     showDifficultyModal.value = false
+    // 扫雷在移动端自动全屏
+    if (gameType === 'minesweeper' && isMobile.value) {
+      gameFullscreen.value = true
+    }
   } catch (err) {
     message.error(err.response?.data?.detail || '启动游戏失败')
   } finally {
@@ -652,6 +670,7 @@ const startGame = async (gameType, difficulty = null) => {
 // 确认选择难度
 const confirmDifficultySelect = (difficulty) => {
   if (!pendingGameType.value) return
+  warmUp() // 预热音频上下文，确保第一个音效不会被截断
   startGame(pendingGameType.value, difficulty)
 }
 
@@ -683,7 +702,13 @@ const gameAction = async (action) => {
       handleExpResult(res, oldLevel)
     }
   } catch (err) {
-    message.error(err.response?.data?.detail || '操作失败')
+    const detail = err.response?.data?.detail || '操作失败'
+    // 扫雷和弦失败由组件内部 toast 处理，不在此重复弹出
+    if (activeGame.value === 'minesweeper' && detail.includes('和弦')) {
+      // 静默处理，MinesweeperGame 组件已本地拦截
+    } else {
+      message.error(detail)
+    }
   } finally {
     gameLoading.value = false
   }
@@ -1525,6 +1550,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: auto;
 }
 
 .game-modal.fullscreen .board {
@@ -1535,8 +1561,17 @@ onMounted(() => {
 }
 
 .game-modal.fullscreen .cell {
-  min-width: 28px;
-  min-height: 28px;
+  min-width: 36px;
+  min-height: 36px;
+  font-size: clamp(12px, 3vw, 18px);
+}
+
+/* 大屏全屏时格子可以更大 */
+@media (min-width: 500px) {
+  .game-modal.fullscreen .cell {
+    min-width: 40px;
+    min-height: 40px;
+  }
 }
 
 .game-modal-header {
@@ -1633,6 +1668,23 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.game-mute-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--theme-bg-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+.game-mute-btn:hover {
+  background: var(--theme-card-hover);
 }
 
 .game-fullscreen-btn {
@@ -2457,16 +2509,18 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.2s ease;
   border: 2px solid transparent;
+  background: var(--theme-bg-card);
+  color: var(--theme-text-primary);
 }
 
 .difficulty-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px var(--theme-shadow);
 }
 
 .difficulty-card.easy {
-  background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
-  border-color: #81c784;
+  background: var(--theme-success-bg);
+  border-color: var(--theme-success);
 }
 
 .difficulty-card.medium {
@@ -2475,18 +2529,14 @@ onMounted(() => {
 }
 
 .difficulty-card.hard {
-  background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
-  border-color: #e57373;
+  background: var(--theme-error-bg);
+  border-color: var(--theme-error);
 }
 
 .difficulty-card.expert {
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  border-color: #ff4757;
-  color: white;
-}
-
-.difficulty-card.expert .diff-desc {
-  color: #ccc;
+  background: var(--theme-bg-elevated);
+  border-color: var(--theme-primary);
+  box-shadow: 0 0 20px var(--theme-primary-shadow);
 }
 
 .diff-label {
@@ -2508,7 +2558,8 @@ onMounted(() => {
 }
 
 .difficulty-card.expert .diff-exp {
-  color: #ffd700;
+  color: var(--theme-primary);
+  font-weight: 600;
 }
 
 @media (max-width: 480px) {

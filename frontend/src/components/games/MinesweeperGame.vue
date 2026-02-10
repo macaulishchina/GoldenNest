@@ -23,7 +23,7 @@
           <div
             class="board"
             :style="{
-              gridTemplateColumns: `repeat(${state.cols}, minmax(28px, 1fr))`,
+              gridTemplateColumns: `repeat(${state.cols}, minmax(${state.cols > 12 ? '28px' : '36px'}, 1fr))`,
             }"
           >
             <div
@@ -31,13 +31,13 @@
               :key="idx"
               class="cell"
               :class="cellClass(Math.floor(idx / state.cols), idx % state.cols)"
-              @click="cellClick(Math.floor(idx / state.cols), idx % state.cols)"
+              @click.prevent="cellClick(Math.floor(idx / state.cols), idx % state.cols)"
               @mousedown="cellMouseDown(Math.floor(idx / state.cols), idx % state.cols, $event)"
               @mouseup="cellMouseUp"
               @contextmenu.prevent="cellRightClick(Math.floor(idx / state.cols), idx % state.cols)"
-              @touchstart="cellTouchStart(Math.floor(idx / state.cols), idx % state.cols)"
+              @touchstart="cellTouchStart(Math.floor(idx / state.cols), idx % state.cols, $event)"
               @touchend="cellTouchEnd(Math.floor(idx / state.cols), idx % state.cols, $event)"
-              @touchmove="cellTouchMove"
+              @touchmove="cellTouchMove($event)"
             >
               <span v-if="cellContent(Math.floor(idx / state.cols), idx % state.cols)" :class="'n' + state.board[Math.floor(idx / state.cols)][idx % state.cols]">
                 {{ cellContent(Math.floor(idx / state.cols), idx % state.cols) }}
@@ -46,6 +46,13 @@
           </div>
         </div>
       </div>
+
+      <!-- 和弦提示 - 仅显示最新一条，新的覆盖旧的 -->
+      <transition name="chord-toast">
+        <div v-if="chordToast" class="chord-toast" :class="chordToast.type" @click="chordToast = null">
+          {{ chordToast.text }}
+        </div>
+      </transition>
 
       <!-- 操作提示 - 固定底部 -->
       <div v-if="!state.completed" class="hints-bar">
@@ -75,11 +82,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { mineSound } from '../../utils/gameSound'
 
 const props = defineProps<{ state: any }>()
 const emit = defineEmits<{
   (e: 'action', action: any): void
+  (e: 'chord-error', msg: string): void
 }>()
 
 const startTime = ref(Date.now())
@@ -90,11 +99,18 @@ const mouseDownCell = ref<{ r: number; c: number } | null>(null)
 const isLeftMouseDown = ref(false)
 const isRightMouseDown = ref(false)
 
-// 触摸支持
+// ===== 触摸支持（优化版）=====
 const touchStartTime = ref(0)
 const touchMoved = ref(false)
 const longPressTimer = ref<ReturnType<typeof setTimeout> | null>(null)
-const LONG_PRESS_DURATION = 500 // 长按500ms触发标记
+const longPressFired = ref(false)      // 本次触摸周期内长按是否已触发
+const touchLocked = ref(false)         // 触摸锁定，防止长按后浏览器合成click
+const LONG_PRESS_DURATION = 400        // 400ms触发，比之前更灵敏
+
+// ===== 和弦动画 =====
+const chordAnimCells = ref<Set<string>>(new Set())
+const chordToast = ref<{ text: string; type: string } | null>(null)
+let chordToastTimer: ReturnType<typeof setTimeout> | null = null
 
 let timer: ReturnType<typeof setInterval> | null = null
 
@@ -145,11 +161,10 @@ onMounted(() => {
   // 全局监听鼠标松开事件，确保和弦检测正确
   window.addEventListener('mouseup', cellMouseUp)
   
-  // 处理触摸滚动，阻止事件冒泡到父容器
+  // 处理触摸滚动
   const el = boardScrollRef.value
   if (el) {
     el.addEventListener('touchmove', (e: TouchEvent) => {
-      // 只有当内容需要滚动时才阻止冒泡
       const { scrollHeight, clientHeight, scrollWidth, clientWidth } = el
       if (scrollHeight > clientHeight || scrollWidth > clientWidth) {
         e.stopPropagation()
@@ -161,7 +176,19 @@ onMounted(() => {
 onUnmounted(() => {
   if (timer) clearInterval(timer)
   if (longPressTimer.value) clearTimeout(longPressTimer.value)
+  if (chordToastTimer) clearTimeout(chordToastTimer)
   window.removeEventListener('mouseup', cellMouseUp)
+})
+
+// 监听游戏完成 → 播放胜利/失败音效
+watch(() => props.state?.completed, (newVal, oldVal) => {
+  if (newVal && !oldVal) {
+    if (props.state?.won && !props.state?.abandoned) {
+      mineSound.win()
+    } else {
+      mineSound.explode()
+    }
+  }
 })
 
 function cellClass(r: number, c: number) {
@@ -180,7 +207,13 @@ function cellClass(r: number, c: number) {
     else if (questioned) classes.push('questioned')
   }
   
-  // 添加和弦高亮效果
+  // 和弦动画效果：格子在和弦范围内时闪烁
+  const key = `${r},${c}`
+  if (chordAnimCells.value.has(key)) {
+    classes.push('chord-anim')
+  }
+  
+  // 和弦预览：鼠标按下数字格时高亮自身
   if (revealed && val > 0 && (isLeftMouseDown.value || isRightMouseDown.value)) {
     if (mouseDownCell.value && mouseDownCell.value.r === r && mouseDownCell.value.c === c) {
       classes.push('chord-hover')
@@ -204,8 +237,89 @@ function cellContent(r: number, c: number): string {
   return String(val)
 }
 
+// ========== 和弦动画 ==========
+function getNeighborKeys(r: number, c: number): string[] {
+  const keys: string[] = []
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue
+      const nr = r + dr
+      const nc = c + dc
+      if (nr >= 0 && nr < props.state.rows && nc >= 0 && nc < props.state.cols) {
+        keys.push(`${nr},${nc}`)
+      }
+    }
+  }
+  return keys
+}
+
+function playChordAnimation(r: number, c: number) {
+  const neighbors = getNeighborKeys(r, c)
+  chordAnimCells.value = new Set([`${r},${c}`, ...neighbors])
+  // 动画结束后清除
+  setTimeout(() => {
+    chordAnimCells.value = new Set()
+  }, 550)
+}
+
+function showChordToast(text: string, type: 'error' | 'info' = 'error') {
+  // 清除旧的 timer
+  if (chordToastTimer) {
+    clearTimeout(chordToastTimer)
+  }
+  // 新提示覆盖旧提示，不会累积
+  chordToast.value = { text, type }
+  chordToastTimer = setTimeout(() => {
+    chordToast.value = null
+    chordToastTimer = null
+  }, 2000)
+}
+
+// ========== 和弦操作（前置本地检查 + 动画）==========
+function doChord(r: number, c: number) {
+  if (!props.state) return
+  const val = props.state.board[r][c]
+  if (val <= 0) return
+  
+  // 本地计算周围旗数与未翻开数
+  let flagCount = 0
+  let unrevealed = 0
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue
+      const nr = r + dr
+      const nc = c + dc
+      if (nr >= 0 && nr < props.state.rows && nc >= 0 && nc < props.state.cols) {
+        if (props.state.flagged[nr][nc]) {
+          flagCount++
+        } else if (!props.state.revealed[nr][nc]) {
+          unrevealed++
+        }
+      }
+    }
+  }
+  
+  // 本地前置检查：两种和弦条件都不满足时，显示内置 toast 而非 message.error
+  if (flagCount !== val && flagCount + unrevealed !== val) {
+    showChordToast(`🚩${flagCount} + 未翻开${unrevealed} ≠ 数字${val}`, 'error')
+    return
+  }
+  
+  // 播放和弦动画
+  playChordAnimation(r, c)
+  mineSound.chord()
+  
+  // 发送和弦操作到后端
+  emit('action', { action: 'chord', row: r, col: c })
+}
+
+// ========== 点击事件 ==========
 function cellClick(r: number, c: number) {
   if (!props.state || props.state.completed) return
+  
+  // 触摸锁定中（长按后），不处理 click
+  if (touchLocked.value) return
+  
   const revealed = props.state.revealed[r][c]
   const flagged = props.state.flagged[r][c]
   const questioned = props.state.questioned?.[r]?.[c] || false
@@ -214,22 +328,24 @@ function cellClick(r: number, c: number) {
   if (revealed) {
     const val = props.state.board[r][c]
     if (val > 0) {
-      emit('action', { action: 'chord', row: r, col: c })
+      doChord(r, c)
     }
     return
   }
 
-  // 对未翻开的格子：如果有标记（旗帜或问号），不做任何操作
-  // 专业扫雷中，左键点击标记的格子不会翻开
+  // 对未翻开的格子：如果有标记不做任何操作
   if (flagged || questioned) return
   
+  mineSound.reveal()
   emit('action', { action: 'reveal', row: r, col: c })
 }
 
 function cellRightClick(r: number, c: number) {
   if (!props.state || props.state.completed) return
   if (!props.state.revealed[r][c]) {
-    // 右键循环标记：隐藏 → 旗帜 → 问号 → 隐藏
+    const isFlagged = props.state.flagged[r][c]
+    if (isFlagged) mineSound.unflag()
+    else mineSound.flag()
     emit('action', { action: 'flag', row: r, col: c })
   }
 }
@@ -245,54 +361,89 @@ function cellMouseDown(r: number, c: number, e: MouseEvent) {
   
   mouseDownCell.value = { r, c }
   
-  // 检测双键和弦（左右键同时按下）
+  // 检测双键和弦
   if (isLeftMouseDown.value && isRightMouseDown.value) {
     const revealed = props.state.revealed[r][c]
     if (revealed) {
       const val = props.state.board[r][c]
       if (val > 0) {
-        // 双键和弦
-        emit('action', { action: 'chord', row: r, col: c })
+        doChord(r, c)
       }
     }
   }
 }
 
 function cellMouseUp(e: MouseEvent) {
-  if (e.button === 0) {
-    isLeftMouseDown.value = false
-  } else if (e.button === 2) {
-    isRightMouseDown.value = false
+  if (e instanceof MouseEvent) {
+    if (e.button === 0) {
+      isLeftMouseDown.value = false
+    } else if (e.button === 2) {
+      isRightMouseDown.value = false
+    }
   }
   mouseDownCell.value = null
 }
 
-// 触摸事件处理
-function cellTouchStart(r: number, c: number) {
+// ========== 触摸事件（优化版：解决长按插旗误触问题）==========
+const touchStartPos = ref<{ x: number; y: number } | null>(null)
+const TOUCH_MOVE_THRESHOLD = 10 // 移动超过10px判定为滑动
+
+function cellTouchStart(r: number, c: number, e: TouchEvent) {
   if (!props.state || props.state.completed) return
   
   touchStartTime.value = Date.now()
   touchMoved.value = false
+  longPressFired.value = false
+  touchLocked.value = false
+  
+  // 记录触摸起始位置，用于判断是否为滑动
+  const touch = e.touches[0]
+  touchStartPos.value = touch ? { x: touch.clientX, y: touch.clientY } : null
   
   // 设置长按定时器
   longPressTimer.value = setTimeout(() => {
     if (!touchMoved.value) {
-      // 长按触发标记操作
+      // 标记本次触摸已触发长按操作
+      longPressFired.value = true
+      // 立即锁定，阻止后续一切 click 行为
+      touchLocked.value = true
+      
       if (!props.state.revealed[r][c]) {
+        // 长按未翻开格子 → 插旗/取消旗
+        const isFlagged = props.state.flagged[r][c]
+        if (isFlagged) mineSound.unflag()
+        else mineSound.flag()
         emit('action', { action: 'flag', row: r, col: c })
-        // 触觉反馈（如果支持）
         if (navigator.vibrate) {
           navigator.vibrate(50)
+        }
+      } else {
+        // 长按已翻开的数字格子 → 和弦
+        const val = props.state.board[r][c]
+        if (val > 0) {
+          doChord(r, c)
+          if (navigator.vibrate) {
+            navigator.vibrate(30)
+          }
         }
       }
     }
   }, LONG_PRESS_DURATION)
 }
 
-function cellTouchMove() {
-  touchMoved.value = true
-  // 取消长按定时器
-  if (longPressTimer.value) {
+function cellTouchMove(e: TouchEvent) {
+  // 用位置偏移判断是否为滑动，而非简单的 touchmove 触发
+  if (!touchMoved.value && touchStartPos.value) {
+    const touch = e.touches[0]
+    if (touch) {
+      const dx = Math.abs(touch.clientX - touchStartPos.value.x)
+      const dy = Math.abs(touch.clientY - touchStartPos.value.y)
+      if (dx > TOUCH_MOVE_THRESHOLD || dy > TOUCH_MOVE_THRESHOLD) {
+        touchMoved.value = true
+      }
+    }
+  }
+  if (touchMoved.value && longPressTimer.value) {
     clearTimeout(longPressTimer.value)
     longPressTimer.value = null
   }
@@ -307,10 +458,22 @@ function cellTouchEnd(r: number, c: number, e: TouchEvent) {
     longPressTimer.value = null
   }
   
-  // 如果是快速点击（非长按且未移动），执行点击操作
+  // ★ 核心修复：长按已触发过操作 → 完全阻止后续行为
+  if (longPressFired.value) {
+    e.preventDefault()
+    // 延迟解锁，确保浏览器合成的 click 事件也被拦截
+    setTimeout(() => {
+      touchLocked.value = false
+    }, 300)
+    return
+  }
+  
+  // 手指移动过 → 取消
+  if (touchMoved.value) return
+  
+  // 快速点击（< 400ms）→ 翻开/和弦
   const touchDuration = Date.now() - touchStartTime.value
-  if (!touchMoved.value && touchDuration < LONG_PRESS_DURATION) {
-    // 阻止默认的click事件，避免重复触发
+  if (touchDuration < LONG_PRESS_DURATION) {
     e.preventDefault()
     cellClick(r, c)
   }
@@ -341,11 +504,12 @@ function doAbandon() {
   justify-content: space-between;
   align-items: center;
   padding: 6px 8px;
-  background: #f5f5f5;
+  background: var(--theme-bg-secondary, #f5f5f5);
   border-radius: 8px;
   margin-bottom: 8px;
   font-size: 14px;
   font-weight: bold;
+  color: var(--theme-text-primary, #333);
 }
 .stat {
   display: flex;
@@ -366,9 +530,9 @@ function doAbandon() {
 
 .abandon-btn-inline {
   padding: 4px 8px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--theme-border, #ddd);
   border-radius: 6px;
-  background: #fff;
+  background: var(--theme-bg-card, #fff);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
@@ -388,7 +552,7 @@ function doAbandon() {
   overscroll-behavior: contain;
   touch-action: pan-x pan-y;
   border-radius: 8px;
-  background: #fafafa;
+  background: var(--theme-bg-secondary, #fafafa);
   margin-bottom: 8px;
 }
 
@@ -416,32 +580,95 @@ function doAbandon() {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  transition: background 0.1s;
-  min-width: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+  min-width: 24px;
+  min-height: 24px;
+  position: relative;
 }
+
+/* 未翻开格子 */
 .cell.hidden {
   background: linear-gradient(135deg, #90a4ae, #78909c);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(0,0,0,0.15);
 }
-.cell.hidden:hover {
-  background: linear-gradient(135deg, #a0b4be, #8ca0ac);
+.cell.hidden:active {
+  transform: scale(0.92);
+  filter: brightness(0.9);
 }
+
+/* 标旗格子 - 与 hidden 有微妙区分 */
 .cell.flagged {
-  background: linear-gradient(135deg, #90a4ae, #78909c);
+  background: linear-gradient(135deg, #7e97a0, #6b8290);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -1px 0 rgba(0,0,0,0.2);
 }
+
+/* 问号格子 */
 .cell.questioned {
   background: linear-gradient(135deg, #ffb74d, #ffa726);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(0,0,0,0.15);
 }
+
+/* 已翻开格子 */
 .cell.revealed {
-  background: #e8e8e8;
+  background: var(--theme-bg-card, #e8e8e8);
 }
+
+/* 地雷格子 */
 .cell.mine {
   background: #ef5350;
+  animation: mine-reveal 0.3s ease;
 }
+@keyframes mine-reveal {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+/* 和弦悬停 - 中心格子 */
 .cell.chord-hover {
   background: #c5e1a5 !important;
   box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
+}
+
+/* ===== 和弦动画 - 周围格子脉冲闪烁 ===== */
+.cell.chord-anim {
+  animation: chord-pulse 0.5s ease-out;
+  z-index: 2;
+}
+
+.cell.chord-anim.revealed {
+  animation: chord-pulse-revealed 0.5s ease-out;
+}
+
+@keyframes chord-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+    transform: scale(1);
+  }
+  30% {
+    box-shadow: 0 0 12px 4px rgba(76, 175, 80, 0.5);
+    transform: scale(1.08);
+    background: #a5d6a7;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    transform: scale(1);
+  }
+}
+
+@keyframes chord-pulse-revealed {
+  0% {
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+  }
+  30% {
+    box-shadow: 0 0 10px 3px rgba(76, 175, 80, 0.4);
+    background: #dcedc8;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 
 /* 数字颜色 */
@@ -454,6 +681,46 @@ function doAbandon() {
 .n7 { color: #212121; }
 .n8 { color: #9e9e9e; }
 
+/* ===== 和弦提示 Toast（组件内部，新覆盖旧）===== */
+.chord-toast {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 50;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+.chord-toast.error {
+  background: rgba(244, 67, 54, 0.92);
+  color: white;
+}
+.chord-toast.info {
+  background: rgba(33, 150, 243, 0.92);
+  color: white;
+}
+
+.chord-toast-enter-active {
+  transition: all 0.25s ease-out;
+}
+.chord-toast-leave-active {
+  transition: all 0.2s ease-in;
+}
+.chord-toast-enter-from {
+  opacity: 0;
+  transform: translateX(-50%) translateY(10px);
+}
+.chord-toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-10px);
+}
+
 /* 操作提示栏 - 固定底部 */
 .hints-bar {
   flex-shrink: 0;
@@ -461,7 +728,7 @@ function doAbandon() {
   justify-content: space-around;
   align-items: center;
   padding: 8px;
-  background: #f5f5f5;
+  background: var(--theme-bg-secondary, #f5f5f5);
   border-radius: 8px;
   margin-bottom: 8px;
 }
@@ -470,7 +737,7 @@ function doAbandon() {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #666;
+  color: var(--theme-text-secondary, #666);
 }
 .hint-icon {
   font-size: 16px;
@@ -487,10 +754,10 @@ function doAbandon() {
   border-radius: 8px;
 }
 .game-result.win {
-  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+  background: var(--theme-success-bg, linear-gradient(135deg, #e8f5e9, #c8e6c9));
 }
 .game-result.lose {
-  background: linear-gradient(135deg, #ffebee, #ffcdd2);
+  background: var(--theme-error-bg, linear-gradient(135deg, #ffebee, #ffcdd2));
 }
 .result-title {
   font-size: 18px;
@@ -504,7 +771,7 @@ function doAbandon() {
   margin-top: 4px;
 }
 .result-exp.lost {
-  color: #999;
+  color: var(--theme-text-tertiary, #999);
 }
 
 /* 确认弹窗 */
@@ -522,12 +789,13 @@ function doAbandon() {
   z-index: 100;
 }
 .confirm-dialog {
-  background: white;
+  background: var(--theme-bg-card, white);
   border-radius: 12px;
   padding: 20px;
   max-width: 280px;
   text-align: center;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  color: var(--theme-text-primary, #333);
 }
 .confirm-title {
   font-size: 18px;
@@ -536,7 +804,7 @@ function doAbandon() {
 }
 .confirm-message {
   font-size: 14px;
-  color: #666;
+  color: var(--theme-text-secondary, #666);
   margin-bottom: 20px;
   line-height: 1.5;
 }
@@ -555,11 +823,11 @@ function doAbandon() {
   border: none;
 }
 .confirm-btn.cancel {
-  background: #f5f5f5;
-  color: #666;
+  background: var(--theme-bg-secondary, #f5f5f5);
+  color: var(--theme-text-secondary, #666);
 }
 .confirm-btn.cancel:hover {
-  background: #e0e0e0;
+  background: var(--theme-card-hover, #e0e0e0);
 }
 .confirm-btn.confirm {
   background: #ef5350;

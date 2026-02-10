@@ -687,6 +687,9 @@ def sanitize_state(game_type: str, session: dict) -> dict:
             "floors_cleared": session["floors_cleared"],
             "game_over": session.get("game_over", False),
             "encounter_resolved": session.get("encounter_resolved", False),
+            "crit_chance": session.get("crit_chance", 0),
+            "lifesteal": session.get("lifesteal", 0),
+            "buffs": session.get("buffs", []),
         }
         enc = session.get("encounter")
         if enc:
@@ -698,6 +701,8 @@ def sanitize_state(game_type: str, session: dict) -> dict:
                     safe_enc["monster_attack"] = enc["monster_attack"]
                 elif enc["type"] == "shop":
                     safe_enc["items"] = enc.get("items", [])
+                elif enc["type"] == "blessing":
+                    safe_enc["choices"] = enc.get("choices", [])
                 state["encounter"] = safe_enc
             else:
                 state["encounter"] = {"type": enc["type"], "name": enc["name"], "resolved": True}
@@ -780,7 +785,7 @@ STOCK_DIFFICULTIES = {
                "exp_tiers": [(50, 80), (30, 50), (10, 30), (0, 15), (-999, 5)]},
     "hard":   {"rounds": 15, "volatility": 0.22, "initial_cash": 10000,
                "exp_tiers": [(50, 200), (30, 120), (10, 60), (0, 30), (-999, 10)]},
-    "expert": {"rounds": 20, "volatility": 0.35, "initial_cash": 10000,
+    "expert": {"rounds": 25, "volatility": 0.35, "initial_cash": 10000,
                "exp_tiers": [(100, 1000), (50, 500), (20, 200), (0, 80), (-999, 20)]},
 }
 
@@ -818,44 +823,118 @@ ADVENTURE_MONSTERS = [
 
 ADVENTURE_DIFFICULTIES = {
     "easy":   {
-        "max_floor": 3, "player_hp": 120, "atk_bonus": 5,
+        "max_floor": 5, "player_hp": 120, "atk_bonus": 5,
         "monster_hp_mult": 0.7, "monster_atk_mult": 0.7,
-        "floor_exp": [0, 5, 10, 20],
+        "floor_exp": [0, 5, 8, 12, 16, 25],
         "boss": {"name": "小贪官", "hp": 40, "attack": 8},
     },
     "medium": {
-        "max_floor": 5, "player_hp": 100, "atk_bonus": 0,
+        "max_floor": 8, "player_hp": 100, "atk_bonus": 0,
         "monster_hp_mult": 1.0, "monster_atk_mult": 1.0,
-        "floor_exp": [0, 5, 12, 20, 35, 60],
+        "floor_exp": [0, 5, 10, 16, 22, 30, 40, 50, 65],
         "boss": {"name": "金融危机龙", "hp": 80, "attack": 15},
     },
     "hard":   {
-        "max_floor": 8, "player_hp": 100, "atk_bonus": 0,
+        "max_floor": 12, "player_hp": 100, "atk_bonus": 0,
         "monster_hp_mult": 1.5, "monster_atk_mult": 1.3,
-        "floor_exp": [0, 8, 15, 25, 35, 45, 55, 65, 80],
+        "floor_exp": [0, 8, 14, 20, 28, 36, 44, 52, 60, 70, 80, 95, 115],
         "boss": {"name": "黑天鹅巨兽", "hp": 150, "attack": 22},
     },
     "expert": {
-        "max_floor": 12, "player_hp": 80, "atk_bonus": -3,
+        "max_floor": 18, "player_hp": 80, "atk_bonus": -3,
         "monster_hp_mult": 2.0, "monster_atk_mult": 1.8,
-        "floor_exp": [0, 10, 18, 28, 40, 55, 70, 85, 100, 120, 140, 160, 200],
+        "floor_exp": [0, 10, 18, 26, 35, 45, 55, 65, 78, 90, 105, 120, 135, 150, 168, 185, 205, 230, 260],
         "boss": {"name": "末日收割者", "hp": 300, "attack": 35},
     },
 }
 
 
-def _generate_encounter(floor: int, difficulty: str = "medium") -> dict:
+def _generate_floor_plan(difficulty: str = "medium") -> list:
+    """预生成所有楼层的遭遇类型（不含boss层），遵循规则：
+    1. 第1层不出现商店
+    2. 商店不连续出现
+    3. boss战前1-2层必有商店
+    4. 每3-4层出现一次祝福事件
+    5. 合理分布怪物、宝箱、陷阱
+    """
     cfg = ADVENTURE_DIFFICULTIES.get(difficulty, ADVENTURE_DIFFICULTIES["medium"])
-    if floor >= cfg["max_floor"]:
+    max_floor = cfg["max_floor"]
+    # 不含boss层，生成1到max_floor-1层的遭遇
+    total = max_floor - 1
+    if total <= 0:
+        return []
+    
+    plan = [None] * (total + 1)  # index 0不用, 1~total
+    
+    # 规则3: boss前1-2层保证有商店
+    if total >= 2:
+        shop_before_boss = total - random.randint(0, 1)
+        plan[shop_before_boss] = "shop"
+    elif total >= 1:
+        plan[total] = "shop"
+    
+    # 规则4: 每3-4层安排一次祝福（从第2层开始）
+    blessing_interval = 3 if total <= 8 else 4
+    for f in range(blessing_interval, total + 1, blessing_interval):
+        if plan[f] is None:
+            plan[f] = "blessing"
+    
+    # 规则1+2: 填充剩余楼层
+    for f in range(1, total + 1):
+        if plan[f] is not None:
+            continue
+        
+        # 第1层不出现商店
+        allowed = ["monster", "chest", "trap"]
+        if f > 1:
+            allowed.append("shop")
+        
+        # 商店不连续：检查前一层
+        if f > 1 and plan[f - 1] == "shop" and "shop" in allowed:
+            allowed.remove("shop")
+        
+        weights_map = {
+            "monster": 45,
+            "chest": 20,
+            "trap": 20,
+            "shop": 15,
+        }
+        weights = [weights_map.get(t, 10) for t in allowed]
+        plan[f] = random.choices(allowed, weights=weights, k=1)[0]
+    
+    # 规则2后置检查: 确保商店不连续
+    for f in range(2, total + 1):
+        if plan[f] == "shop" and plan[f - 1] == "shop":
+            plan[f] = random.choice(["monster", "chest", "trap"])
+    
+    return plan  # plan[1..total], plan[0]未使用
+
+
+# 祝福/增益选项池
+ADVENTURE_BLESSINGS = [
+    {"id": "atk_up", "name": "⚔️ 力量祝福", "desc": "攻击+5", "effect": {"atk": 5}},
+    {"id": "atk_up_large", "name": "🗡️ 狂战祝福", "desc": "攻击+8", "effect": {"atk": 8}},
+    {"id": "def_up", "name": "🛡️ 铁壁祝福", "desc": "防御+4", "effect": {"def": 4}},
+    {"id": "def_up_large", "name": "🏰 堡垒祝福", "desc": "防御+7", "effect": {"def": 7}},
+    {"id": "hp_restore", "name": "💚 治愈祝福", "desc": "恢复40HP", "effect": {"heal": 40}},
+    {"id": "hp_restore_large", "name": "💖 圣光祝福", "desc": "恢复70HP", "effect": {"heal": 70}},
+    {"id": "max_hp_up", "name": "❤️ 生命祝福", "desc": "最大HP+20", "effect": {"max_hp": 20}},
+    {"id": "potion_gift", "name": "🧪 药剂祝福", "desc": "获得2瓶药水", "effect": {"potions": 2}},
+    {"id": "crit_chance", "name": "🎯 精准祝福", "desc": "暴击率+15%", "effect": {"crit": 15}},
+    {"id": "lifesteal", "name": "🧛 吸血祝福", "desc": "攻击恢复20%伤害值HP", "effect": {"lifesteal": 20}},
+]
+
+
+def _make_encounter(enc_type: str, floor: int, difficulty: str) -> dict:
+    """根据遭遇类型生成具体遭遇数据"""
+    cfg = ADVENTURE_DIFFICULTIES.get(difficulty, ADVENTURE_DIFFICULTIES["medium"])
+    
+    if enc_type == "boss":
         b = cfg["boss"]
         return {"type": "boss", "name": b["name"],
                 "monster_hp": b["hp"], "monster_max_hp": b["hp"],
                 "monster_attack": b["attack"]}
-    enc_type = random.choices(
-        ["monster", "chest", "trap", "shop"],
-        weights=[40, 20, 20, 20], k=1
-    )[0]
-    if enc_type == "monster":
+    elif enc_type == "monster":
         m = random.choice(ADVENTURE_MONSTERS)
         hp = int(m["hp"] * cfg["monster_hp_mult"])
         atk = int(m["attack"] * cfg["monster_atk_mult"])
@@ -871,16 +950,44 @@ def _generate_encounter(floor: int, difficulty: str = "medium") -> dict:
         elif difficulty == "expert":
             trap_dmg = random.randint(20, 45)
         return {"type": "trap", "name": "陷阱", "damage": trap_dmg}
-    else:
+    elif enc_type == "shop":
         return {"type": "shop", "name": "商店", "items": [
             {"id": "potion", "name": "生命药水", "cost": 8, "effect": "恢复30HP"},
             {"id": "shield", "name": "防御护盾", "cost": 12, "effect": "防御+3"},
+            {"id": "sword", "name": "锋利短剑", "cost": 15, "effect": "攻击+3"},
         ]}
+    elif enc_type == "blessing":
+        # 随机选3个祝福供玩家选择
+        choices = random.sample(ADVENTURE_BLESSINGS, min(3, len(ADVENTURE_BLESSINGS)))
+        return {"type": "blessing", "name": "神秘祝福",
+                "choices": [{"id": c["id"], "name": c["name"], "desc": c["desc"]} for c in choices]}
+    else:
+        # fallback
+        return _make_encounter("monster", floor, difficulty)
+
+
+def _generate_encounter(floor: int, difficulty: str = "medium", floor_plan: list = None) -> dict:
+    """生成指定楼层的遭遇。如果有预生成计划则使用计划，否则回退到旧逻辑"""
+    cfg = ADVENTURE_DIFFICULTIES.get(difficulty, ADVENTURE_DIFFICULTIES["medium"])
+    
+    if floor >= cfg["max_floor"]:
+        return _make_encounter("boss", floor, difficulty)
+    
+    if floor_plan and 1 <= floor < len(floor_plan) and floor_plan[floor]:
+        return _make_encounter(floor_plan[floor], floor, difficulty)
+    
+    # 回退：简单随机（兼容旧存档）
+    enc_type = random.choices(
+        ["monster", "chest", "trap", "shop"],
+        weights=[40, 20, 20, 20], k=1
+    )[0]
+    return _make_encounter(enc_type, floor, difficulty)
 
 
 def create_adventure_session(pet_level: int, difficulty: str = "easy") -> dict:
     cfg = ADVENTURE_DIFFICULTIES.get(difficulty, ADVENTURE_DIFFICULTIES["easy"])
-    encounter = _generate_encounter(1, difficulty)
+    floor_plan = _generate_floor_plan(difficulty)
+    encounter = _generate_encounter(1, difficulty, floor_plan)
     return {
         "started_at": datetime.utcnow().isoformat(),
         "difficulty": difficulty,
@@ -897,6 +1004,10 @@ def create_adventure_session(pet_level: int, difficulty: str = "easy") -> dict:
         "floors_cleared": 0,
         "log": [f"📍 进入第1层，遭遇了{encounter['name']}！"],
         "game_over": False,
+        "floor_plan": floor_plan,
+        "crit_chance": 0,
+        "lifesteal": 0,
+        "buffs": [],
     }
 
 
@@ -1179,7 +1290,8 @@ def process_adventure_action(session: dict, action: dict) -> dict:
             return {"completed": True, "exp_earned": session["exp_earned"]}
         session["floor"] += 1
         difficulty = session.get("difficulty", "easy")
-        new_enc = _generate_encounter(session["floor"], difficulty)
+        floor_plan = session.get("floor_plan")
+        new_enc = _generate_encounter(session["floor"], difficulty, floor_plan)
         session["encounter"] = new_enc
         session["encounter_resolved"] = False
         log.append(f"📍 进入第{session['floor']}层，遭遇了{new_enc['name']}！")
@@ -1190,8 +1302,23 @@ def process_adventure_action(session: dict, action: dict) -> dict:
     if enc_type in ("monster", "boss"):
         if act == "fight":
             dmg_to_monster = max(1, session["attack"])
+            # 暴击检查
+            crit_chance = session.get("crit_chance", 0)
+            is_crit = crit_chance > 0 and random.randint(1, 100) <= crit_chance
+            if is_crit:
+                dmg_to_monster = int(dmg_to_monster * 1.8)
+                log.append(f"💥 暴击！")
             enc["monster_hp"] -= dmg_to_monster
             log.append(f"⚔️ 你对{enc['name']}造成{dmg_to_monster}点伤害！")
+            # 吸血检查
+            lifesteal_pct = session.get("lifesteal", 0)
+            if lifesteal_pct > 0 and dmg_to_monster > 0:
+                heal_amt = max(1, int(dmg_to_monster * lifesteal_pct / 100))
+                old_hp = session["hp"]
+                session["hp"] = min(session["max_hp"], session["hp"] + heal_amt)
+                actual_heal = session["hp"] - old_hp
+                if actual_heal > 0:
+                    log.append(f"🧛 吸血恢复{actual_heal}HP")
             if enc["monster_hp"] <= 0:
                 # 根据难度配置获取楼层经验
                 difficulty = session.get("difficulty", "easy")
@@ -1297,13 +1424,79 @@ def process_adventure_action(session: dict, action: dict) -> dict:
             session["defense"] += 3
             log.append(f"🛡️ 购买了防御护盾（防御+3，花费{cost}EXP）")
             return {"completed": False, "exp_earned": 0}
+        elif act == "buy_sword":
+            cost = 15
+            if session["exp_earned"] < cost:
+                raise HTTPException(status_code=400, detail="经验值不足")
+            session["exp_earned"] -= cost
+            session["attack"] += 3
+            log.append(f"⚔️ 购买了锋利短剑（攻击+3，花费{cost}EXP）")
+            return {"completed": False, "exp_earned": 0}
         elif act == "skip":
             session["encounter_resolved"] = True
             session["floors_cleared"] += 1
             log.append("🚶 离开了商店")
             return {"completed": False, "exp_earned": 0}
         else:
-            raise HTTPException(status_code=400, detail="商店遭遇只能 buy_potion、buy_shield 或 skip")
+            raise HTTPException(status_code=400, detail="商店遭遇只能 buy_potion、buy_shield、buy_sword 或 skip")
+
+    elif enc_type == "blessing":
+        if act == "choose_blessing":
+            blessing_id = action.get("blessing_id")
+            if not blessing_id:
+                raise HTTPException(status_code=400, detail="请选择一个祝福")
+            # 从选项中查找
+            choices = enc.get("choices", [])
+            chosen = None
+            for c in choices:
+                if c["id"] == blessing_id:
+                    chosen = c
+                    break
+            if not chosen:
+                raise HTTPException(status_code=400, detail="无效的祝福选项")
+            # 查找对应的效果
+            blessing_def = None
+            for b in ADVENTURE_BLESSINGS:
+                if b["id"] == blessing_id:
+                    blessing_def = b
+                    break
+            if not blessing_def:
+                raise HTTPException(status_code=400, detail="无效的祝福")
+            effect = blessing_def["effect"]
+            # 应用效果
+            if "atk" in effect:
+                session["attack"] += effect["atk"]
+                log.append(f"{chosen['name']}：攻击+{effect['atk']}")
+            if "def" in effect:
+                session["defense"] += effect["def"]
+                log.append(f"{chosen['name']}：防御+{effect['def']}")
+            if "heal" in effect:
+                old_hp = session["hp"]
+                session["hp"] = min(session["max_hp"], session["hp"] + effect["heal"])
+                actual = session["hp"] - old_hp
+                log.append(f"{chosen['name']}：恢复{actual}HP")
+            if "max_hp" in effect:
+                session["max_hp"] += effect["max_hp"]
+                session["hp"] += effect["max_hp"]
+                log.append(f"{chosen['name']}：最大HP+{effect['max_hp']}")
+            if "potions" in effect:
+                session["potions"] += effect["potions"]
+                log.append(f"{chosen['name']}：获得{effect['potions']}瓶药水")
+            if "crit" in effect:
+                session["crit_chance"] = session.get("crit_chance", 0) + effect["crit"]
+                log.append(f"{chosen['name']}：暴击率+{effect['crit']}%")
+            if "lifesteal" in effect:
+                session["lifesteal"] = session.get("lifesteal", 0) + effect["lifesteal"]
+                log.append(f"{chosen['name']}：吸血+{effect['lifesteal']}%")
+            # 记录已获得的祝福
+            buffs = session.get("buffs", [])
+            buffs.append(chosen["name"])
+            session["buffs"] = buffs
+            session["encounter_resolved"] = True
+            session["floors_cleared"] += 1
+            return {"completed": False, "exp_earned": 0, "blessing_applied": chosen["name"]}
+        else:
+            raise HTTPException(status_code=400, detail="祝福遭遇只能 choose_blessing")
 
     raise HTTPException(status_code=400, detail="未知遭遇类型")
 

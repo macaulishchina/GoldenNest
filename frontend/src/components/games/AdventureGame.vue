@@ -13,6 +13,10 @@
         <span>📍{{ state.floor }}F</span>
         <span>⭐{{ state.exp_earned }}</span>
       </div>
+      <!-- 已获得的增益 -->
+      <div v-if="state.buffs && state.buffs.length" class="buffs-bar">
+        <span v-for="(b, i) in state.buffs" :key="i" class="buff-tag">{{ b }}</span>
+      </div>
     </div>
 
     <!-- 战斗日志 -->
@@ -68,14 +72,37 @@
           <span class="enc-icon">🏪</span>
           <span class="enc-name">发现商店</span>
         </div>
-        <div v-if="!state.encounter_resolved" class="action-btns">
+        <div v-if="!state.encounter_resolved" class="action-btns shop-btns">
           <button class="btn shop" @click="doAction('buy_potion')" :disabled="state.exp_earned < 8">
             🧪 药水 (8EXP)
           </button>
           <button class="btn shop" @click="doAction('buy_shield')" :disabled="state.exp_earned < 12">
             🛡️ 护盾 (12EXP)
           </button>
+          <button class="btn shop" @click="doAction('buy_sword')" :disabled="state.exp_earned < 15">
+            ⚔️ 短剑 (15EXP)
+          </button>
           <button class="btn skip" @click="doAction('skip')">🚶 离开</button>
+        </div>
+      </template>
+
+      <!-- 祝福 -->
+      <template v-else-if="enc.type === 'blessing'">
+        <div class="encounter-info">
+          <span class="enc-icon">✨</span>
+          <span class="enc-name">{{ enc.name }}</span>
+        </div>
+        <div class="blessing-hint">选择一个祝福增益：</div>
+        <div v-if="!state.encounter_resolved" class="blessing-choices">
+          <button
+            v-for="choice in (enc.choices || [])"
+            :key="choice.id"
+            class="blessing-choice"
+            @click="chooseBlessing(choice.id)"
+          >
+            <span class="blessing-name">{{ choice.name }}</span>
+            <span class="blessing-desc">{{ choice.desc }}</span>
+          </button>
         </div>
       </template>
 
@@ -100,6 +127,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { adventureSound } from '../../utils/gameSound'
 
 const props = defineProps<{ state: any }>()
 const emit = defineEmits<{ (e: 'action', action: any): void }>()
@@ -133,8 +161,25 @@ watch(() => props.state.log?.length, () => {
   })
 })
 
+// 监听HP减少播放受伤音效
+watch(() => props.state?.hp, (newHp, oldHp) => {
+  if (oldHp !== undefined && newHp < oldHp) {
+    adventureSound.hurt()
+  }
+})
+
 function doAction(act: string) {
+  // 播放音效
+  if (act === 'fight') adventureSound.attack()
+  else if (act === 'next_floor') adventureSound.nextFloor()
+  else if (act === 'buy_potion' || act === 'buy_shield' || act === 'buy_sword') adventureSound.shop()
+  else if (act === 'open') adventureSound.chest()
   emit('action', { action: act })
+}
+
+function chooseBlessing(blessingId: string) {
+  adventureSound.buff()
+  emit('action', { action: 'choose_blessing', blessing_id: blessingId })
 }
 
 function doAbandon() {
@@ -180,6 +225,22 @@ function doAbandon() {
   align-items: center;
   gap: 12px;
   font-size: 13px;
+}
+.buffs-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 6px;
+}
+.buff-tag {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #e8f5e9, #fff8e1);
+  border: 1px solid #c8e6c9;
+  color: #2e7d32;
+  white-space: nowrap;
 }
 .abandon-btn-inline {
   padding: 4px 8px;
@@ -273,6 +334,50 @@ function doAbandon() {
 .btn.shop { background: #1565c0; }
 .btn.skip { background: #757575; }
 .btn.next { background: linear-gradient(135deg, #667eea, #764ba2); }
+.shop-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+/* 祝福选择 */
+.blessing-hint {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.blessing-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.blessing-choice {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px;
+  border: 2px solid #e8e8e8;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #fafafa, #f5f0ff);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.blessing-choice:hover {
+  border-color: #9c7cf4;
+  background: linear-gradient(135deg, #f3edff, #e8e0ff);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(103, 58, 183, 0.15);
+}
+.blessing-name {
+  font-size: 15px;
+  font-weight: bold;
+  color: #5e35b1;
+}
+.blessing-desc {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+}
 
 /* 结果 */
 .game-result {

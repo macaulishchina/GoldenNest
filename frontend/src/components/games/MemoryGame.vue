@@ -14,7 +14,7 @@
 
     <div 
       class="board"
-      :style="{ gridTemplateColumns: `repeat(${state.cols || 4}, minmax(50px, 1fr))` }"
+      :style="{ gridTemplateColumns: `repeat(${state.cols || 4}, minmax(${(state.cols || 4) > 5 ? '36px' : '44px'}, 1fr))` }"
     >
       <div
         v-for="(card, idx) in displayBoard"
@@ -46,6 +46,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { memorySound } from '../../utils/gameSound'
 
 const props = defineProps<{
   state: any
@@ -142,12 +143,19 @@ function getActiveSymbol(idx: number): string | null {
 watch(() => props.state.last_flip_result, (result) => {
   if (!result) return
   if (result.action === 'first_flip') {
+    memorySound.flip()
     tempFlipped.value = [result.position]
     activeSymbols.value = { [result.position]: result.symbol }
   } else if (result.action === 'match') {
+    memorySound.match()
     tempFlipped.value = []
     activeSymbols.value = {}
+    // 检查是否全部匹配完 → 胜利
+    if (props.state.matched_pairs >= props.state.total_pairs) {
+      memorySound.win()
+    }
   } else if (result.action === 'no_match') {
+    memorySound.mismatch()
     tempFlipped.value = result.positions
     activeSymbols.value = {
       [result.positions[0]]: result.symbols[0],
@@ -239,15 +247,17 @@ function doAbandon() {
 
 .board {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   margin: 0 auto;
   max-width: 100%;
+  max-height: calc(100vh - 200px);
 }
 .card-slot {
   aspect-ratio: 1;
   perspective: 600px;
   cursor: pointer;
-  min-width: 40px;
+  min-width: 32px;
+  max-width: 70px;
 }
 .card-inner {
   position: relative;
@@ -265,11 +275,11 @@ function doAbandon() {
   width: 100%;
   height: 100%;
   backface-visibility: hidden;
-  border-radius: 8px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: clamp(18px, 4vw, 28px);
+  font-size: clamp(14px, 3.5vw, 28px);
 }
 .card-front {
   background: linear-gradient(135deg, #667eea, #764ba2);
