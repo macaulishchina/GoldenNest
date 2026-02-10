@@ -291,7 +291,10 @@ export const assetApi = {
   myAssets: (params?: { asset_type?: string; currency?: string }) => api.get('/asset/my-assets', { params }),
   
   // 获取实时汇率
-  getExchangeRate: (currency: string) => api.get(`/asset/exchange-rate/${currency}`)
+  getExchangeRate: (currency: string) => api.get(`/asset/exchange-rate/${currency}`),
+  
+  // 解析资产凭证图片
+  parseImage: (image: string) => api.post('/asset/parse-image', { image }, { timeout: 60000 })
 }
 
 // 投票 API

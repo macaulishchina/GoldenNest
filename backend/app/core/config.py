@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     EQUITY_ANNUAL_RATE: float = 0.03  # 年化3%的时间加权利率
     SAVINGS_TARGET: float = 2000000.0  # 储蓄目标200万
     
+    # AI 视觉解析配置（用于资产凭证图片识别）
+    AI_API_KEY: str = ""  # AI API 密钥，在 .env 中配置
+    AI_BASE_URL: str = "https://api.openai.com/v1"  # API 基础地址，兼容 OpenAI 格式
+    AI_MODEL: str = "gpt-4o-mini"  # 视觉模型名称
+    
     # CORS配置
     BACKEND_CORS_ORIGINS: list = ["http://localhost:5173", "http://localhost:3000"]
     

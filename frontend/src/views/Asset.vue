@@ -14,6 +14,43 @@
           <n-tag type="info" size="small">需全员通过</n-tag>
         </n-space>
       </template>
+      <template #header-extra>
+        <n-button 
+          size="small" 
+          :loading="imageParsing" 
+          @click="triggerImageUpload"
+          :disabled="imageParsing"
+        >
+          📷 导入图片识别
+        </n-button>
+        <input 
+          ref="imageInputRef" 
+          type="file" 
+          accept="image/*" 
+          style="display: none" 
+          @change="handleImageSelected" 
+        />
+      </template>
+      
+      <!-- 图片预览 + 解析状态 -->
+      <div v-if="imagePreview || imageParsing" class="image-parse-area">
+        <div class="image-preview-wrapper">
+          <img v-if="imagePreview" :src="imagePreview" class="image-preview" alt="凭证预览" />
+          <n-button v-if="imagePreview && !imageParsing" size="tiny" circle class="image-remove-btn" @click="clearImagePreview">
+            ✕
+          </n-button>
+        </div>
+        <div v-if="imageParsing" class="image-parse-status">
+          <n-spin size="small" />
+          <span style="margin-left: 8px">AI 正在识别图片内容...</span>
+        </div>
+        <n-alert v-if="imageParseError" type="error" :bordered="false" style="margin-top: 8px" closable @close="imageParseError = ''">
+          {{ imageParseError }}
+        </n-alert>
+        <n-alert v-if="imageParseSuccess" type="success" :bordered="false" style="margin-top: 8px" closable @close="imageParseSuccess = ''">
+          ✅ {{ imageParseSuccess }}
+        </n-alert>
+      </div>
       
       <n-form :model="formData" label-placement="left" label-width="100px">
         <!-- 第一行：资产所有者 + 资产类型 -->
@@ -291,7 +328,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { SendOutline, CashOutline, InformationCircleOutline } from '@vicons/ionicons5'
 import { approvalApi, assetApi, familyApi } from '@/api'
@@ -426,6 +463,147 @@ const listFilter = ref({
   asset_type: '',
   currency: ''
 })
+
+// ========== 图片导入识别 ==========
+const imageInputRef = ref<HTMLInputElement | null>(null)
+const imageParsing = ref(false)
+const imagePreview = ref('')
+const imageParseError = ref('')
+const imageParseSuccess = ref('')
+
+const triggerImageUpload = () => {
+  imageInputRef.value?.click()
+}
+
+const clearImagePreview = () => {
+  imagePreview.value = ''
+  imageParseError.value = ''
+  imageParseSuccess.value = ''
+  if (imageInputRef.value) imageInputRef.value.value = ''
+}
+
+const handleImageSelected = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  if (!file.type.startsWith('image/')) {
+    message.error('请选择图片文件')
+    return
+  }
+
+  if (file.size > 20 * 1024 * 1024) {
+    message.error('图片大小不能超过 20MB')
+    return
+  }
+
+  // 显示预览
+  const reader = new FileReader()
+  reader.onload = async (e) => {
+    const base64 = e.target?.result as string
+    imagePreview.value = base64
+    imageParseError.value = ''
+    imageParseSuccess.value = ''
+
+    // 调用 AI 解析
+    imageParsing.value = true
+    try {
+      const { data } = await assetApi.parseImage(base64)
+      if (data.success && data.data) {
+        applyParsedData(data.data)
+        const fields = Object.keys(data.data).filter(k => data.data[k] != null)
+        imageParseSuccess.value = `成功识别 ${fields.length} 个字段：${fields.map(f => fieldLabels[f] || f).join('、')}`
+      } else {
+        imageParseError.value = data.error || '未能从图片中识别出有效信息'
+      }
+    } catch (error: any) {
+      console.error('Image parse failed:', error)
+      imageParseError.value = error.response?.data?.detail || '图片识别失败，请检查 AI 服务配置'
+    } finally {
+      imageParsing.value = false
+    }
+  }
+  reader.readAsDataURL(file)
+}
+
+// 字段中文标签
+const fieldLabels: Record<string, string> = {
+  name: '产品名称',
+  asset_type: '资产类型',
+  currency: '币种',
+  amount: '金额',
+  start_date: '开始日期',
+  end_date: '到期日期',
+  bank_name: '银行/机构',
+  note: '备注'
+}
+
+// 将解析结果应用到表单
+const applyParsedData = async (data: Record<string, any>) => {
+  // 产品名称
+  if (data.name) {
+    formData.value.name = data.name
+  }
+
+  // 资产类型
+  const validAssetTypes = ['time_deposit', 'fund', 'stock', 'bond', 'other']
+  if (data.asset_type && validAssetTypes.includes(data.asset_type)) {
+    formData.value.asset_type = data.asset_type
+  }
+
+  // 币种
+  const validCurrencies = ['CNY', 'USD', 'HKD', 'JPY', 'EUR', 'GBP', 'AUD', 'CAD', 'SGD', 'KRW']
+  if (data.currency && validCurrencies.includes(data.currency)) {
+    formData.value.currency = data.currency
+    // 如果是外币，获取汇率
+    if (data.currency !== 'CNY') {
+      await fetchExchangeRate(data.currency)
+    } else {
+      currentExchangeRate.value = null
+    }
+  }
+
+  // 金额
+  if (data.amount && data.amount > 0) {
+    if (formData.value.currency === 'CNY') {
+      formData.value.amount = data.amount
+      formData.value.foreign_amount = null
+    } else {
+      formData.value.foreign_amount = data.amount
+      formData.value.amount = null
+    }
+  }
+
+  // 开始日期
+  if (data.start_date) {
+    const d = new Date(data.start_date)
+    if (!isNaN(d.getTime())) {
+      formData.value.start_date = d.getTime()
+    }
+  }
+
+  // 到期日期
+  if (data.end_date) {
+    const d = new Date(data.end_date)
+    if (!isNaN(d.getTime())) {
+      formData.value.end_date = d.getTime()
+    }
+  }
+
+  // 银行名称
+  if (data.bank_name) {
+    formData.value.bank_name = data.bank_name
+  }
+
+  // 备注
+  if (data.note) {
+    formData.value.note = formData.value.note 
+      ? `${formData.value.note}\n${data.note}` 
+      : data.note
+  }
+
+  message.success('图片识别完成，已自动填充表单')
+}
 
 // 币种切换处理
 const handleCurrencyChange = async (currency: string) => {
@@ -664,6 +842,44 @@ onMounted(() => {
 
 .form-item-flex {
   flex: 1;
+}
+
+.image-parse-area {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--theme-bg-secondary);
+  border-radius: 8px;
+  border: 1px dashed var(--theme-border);
+}
+
+.image-preview-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.image-preview {
+  max-width: 200px;
+  max-height: 150px;
+  border-radius: 6px;
+  object-fit: contain;
+  border: 1px solid var(--theme-border-light);
+}
+
+.image-remove-btn {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 10px;
+  background: var(--theme-error) !important;
+  color: white !important;
+}
+
+.image-parse-status {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--theme-text-secondary);
 }
 
 .exchange-rate-info {
