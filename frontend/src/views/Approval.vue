@@ -336,8 +336,23 @@
               </select>
             </div>
             <div class="form-group">
+              <label>币种</label>
+              <select v-model="createForm.currency" @change="handleCurrencyChange">
+                <option v-for="opt in currencyOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              </select>
+            </div>
+            <div class="form-group" v-if="createForm.currency === 'CNY'">
               <label>本金 (元)</label>
               <input v-model.number="createForm.principal" type="number" min="0" step="0.01" placeholder="请输入本金">
+            </div>
+            <div class="form-group" v-else>
+              <label>外币金额 ({{ createForm.currency }})</label>
+              <input v-model.number="createForm.foreign_amount" type="number" min="0" step="0.01" :placeholder="'请输入' + createForm.currency + '金额'">
+              <div class="hint-text" v-if="exchangeRateLoading">获取汇率中...</div>
+              <div class="hint-text" v-else-if="currentExchangeRate">
+                汇率: 1 {{ createForm.currency }} = ¥{{ currentExchangeRate.toFixed(4) }}
+                <span v-if="equivalentCNY"> | 约 ¥{{ equivalentCNY.toLocaleString() }}</span>
+              </div>
             </div>
             <div class="form-group">
               <label>资金来源</label>
@@ -345,6 +360,10 @@
                 <option :value="false">外部资金（计入股权）</option>
                 <option :value="true">从自由资金扣除（不计股权）</option>
               </select>
+            </div>
+            <div class="form-group" v-if="createForm.deduct_from_cash">
+              <label>当前余额</label>
+              <div class="info-text">¥{{ formatAmount(balance) }}</div>
             </div>
             <div class="form-group">
               <label>开始日期</label>
@@ -366,23 +385,23 @@
               <label>理财产品</label>
               <select v-model="createForm.investment_id" @change="onInvestmentChange">
                 <option v-for="inv in investments" :key="inv.id" :value="inv.id">
-                  {{ inv.name }} (持仓: ¥{{ formatAmount(inv.current_principal || inv.principal) }})
+                  {{ inv.name }} (持仓: {{ formatInvDisplayAmount(inv) }})
                 </option>
               </select>
             </div>
             <div class="form-group" v-if="selectedInvestmentForIncome">
               <label>当前持仓本金</label>
-              <div class="info-text">¥{{ formatAmount(selectedInvestmentForIncome.current_principal || selectedInvestmentForIncome.principal) }}</div>
+              <div class="info-text">{{ formatInvDisplayAmount(selectedInvestmentForIncome) }}</div>
             </div>
             <div class="form-group">
-              <label>当前总价值 (元)</label>
+              <label>当前总价值 ({{ getInvestmentCurrency(createForm.investment_id) !== 'CNY' ? getInvestmentCurrency(createForm.investment_id) : '元' }})</label>
               <input v-model.number="createForm.current_value" type="number" step="0.01" placeholder="输入投资产品的当前市场价值">
               <div class="hint-text">系统将自动计算收益 = 当前价值 - 持仓本金 - 历史收益</div>
             </div>
             <div class="form-group" v-if="createForm.current_value && selectedInvestmentForIncome">
               <label>计算收益</label>
               <div class="info-text" :class="calculateIncome() >= 0 ? 'success' : 'error'">
-                ¥{{ formatAmount(calculateIncome()) }}
+                {{ getCurrencySymbol(getInvestmentCurrency(createForm.investment_id)) }}{{ formatAmount(calculateIncome()) }}
               </div>
             </div>
             <div class="form-group">
@@ -401,7 +420,7 @@
               <label>理财产品</label>
               <select v-model="createForm.investment_id">
                 <option v-for="inv in investments" :key="inv.id" :value="inv.id">
-                  {{ inv.name }} (持仓: ¥{{ formatAmount(inv.current_principal || inv.principal) }})
+                  {{ inv.name }} (持仓: {{ formatInvDisplayAmount(inv) }})
                 </option>
               </select>
             </div>
@@ -425,7 +444,7 @@
               <div class="info-text">¥{{ formatAmount(balance) }}</div>
             </div>
             <div class="form-group">
-              <label>增持金额 (元)</label>
+              <label>增持金额 ({{ getInvestmentCurrency(createForm.investment_id) !== 'CNY' ? getInvestmentCurrency(createForm.investment_id) : '元' }})</label>
               <input v-model.number="createForm.amount" type="number" step="0.01" placeholder="请输入增持金额" 
                 :max="createForm.deduct_from_cash ? balance : undefined">
               <div class="hint-text" v-if="createForm.deduct_from_cash">从家庭自由资金扣除，不计入股权贡献</div>
@@ -447,18 +466,18 @@
               <label>理财产品</label>
               <select v-model="createForm.investment_id" @change="onInvestmentChangeForDecrease">
                 <option v-for="inv in investments" :key="inv.id" :value="inv.id">
-                  {{ inv.name }} (持仓: ¥{{ formatAmount(inv.current_principal || inv.principal) }})
+                  {{ inv.name }} (持仓: {{ formatInvDisplayAmount(inv) }})
                 </option>
               </select>
             </div>
             <div class="form-group" v-if="selectedInvestmentForDecrease">
               <label>当前持仓</label>
-              <div class="info-text">¥{{ formatAmount(selectedInvestmentForDecrease.current_principal || selectedInvestmentForDecrease.principal) }}</div>
+              <div class="info-text">{{ formatInvDisplayAmount(selectedInvestmentForDecrease) }}</div>
             </div>
             <div class="form-group">
-              <label>减持金额 (元)</label>
+              <label>减持金额 ({{ getInvestmentCurrency(createForm.investment_id) !== 'CNY' ? getInvestmentCurrency(createForm.investment_id) : '元' }})</label>
               <input v-model.number="createForm.amount" type="number" step="0.01" placeholder="请输入减持金额" 
-                :max="selectedInvestmentForDecrease?.current_principal || selectedInvestmentForDecrease?.principal">
+                :max="getInvestmentCurrency(createForm.investment_id) !== 'CNY' ? getInvestmentForeignAmount(createForm.investment_id) : (selectedInvestmentForDecrease?.current_principal || selectedInvestmentForDecrease?.principal)">
               <div class="hint-text">减持将返还资金到家庭余额，并减少您的权益贡献</div>
             </div>
             <div class="form-group">
@@ -624,12 +643,8 @@ const balance = ref(0) // 当前家庭余额
 
 const requestTypes = [
   { value: 'deposit', label: '资金注入', icon: '💰' },
-  { value: 'expense', label: '大额支出', icon: '💸' },
-  { value: 'investment_create', label: '创建理财', icon: '📈' },
-  { value: 'investment_income', label: '更新价值', icon: '💵' },
-  { value: 'investment_increase', label: '投资增持', icon: '📊' },
-  { value: 'investment_decrease', label: '投资减持', icon: '📉' },
-  { value: 'investment_delete', label: '删除投资', icon: '🗑️' }
+  { value: 'expense', label: '大额支出', icon: '💸' }
+  // 理财相关操作已移至理财管理模块
 ]
 
 interface FamilyMember {
@@ -647,6 +662,8 @@ const createForm = ref({
   name: '',
   investment_type: 'fund',
   principal: 0,
+  currency: 'CNY',  // 多币种支持
+  foreign_amount: null as number | null,  // 外币金额
   start_date: new Date().toISOString().split('T')[0],
   end_date: '',
   deduct_from_cash: false,  // 新增：是否从家庭自由资金扣除
@@ -660,6 +677,69 @@ const createForm = ref({
   expense_reason: '',
   deduction_ratios: [] as Array<{ user_id: number; ratio: number }>
 })
+
+// 多币种相关
+const currencyOptions = [
+  { value: 'CNY', label: '人民币 CNY' },
+  { value: 'USD', label: '美元 USD' },
+  { value: 'HKD', label: '港币 HKD' },
+  { value: 'JPY', label: '日元 JPY' },
+  { value: 'EUR', label: '欧元 EUR' },
+  { value: 'GBP', label: '英镑 GBP' },
+  { value: 'AUD', label: '澳元 AUD' },
+  { value: 'CAD', label: '加元 CAD' },
+  { value: 'SGD', label: '新币 SGD' },
+  { value: 'KRW', label: '韩元 KRW' }
+]
+const currencySymbols: Record<string, string> = {
+  CNY: '¥', USD: '$', HKD: 'HK$', JPY: '¥', EUR: '€',
+  GBP: '£', AUD: 'A$', CAD: 'C$', SGD: 'S$', KRW: '₩'
+}
+const getCurrencySymbol = (c: string) => currencySymbols[c] || c
+const currentExchangeRate = ref<number | null>(null)
+const exchangeRateLoading = ref(false)
+
+const handleCurrencyChange = async () => {
+  const currency = createForm.value.currency
+  if (currency !== 'CNY') {
+    exchangeRateLoading.value = true
+    try {
+      const { data } = await assetApi.getExchangeRate(currency)
+      currentExchangeRate.value = data.rate
+    } catch (e) {
+      console.error('Failed to fetch exchange rate:', e)
+      currentExchangeRate.value = null
+    } finally {
+      exchangeRateLoading.value = false
+    }
+  } else {
+    currentExchangeRate.value = null
+    createForm.value.foreign_amount = null
+  }
+}
+
+const equivalentCNY = computed(() => {
+  if (createForm.value.currency === 'CNY') return null
+  if (!createForm.value.foreign_amount || !currentExchangeRate.value) return null
+  return Number((createForm.value.foreign_amount * currentExchangeRate.value).toFixed(2))
+})
+
+// 获取投资的币种信息
+const getInvestmentCurrency = (investmentId: number) => {
+  const inv = investments.value.find(i => i.id === investmentId)
+  return (inv as any)?.currency || 'CNY'
+}
+const getInvestmentForeignAmount = (investmentId: number) => {
+  const inv = investments.value.find(i => i.id === investmentId)
+  return (inv as any)?.current_foreign_amount || 0
+}
+const formatInvDisplayAmount = (inv: any) => {
+  const currency = inv?.currency || 'CNY'
+  if (currency === 'CNY') return `¥${formatAmount(inv?.current_principal || inv?.principal || 0)}`
+  const symbol = getCurrencySymbol(currency)
+  const foreignAmt = inv?.current_foreign_amount || inv?.foreign_amount || 0
+  return `${symbol}${formatAmount(foreignAmt)} (≈¥${formatAmount(inv?.current_principal || inv?.principal || 0)})`
+}
 
 // 用于收益计算的选中投资
 const selectedInvestmentForIncome = ref<Investment | null>(null)
@@ -826,7 +906,11 @@ const calculateIncome = (): number => {
     return 0
   }
   const inv = selectedInvestmentForIncome.value as any
-  const currentPrincipal = inv.current_principal || inv.principal || 0
+  const isForeign = inv.currency && inv.currency !== 'CNY'
+  // 外币投资用外币持仓计算，人民币用CNY持仓
+  const currentPrincipal = isForeign
+    ? (inv.current_foreign_amount || inv.foreign_amount || 0)
+    : (inv.current_principal || inv.principal || 0)
   const historicalIncome = inv.total_income || 0
   return createForm.value.current_value - currentPrincipal - historicalIncome
 }
@@ -996,11 +1080,25 @@ const submitCreate = async () => {
         note: createForm.value.note || undefined
       })
     } else if (createForm.value.type === 'investment_create') {
+      const isForeign = createForm.value.currency !== 'CNY'
+      const hasAmount = isForeign ? createForm.value.foreign_amount : createForm.value.principal
+      if (!hasAmount || hasAmount <= 0) {
+        message.warning(isForeign ? '请输入有效的外币金额' : '请输入有效的本金')
+        submitting.value = false
+        return
+      }
+      
+      // 计算CNY等值（外币需要换算）
+      let cnyAmount = createForm.value.principal || 0
+      if (isForeign && currentExchangeRate.value && createForm.value.foreign_amount) {
+        cnyAmount = Math.round(createForm.value.foreign_amount * currentExchangeRate.value * 100) / 100
+      }
+      
       // 检查是否需要从自由资金扣除，如果是则检查余额
       if (createForm.value.deduct_from_cash) {
         const currentBalance = balance.value || 0
-        if (currentBalance < createForm.value.principal) {
-          message.error(`家庭自由资金不足：需要¥${createForm.value.principal}，当前仅有¥${currentBalance.toFixed(2)}`)
+        if (currentBalance < cnyAmount) {
+          message.error(`家庭自由资金不足：需要¥${cnyAmount.toFixed(2)}，当前仅有¥${currentBalance.toFixed(2)}`)
           submitting.value = false
           return
         }
@@ -1009,7 +1107,9 @@ const submitCreate = async () => {
       await approvalApi.createInvestment({
         name: createForm.value.name,
         investment_type: createForm.value.investment_type,
-        principal: createForm.value.principal,
+        currency: createForm.value.currency,
+        principal: isForeign ? undefined : createForm.value.principal,
+        foreign_amount: isForeign ? createForm.value.foreign_amount! : undefined,
         start_date: createForm.value.start_date,
         end_date: createForm.value.end_date || undefined,
         deduct_from_cash: createForm.value.deduct_from_cash,
@@ -1040,9 +1140,12 @@ const submitCreate = async () => {
         submitting.value = false
         return
       }
+      const incCurrency = getInvestmentCurrency(createForm.value.investment_id)
+      const isForeignInc = incCurrency !== 'CNY'
       await approvalApi.increaseInvestment({
         investment_id: createForm.value.investment_id,
         amount: createForm.value.amount,
+        foreign_amount: isForeignInc ? createForm.value.amount : undefined,
         operation_date: createForm.value.operation_date,
         note: createForm.value.note || undefined,
         deduct_from_cash: createForm.value.deduct_from_cash
@@ -1053,16 +1156,22 @@ const submitCreate = async () => {
         submitting.value = false
         return
       }
+      const decCurrency = getInvestmentCurrency(createForm.value.investment_id)
+      const isForeignDec = decCurrency !== 'CNY'
       const selectedInv = selectedInvestmentForDecrease.value as any
-      const maxAmount = selectedInv?.current_principal || selectedInv?.principal || 0
+      const maxAmount = isForeignDec 
+        ? (selectedInv?.current_foreign_amount || selectedInv?.foreign_amount || 0) 
+        : (selectedInv?.current_principal || selectedInv?.principal || 0)
       if (createForm.value.amount > maxAmount) {
-        message.warning(`减持金额不能超过当前持仓 ¥${formatAmount(maxAmount)}`)
+        const sym = getCurrencySymbol(decCurrency)
+        message.warning(`减持金额不能超过当前持仓 ${sym}${formatAmount(maxAmount)}`)
         submitting.value = false
         return
       }
       await approvalApi.decreaseInvestment({
         investment_id: createForm.value.investment_id,
         amount: createForm.value.amount,
+        foreign_amount: isForeignDec ? createForm.value.amount : undefined,
         operation_date: createForm.value.operation_date,
         note: createForm.value.note || undefined
       })
@@ -1130,8 +1239,11 @@ const resetForm = () => {
     name: '',
     investment_type: 'fund',
     principal: 0,
+    currency: 'CNY',
+    foreign_amount: null as number | null,
     start_date: new Date().toISOString().split('T')[0],
     end_date: '',
+    deduct_from_cash: false,
     investment_id: 0,
     income_date: new Date().toISOString().split('T')[0],
     current_value: 0,
@@ -1139,7 +1251,7 @@ const resetForm = () => {
     reason: '',
     expense_title: '',
     expense_reason: '',
-    deduction_ratios: []
+    deduction_ratios: [] as Array<{ user_id: number; ratio: number }>
   }
   // 重置选中的投资
   selectedInvestmentForIncome.value = null
@@ -1531,15 +1643,15 @@ onMounted(() => {
   display: flex;
   flex-direction: row;
   align-items: center;
-  background: white;
+  background: var(--theme-bg-card);
   padding: 14px 20px;
   border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 3px var(--theme-shadow-sm);
+  border: 1px solid var(--theme-border-light);
 }
 
 .ratio-item:hover {
-  background: #fefefe;
+  background: var(--theme-bg-secondary);
 }
 
 .member-info {

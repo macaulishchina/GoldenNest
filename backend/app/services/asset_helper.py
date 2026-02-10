@@ -115,29 +115,34 @@ async def get_asset_summary(db: AsyncSession, family_id: int) -> dict:
     }
 
 
-async def get_user_assets(db: AsyncSession, user_id: int, family_id: int) -> list:
+async def get_user_assets(db: AsyncSession, user_id: int, family_id: int, asset_type: str = None, currency: str = None) -> list:
     """
-    获取用户的投资型资产列表（不包括活期）
+    获取家庭的投资型资产列表（不包括活期）
     
     Args:
         db: 数据库会话
-        user_id: 用户ID
+        user_id: 用户ID（暂未使用，保留接口兼容）
         family_id: 家庭ID
+        asset_type: 可选的资产类型过滤
+        currency: 可选的币种过滤
         
     Returns:
         资产列表
     """
+    conditions = [
+        Asset.family_id == family_id,
+        Asset.investment_type != AssetType.CASH,  # 排除CASH类型
+        Asset.is_active == True,
+        Asset.is_deleted == False
+    ]
+    if asset_type:
+        conditions.append(Asset.investment_type == asset_type)
+    if currency:
+        conditions.append(Asset.currency == currency)
+    
     result = await db.execute(
         select(Asset)
-        .where(
-            and_(
-                Asset.family_id == family_id,
-                Asset.user_id == user_id,
-                Asset.investment_type != AssetType.CASH,  # 排除CASH类型
-                Asset.is_active == True,
-                Asset.is_deleted == False
-            )
-        )
+        .where(and_(*conditions))
         .order_by(Asset.created_at.desc())
     )
     return result.scalars().all()

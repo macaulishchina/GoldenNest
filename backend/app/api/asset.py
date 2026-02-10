@@ -159,23 +159,32 @@ async def get_exchange_rate(
 
 @router.get("/my-assets")
 async def get_my_assets(
+    asset_type: str = None,
+    currency: str = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    获取当前用户的资产列表
+    获取家庭的投资资产列表
     """
     family_id = await get_user_family_id(current_user.id, db)
-    assets = await get_user_assets(db, current_user.id, family_id)
+    assets = await get_user_assets(db, current_user.id, family_id, asset_type=asset_type, currency=currency)
     
-    return [{
-        "id": asset.id,
-        "name": asset.name,
-        "asset_type": asset.investment_type.value,
-        "currency": asset.currency.value,
-        "principal": asset.principal,
-        "foreign_amount": asset.foreign_amount,
-        "exchange_rate": asset.exchange_rate,
-        "deduct_from_cash": asset.deduct_from_cash,
-        "created_at": asset.created_at.isoformat()
-    } for asset in assets]
+    return {
+        "assets": [{
+            "id": asset.id,
+            "name": asset.name,
+            "investment_type": asset.investment_type.value,
+            "currency": asset.currency.value if asset.currency else "CNY",
+            "principal": asset.principal,
+            "foreign_amount": asset.foreign_amount,
+            "exchange_rate": asset.exchange_rate,
+            "start_date": asset.start_date.isoformat() if asset.start_date else None,
+            "end_date": asset.end_date.isoformat() if asset.end_date else None,
+            "bank_name": asset.bank_name,
+            "deduct_from_cash": asset.deduct_from_cash,
+            "is_active": asset.is_active,
+            "note": asset.note,
+            "created_at": asset.created_at.isoformat()
+        } for asset in assets]
+    }

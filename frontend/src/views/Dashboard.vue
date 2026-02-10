@@ -273,8 +273,8 @@ const freeBalance = computed(() => {
 })
 
 const investmentTotal = computed(() => {
-  // 理财总额（当前持仓本金）
-  return investmentSummary.value?.total_principal || 0
+  // 理财总额（实时CNY价值，外币投资使用实时汇率换算）
+  return investmentSummary.value?.total_cny_value || investmentSummary.value?.total_principal || 0
 })
 
 const frozenAmount = computed(() => {

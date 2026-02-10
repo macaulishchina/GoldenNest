@@ -188,7 +188,7 @@
           </div>
           <div class="approval-card-footer">
             <span class="approval-progress">
-              {{ item.approved_count || 0 }}/{{ item.required_count || 0 }} 已审批
+              {{ item.approved_count || 0 }}/{{ item.total_members || 0 }} 已审批
             </span>
             <div class="approval-actions" v-if="item.requester_id !== userStore.user?.id && !item.has_voted">
               <n-button size="small" type="success" @click="handleApprove(item.id, true)">同意</n-button>
@@ -215,25 +215,23 @@
     </n-card>
     
     <!-- 资产列表 -->
-    <n-card title="我的投资资产" class="card-hover">
-      <template #header-extra>
-        <n-space>
-          <n-select 
-            v-model:value="listFilter.asset_type" 
-            :options="[{ label: '全部类型', value: '' }, ...assetTypeOptions]"
-            style="width: 120px"
-            size="small"
-            @update:value="loadAssets"
-          />
-          <n-select 
-            v-model:value="listFilter.currency" 
-            :options="[{ label: '全部币种', value: '' }, ...currencyOptions]"
-            style="width: 100px"
-            size="small"
-            @update:value="loadAssets"
-          />
-        </n-space>
-      </template>
+    <n-card title="家庭投资资产" class="card-hover">
+      <div class="asset-filters">
+        <n-select 
+          v-model:value="listFilter.asset_type" 
+          :options="[{ label: '全部类型', value: '' }, ...assetTypeOptions]"
+          style="min-width: 110px; flex: 1"
+          size="small"
+          @update:value="loadAssets"
+        />
+        <n-select 
+          v-model:value="listFilter.currency" 
+          :options="[{ label: '全部币种', value: '' }, ...currencyOptions]"
+          style="min-width: 110px; flex: 1"
+          size="small"
+          @update:value="loadAssets"
+        />
+      </div>
       
       <n-spin :show="assetsLoading">
         <div v-if="assets.length > 0" class="asset-cards">
@@ -515,7 +513,7 @@ const loadAssets = async () => {
     if (listFilter.value.asset_type) params.asset_type = listFilter.value.asset_type
     if (listFilter.value.currency) params.currency = listFilter.value.currency
     
-    const { data } = await assetApi.myAssets()
+    const { data } = await assetApi.myAssets(params)
     assets.value = data.assets || []
   } catch (error) {
     console.error('Failed to load assets:', error)
@@ -677,12 +675,23 @@ onMounted(() => {
 }
 
 .cash-balance-card {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: var(--theme-gradient-primary);
+  color: var(--theme-gradient-text);
 }
 
 .cash-balance-card :deep(.n-statistic) {
-  color: white;
+  color: var(--theme-gradient-text);
+}
+
+.cash-balance-card :deep(.n-statistic-value__prefix),
+.cash-balance-card :deep(.n-statistic-value__content) {
+  color: var(--theme-gradient-text) !important;
+}
+
+.asset-filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .approval-cards,
@@ -697,7 +706,7 @@ onMounted(() => {
   border: 1px solid var(--theme-border);
   border-radius: 8px;
   padding: 16px;
-  background: white;
+  background: var(--theme-bg-card);
   transition: all 0.3s;
 }
 

@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.security import verify_password, get_password_hash, create_access_token, decode_access_token
 from app.core.limiter import limiter
 from app.models.models import User, FamilyMember
-from app.schemas.auth import UserCreate, UserResponse, Token, UserLogin
+from app.schemas.auth import UserCreate, UserResponse, Token, UserLogin, UserProfileUpdate, PasswordChange
 
 router = APIRouter()
 
@@ -130,10 +130,105 @@ async def get_me(
         nickname=current_user.nickname,
         avatar=current_user.avatar,
         avatar_version=current_user.avatar_version or 0,
+        phone=current_user.phone,
+        gender=current_user.gender,
+        birthday=current_user.birthday,
+        bio=current_user.bio,
         is_active=current_user.is_active,
         created_at=current_user.created_at,
         family_id=membership.family_id if membership else None
     )
+
+
+@router.put("/profile", response_model=UserResponse)
+async def update_profile(
+    data: UserProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """更新个人资料"""
+    # 更新昵称
+    if data.nickname is not None:
+        current_user.nickname = data.nickname
+    
+    # 更新邮箱（需检查唯一性）
+    if data.email is not None and data.email != current_user.email:
+        result = await db.execute(select(User).where(User.email == data.email))
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="该邮箱已被其他用户使用")
+        current_user.email = data.email
+    
+    # 更新手机号
+    if data.phone is not None:
+        current_user.phone = data.phone
+    
+    # 更新性别
+    if data.gender is not None:
+        if data.gender not in ("male", "female", "other", ""):
+            raise HTTPException(status_code=400, detail="性别值无效")
+        current_user.gender = data.gender if data.gender else None
+    
+    # 更新生日
+    if data.birthday is not None:
+        if data.birthday:
+            # 验证日期格式
+            from datetime import datetime as dt
+            try:
+                dt.strptime(data.birthday, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="生日格式无效，请使用 YYYY-MM-DD 格式")
+        current_user.birthday = data.birthday if data.birthday else None
+    
+    # 更新个人简介
+    if data.bio is not None:
+        current_user.bio = data.bio
+    
+    await db.commit()
+    await db.refresh(current_user)
+    
+    # 查询家庭信息
+    result = await db.execute(
+        select(FamilyMember).where(FamilyMember.user_id == current_user.id)
+    )
+    membership = result.scalar_one_or_none()
+    
+    return UserResponse(
+        id=current_user.id,
+        username=current_user.username,
+        email=current_user.email,
+        nickname=current_user.nickname,
+        avatar=current_user.avatar,
+        avatar_version=current_user.avatar_version or 0,
+        phone=current_user.phone,
+        gender=current_user.gender,
+        birthday=current_user.birthday,
+        bio=current_user.bio,
+        is_active=current_user.is_active,
+        created_at=current_user.created_at,
+        family_id=membership.family_id if membership else None
+    )
+
+
+@router.put("/password")
+async def change_password(
+    data: PasswordChange,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """修改密码"""
+    # 验证旧密码
+    if not verify_password(data.old_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="当前密码错误")
+    
+    # 新密码不能与旧密码相同
+    if verify_password(data.new_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="新密码不能与当前密码相同")
+    
+    # 更新密码
+    current_user.hashed_password = get_password_hash(data.new_password)
+    await db.commit()
+    
+    return {"success": True, "message": "密码修改成功"}
 
 
 @router.put("/avatar", response_model=dict)

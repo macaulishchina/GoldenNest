@@ -5,7 +5,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.database import get_db
 from app.models.models import (
@@ -61,6 +61,9 @@ async def list_investments(
 ):
     """获取理财列表（支持时间范围筛选，默认最近一个月）"""
     import logging
+    from app.models.models import CurrencyType
+    from app.services.exchange_rate import exchange_rate_service
+    
     family_id = await get_user_family_id(current_user.id, db)
     logging.info(f"Listing investments for user_id={current_user.id}, family_id={family_id}")
     
@@ -92,25 +95,40 @@ async def list_investments(
         positions = inv.positions
         positions.sort(key=lambda p: p.operation_date, reverse=True)
         
-        # 计算当前持仓本金
+        # 计算当前持仓本金（CNY）
         current_principal = sum(
             p.amount if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
             else -p.amount
             for p in positions
         )
         
+        # 计算当前外币持仓
+        inv_currency = inv.currency.value if inv.currency else "CNY"
+        is_foreign = inv_currency != "CNY"
+        current_foreign_amount = 0.0
+        if is_foreign:
+            current_foreign_amount = sum(
+                (p.foreign_amount or 0) if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
+                else -(p.foreign_amount or 0)
+                for p in positions
+            )
+        
         # 直接使用预加载的收益记录（不再需要额外查询）
         income_records = inv.income_records
         income_records.sort(key=lambda ir: ir.income_date, reverse=True)
         
         # 计算总收益（支持新旧两种模式）
+        # 注意：对于外币投资，calculated_income 以外币计（已在 _execute_investment_income 中修复）
         total_return = sum(
             ir.calculated_income if ir.calculated_income is not None else ir.amount
             for ir in income_records
         )
         
-        # 计算ROI
-        roi = (total_return / inv.principal * 100) if inv.principal > 0 else 0
+        # 计算ROI - 外币投资使用外币本金作为分母
+        if is_foreign:
+            roi = (total_return / inv.foreign_amount * 100) if (inv.foreign_amount and inv.foreign_amount > 0) else 0
+        else:
+            roi = (total_return / inv.principal * 100) if inv.principal > 0 else 0
         
         # 计算平均年化收益率
         annualized_return = 0
@@ -130,10 +148,13 @@ async def list_investments(
             # 计算持有天数
             holding_days = (latest_date - first_position.operation_date).days
             
-            # 计算平均年化收益率：(总收益 / 当前本金) / (持有天数 / 365) * 100%
-            if holding_days > 0 and current_principal > 0:
+            # 计算平均年化收益率 - 外币投资使用外币持仓作为分母
+            if holding_days > 0:
                 holding_years = holding_days / 365.0
-                annualized_return = (total_return / current_principal / holding_years) * 100
+                if is_foreign and current_foreign_amount > 0:
+                    annualized_return = (total_return / current_foreign_amount / holding_years) * 100
+                elif not is_foreign and current_principal > 0:
+                    annualized_return = (total_return / current_principal / holding_years) * 100
         
         response.append(InvestmentResponse(
             id=inv.id,
@@ -141,6 +162,11 @@ async def list_investments(
             name=inv.name,
             investment_type=inv.investment_type,
             principal=inv.principal,
+            currency=(inv.currency.value if inv.currency else "CNY"),
+            foreign_amount=inv.foreign_amount,
+            exchange_rate=inv.exchange_rate,
+            current_foreign_amount=current_foreign_amount if is_foreign else None,
+            cny_value=None,  # will be set below
             start_date=inv.start_date,
             end_date=inv.end_date,
             is_active=inv.is_active,
@@ -181,6 +207,22 @@ async def list_investments(
                 ) for p in positions
             ]
         ))
+    
+    # 计算外币投资的当前CNY价值
+    for resp in response:
+        inv_currency = resp.currency or "CNY"
+        if inv_currency != "CNY":
+            # current_foreign_amount 已在循环中计算
+            # 获取实时汇率计算CNY价值
+            try:
+                currency_enum = CurrencyType(inv_currency)
+                rate = await exchange_rate_service.get_rate_to_cny(currency_enum)
+                resp.cny_value = (resp.current_foreign_amount or 0) * rate
+            except Exception as e:
+                logging.warning(f"Failed to get exchange rate for {inv_currency}: {e}")
+                resp.cny_value = resp.current_principal  # 降级使用CNY本金
+        else:
+            resp.cny_value = resp.current_principal
     
     return response
 
@@ -229,6 +271,9 @@ async def get_investment_summary(
     db: AsyncSession = Depends(get_db)
 ):
     """获取理财汇总"""
+    from app.models.models import CurrencyType
+    from app.services.exchange_rate import exchange_rate_service
+    
     family_id = await get_user_family_id(current_user.id, db)
     
     # 获取所有未删除的理财
@@ -260,6 +305,7 @@ async def get_investment_summary(
     active_count = sum(1 for inv in investments if inv.is_active)
     
     # 计算总收益（支持新旧两种模式）
+    # 对于外币投资，income.calculated_income 存储的是外币金额，需要先转为CNY再汇总
     result = await db.execute(
         select(InvestmentIncome)
         .join(Investment, InvestmentIncome.investment_id == Investment.id)
@@ -267,12 +313,22 @@ async def get_investment_summary(
             Investment.family_id == family_id,
             Investment.is_deleted == False
         )
+        .options(joinedload(InvestmentIncome.investment))
     )
     incomes = result.scalars().all()
-    total_income = sum(
-        inc.calculated_income if inc.calculated_income is not None else inc.amount
-        for inc in incomes
-    )
+    
+    total_income = 0.0
+    for inc in incomes:
+        inc_amount = inc.calculated_income if inc.calculated_income is not None else inc.amount
+        inc_currency = inc.investment.currency if inc.investment else CurrencyType.CNY
+        if inc_currency and inc_currency != CurrencyType.CNY:
+            try:
+                rate = await exchange_rate_service.get_rate_to_cny(inc_currency)
+                total_income += inc_amount * rate
+            except Exception:
+                total_income += inc_amount  # fallback
+        else:
+            total_income += inc_amount
     
     # 计算综合平均年化收益率（加权平均）
     average_annualized_return = 0
@@ -295,15 +351,28 @@ async def get_investment_summary(
             if not positions:
                 continue
             
-            # 计算当前本金
+            inv_currency = inv.currency or CurrencyType.CNY
+            is_foreign = inv_currency != CurrencyType.CNY
+            
+            # 计算当前本金（CNY）
             current_principal = sum(
                 p.amount if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
                 else -p.amount
                 for p in positions
             )
             
-            if current_principal <= 0:
-                continue
+            # 外币投资：计算外币持仓用于年化率计算
+            if is_foreign:
+                current_foreign = sum(
+                    (p.foreign_amount or 0) if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
+                    else -(p.foreign_amount or 0)
+                    for p in positions
+                )
+                if current_foreign <= 0:
+                    continue
+            else:
+                if current_principal <= 0:
+                    continue
             
             # 获取该产品的收益记录
             result_inc = await db.execute(
@@ -312,6 +381,7 @@ async def get_investment_summary(
                 )
             )
             product_incomes = result_inc.scalars().all()
+            # 收益以投资原始币种计
             product_total_income = sum(
                 inc.calculated_income if inc.calculated_income is not None else inc.amount
                 for inc in product_incomes
@@ -332,18 +402,63 @@ async def get_investment_summary(
             holding_days = (latest_date - first_position.operation_date).days
             if holding_days > 0:
                 holding_years = holding_days / 365.0
-                product_annualized = (product_total_income / current_principal / holding_years) * 100
+                # 外币投资：收益和本金都以外币计；CNY投资：以CNY计
+                if is_foreign:
+                    product_annualized = (product_total_income / current_foreign / holding_years) * 100
+                else:
+                    product_annualized = (product_total_income / current_principal / holding_years) * 100
                 
-                # 按本金加权
+                # 按CNY本金加权（所有投资统一以CNY权重汇总）
                 weighted_return_sum += product_annualized * current_principal
                 total_weight += current_principal
         
         if total_weight > 0:
             average_annualized_return = weighted_return_sum / total_weight
     
+    # 计算总实时CNY价值（对于外币投资使用实时汇率）
+    total_cny_value = 0.0
+    for inv in investments:
+        if not inv.is_active:
+            continue
+        inv_currency = inv.currency or CurrencyType.CNY
+        # 获取该产品的持仓
+        result_pos = await db.execute(
+            select(InvestmentPosition).where(
+                InvestmentPosition.investment_id == inv.id
+            )
+        )
+        positions_for_value = result_pos.scalars().all()
+        
+        if inv_currency != CurrencyType.CNY:
+            # 外币：计算外币持仓，再乘以实时汇率
+            current_foreign = sum(
+                (p.foreign_amount or 0) if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
+                else -(p.foreign_amount or 0)
+                for p in positions_for_value
+            )
+            try:
+                rate = await exchange_rate_service.get_rate_to_cny(inv_currency)
+                total_cny_value += current_foreign * rate
+            except Exception:
+                # 降级使用CNY本金
+                cp = sum(
+                    p.amount if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
+                    else -p.amount
+                    for p in positions_for_value
+                )
+                total_cny_value += cp
+        else:
+            cp = sum(
+                p.amount if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
+                else -p.amount
+                for p in positions_for_value
+            )
+            total_cny_value += cp
+    
     return InvestmentSummary(
         family_id=family_id,
         total_principal=total_principal,
+        total_cny_value=total_cny_value,
         total_income=total_income,
         active_count=active_count,
         average_annualized_return=average_annualized_return,
@@ -396,6 +511,8 @@ async def get_investment_history(
             "type": "position",
             "operation_type": position.operation_type.value,
             "amount": position.amount,
+            "foreign_amount": position.foreign_amount,
+            "exchange_rate": position.exchange_rate,
             "principal_before": position.principal_before,
             "principal_after": position.principal_after,
             "date": position.operation_date.isoformat() if position.operation_date else position.created_at.isoformat(),
@@ -424,6 +541,16 @@ async def get_investment_history(
         for pos in positions
     )
     
+    # 计算外币持仓
+    current_foreign_amount = None
+    inv_currency = investment.currency.value if investment.currency else "CNY"
+    if inv_currency != "CNY":
+        current_foreign_amount = sum(
+            (pos.foreign_amount or 0) if pos.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
+            else -(pos.foreign_amount or 0)
+            for pos in positions
+        )
+    
     return {
         "investment": {
             "id": investment.id,
@@ -431,6 +558,10 @@ async def get_investment_history(
             "investment_type": investment.investment_type.value,
             "principal": investment.principal,
             "current_principal": current_principal,
+            "current_foreign_amount": current_foreign_amount,
+            "currency": inv_currency,
+            "foreign_amount": investment.foreign_amount,
+            "exchange_rate": investment.exchange_rate,
             "start_date": investment.start_date.isoformat() if investment.start_date else None,
             "end_date": investment.end_date.isoformat() if investment.end_date else None,
             "is_active": investment.is_active

@@ -801,7 +801,10 @@ class ApprovalService:
             logging.warning(f"Pet EXP grant failed after deposit: {e}")
     
     async def _execute_investment_create(self, request: ApprovalRequest, data: Dict[str, Any]) -> None:
-        """执行创建理财产品"""
+        """执行创建理财产品（支持多币种）"""
+        from app.models.models import CurrencyType
+        from app.services.exchange_rate import exchange_rate_service
+        
         start_date = data.get("start_date")
         if isinstance(start_date, str):
             start_date = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
@@ -812,7 +815,21 @@ class ApprovalService:
         if isinstance(end_date, str):
             end_date = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
         
-        principal = data.get("principal")
+        # 多币种处理
+        currency_str = data.get("currency", "CNY")
+        currency = CurrencyType(currency_str)
+        
+        if currency == CurrencyType.CNY:
+            principal = data.get("principal")
+            foreign_amount = None
+            exchange_rate = None
+        else:
+            foreign_amount = data.get("foreign_amount")
+            # 重新获取最新汇率（审批可能有延迟）
+            exchange_rate = await exchange_rate_service.get_rate_to_cny(currency)
+            principal = foreign_amount * exchange_rate
+            logging.info(f"Investment create exchange rate for {currency.value}: 1 = ¥{exchange_rate}, {foreign_amount} = ¥{principal}")
+        
         deduct_from_cash = data.get("deduct_from_cash", False)  # 默认使用外部资金
         
         # 获取当前余额
@@ -837,6 +854,9 @@ class ApprovalService:
             family_id=request.family_id,
             name=data.get("name"),
             investment_type=InvestmentType(data.get("investment_type")),
+            currency=currency,
+            foreign_amount=foreign_amount,
+            exchange_rate=exchange_rate,
             principal=principal,
             start_date=start_date,
             end_date=end_date,
@@ -853,6 +873,8 @@ class ApprovalService:
         position = InvestmentPosition(
             investment_id=investment.id,
             operation_type=PositionOperationType.CREATE,
+            foreign_amount=foreign_amount,
+            exchange_rate=exchange_rate,
             amount=principal,
             principal_before=0,
             principal_after=principal,
@@ -988,6 +1010,12 @@ class ApprovalService:
         if not investment:
             return  # 投资产品不存在，忽略
         
+        # 多币种处理
+        from app.models.models import CurrencyType
+        from app.services.exchange_rate import exchange_rate_service
+        inv_currency = investment.currency or CurrencyType.CNY
+        is_foreign = inv_currency != CurrencyType.CNY
+        
         income_date = data.get("income_date")
         if isinstance(income_date, str):
             income_date = datetime.fromisoformat(income_date.replace("Z", "+00:00"))
@@ -998,18 +1026,27 @@ class ApprovalService:
         
         if current_value is not None:
             # 新模式：记录当前价值，自动计算收益
-            # 1. 计算当前持仓本金
+            # 1. 计算当前持仓本金（外币用foreign_amount，人民币用amount）
             positions_result = await self.db.execute(
                 select(InvestmentPosition).where(
                     InvestmentPosition.investment_id == investment_id
                 )
             )
             positions = positions_result.scalars().all()
-            current_principal = sum(
-                p.amount if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
-                else -p.amount
-                for p in positions
-            )
+            
+            if is_foreign:
+                # 外币：用foreign_amount计算持仓
+                current_principal = sum(
+                    (p.foreign_amount or 0) if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
+                    else -(p.foreign_amount or 0)
+                    for p in positions
+                )
+            else:
+                current_principal = sum(
+                    p.amount if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
+                    else -p.amount
+                    for p in positions
+                )
             
             # 2. 计算历史总收益
             incomes_result = await self.db.execute(
@@ -1023,19 +1060,27 @@ class ApprovalService:
                 for inc in incomes
             )
             
-            # 3. 计算本次收益
+            # 3. 计算本次收益（在投资的原始币种下）
             calculated_income = current_value - current_principal - historical_income
+            
+            # 4. 对于外币，将收益转换为CNY用于交易记录
+            if is_foreign:
+                exchange_rate = await exchange_rate_service.get_rate_to_cny(inv_currency)
+                income_amount_cny = calculated_income * exchange_rate
+                logging.info(f"Foreign investment income: {calculated_income} {inv_currency.value} = ¥{income_amount_cny} (rate: {exchange_rate})")
+            else:
+                income_amount_cny = calculated_income
             
             # 创建收益记录（新模式）
             income = InvestmentIncome(
                 investment_id=investment_id,
-                amount=calculated_income,  # 存储计算出的收益
+                amount=calculated_income,  # 存储计算出的收益（原始币种）
                 current_value=current_value,
                 calculated_income=calculated_income,
                 income_date=income_date,
                 note=data.get("note")
             )
-            income_amount = calculated_income
+            income_amount = income_amount_cny
         else:
             # 老模式：直接记录收益金额
             income = InvestmentIncome(
@@ -1096,7 +1141,10 @@ class ApprovalService:
             logging.warning(f"Pet EXP grant failed after investment income: {e}")
     
     async def _execute_investment_increase(self, request: ApprovalRequest, data: Dict[str, Any]) -> None:
-        """执行投资增持"""
+        """执行投资增持（支持多币种）"""
+        from app.models.models import CurrencyType
+        from app.services.exchange_rate import exchange_rate_service
+        
         investment_id = data.get("investment_id")
         result = await self.db.execute(
             select(Investment).where(
@@ -1114,7 +1162,21 @@ class ApprovalService:
         if isinstance(operation_date, str):
             operation_date = datetime.fromisoformat(operation_date.replace("Z", "+00:00"))
         
-        amount = data.get("amount")
+        # 多币种处理
+        inv_currency = investment.currency or CurrencyType.CNY
+        foreign_amount = data.get("foreign_amount")
+        
+        if inv_currency == CurrencyType.CNY:
+            amount = data.get("amount")
+            foreign_amount = None
+            exchange_rate = None
+        else:
+            if foreign_amount is None:
+                foreign_amount = data.get("amount", 0)  # 兼容旧数据
+            exchange_rate = await exchange_rate_service.get_rate_to_cny(inv_currency)
+            amount = foreign_amount * exchange_rate
+            logging.info(f"Investment increase exchange rate for {inv_currency.value}: {exchange_rate}, {foreign_amount} -> ¥{amount}")
+        
         deduct_from_cash = data.get("deduct_from_cash", True)  # 默认从自由资金扣除
         
         # 如果从自由资金扣除，需要检查余额
@@ -1152,6 +1214,8 @@ class ApprovalService:
         position = InvestmentPosition(
             investment_id=investment_id,
             operation_type=PositionOperationType.INCREASE,
+            foreign_amount=foreign_amount,
+            exchange_rate=exchange_rate if inv_currency != CurrencyType.CNY else None,
             amount=amount,
             principal_before=principal_before,
             principal_after=principal_after,
@@ -1210,7 +1274,10 @@ class ApprovalService:
         logging.info(f"Investment increase executed: investment_id={investment_id}, amount={amount}, deduct_from_cash={deduct_from_cash}")
     
     async def _execute_investment_decrease(self, request: ApprovalRequest, data: Dict[str, Any]) -> None:
-        """执行投资减持"""
+        """执行投资减持（支持多币种）"""
+        from app.models.models import CurrencyType
+        from app.services.exchange_rate import exchange_rate_service
+        
         investment_id = data.get("investment_id")
         result = await self.db.execute(
             select(Investment).where(
@@ -1228,7 +1295,20 @@ class ApprovalService:
         if isinstance(operation_date, str):
             operation_date = datetime.fromisoformat(operation_date.replace("Z", "+00:00"))
         
-        amount = data.get("amount")
+        # 多币种处理
+        inv_currency = investment.currency or CurrencyType.CNY
+        foreign_amount = data.get("foreign_amount")
+        
+        if inv_currency == CurrencyType.CNY:
+            amount = data.get("amount")
+            foreign_amount = None
+            exchange_rate = None
+        else:
+            if foreign_amount is None:
+                foreign_amount = data.get("amount", 0)
+            exchange_rate = await exchange_rate_service.get_rate_to_cny(inv_currency)
+            amount = foreign_amount * exchange_rate
+            logging.info(f"Investment decrease exchange rate for {inv_currency.value}: {exchange_rate}, {foreign_amount} -> ¥{amount}")
         
         # 获取当前持仓本金
         result = await self.db.execute(
@@ -1253,6 +1333,8 @@ class ApprovalService:
         position = InvestmentPosition(
             investment_id=investment_id,
             operation_type=PositionOperationType.DECREASE,
+            foreign_amount=foreign_amount,
+            exchange_rate=exchange_rate if inv_currency != CurrencyType.CNY else None,
             amount=amount,
             principal_before=principal_before,
             principal_after=principal_after,

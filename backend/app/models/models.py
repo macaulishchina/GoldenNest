@@ -80,6 +80,10 @@ class User(Base):
     nickname: Mapped[str] = mapped_column(String(50))  # 昵称，显示用
     avatar: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 头像 Base64
     avatar_version: Mapped[int] = mapped_column(Integer, default=0)  # 头像版本号，用于缓存失效
+    phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # 手机号
+    gender: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # 性别: male/female/other
+    birthday: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # 生日: YYYY-MM-DD
+    bio: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # 个人简介
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

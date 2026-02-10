@@ -170,7 +170,8 @@ export const useThemeStore = defineStore('theme', () => {
       '--theme-warning', '--theme-warning-light', '--theme-warning-bg',
       '--theme-info', '--theme-info-light', '--theme-info-bg',
       '--theme-purple', '--theme-purple-light',
-      '--theme-shadow', '--theme-shadow-sm', '--theme-card-hover'
+      '--theme-shadow', '--theme-shadow-sm', '--theme-card-hover',
+      '--theme-gradient-primary', '--theme-gradient-text'
     ]
     themeVars.forEach(v => root.style.removeProperty(v))
     
@@ -204,6 +205,8 @@ export const useThemeStore = defineStore('theme', () => {
         root.style.setProperty('--theme-shadow', 'rgba(0, 0, 0, 0.1)')
         root.style.setProperty('--theme-shadow-sm', 'rgba(0, 0, 0, 0.05)')
         root.style.setProperty('--theme-card-hover', 'rgba(0, 0, 0, 0.02)')
+        root.style.setProperty('--theme-gradient-primary', 'linear-gradient(135deg, #6ee7b7 0%, #34d399 100%)')
+        root.style.setProperty('--theme-gradient-text', '#064e3b')
         break
         
       case 'dark':
@@ -236,6 +239,8 @@ export const useThemeStore = defineStore('theme', () => {
         root.style.setProperty('--theme-shadow', 'rgba(0, 0, 0, 0.3)')
         root.style.setProperty('--theme-shadow-sm', 'rgba(0, 0, 0, 0.2)')
         root.style.setProperty('--theme-card-hover', 'rgba(255, 255, 255, 0.05)')
+        root.style.setProperty('--theme-gradient-primary', 'linear-gradient(135deg, #065f46 0%, #064e3b 100%)')
+        root.style.setProperty('--theme-gradient-text', '#d1fae5')
         break
         
       case 'blue':
@@ -267,6 +272,8 @@ export const useThemeStore = defineStore('theme', () => {
         root.style.setProperty('--theme-shadow', 'rgba(37, 99, 235, 0.1)')
         root.style.setProperty('--theme-shadow-sm', 'rgba(37, 99, 235, 0.05)')
         root.style.setProperty('--theme-card-hover', 'rgba(37, 99, 235, 0.02)')
+        root.style.setProperty('--theme-gradient-primary', 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)')
+        root.style.setProperty('--theme-gradient-text', '#ffffff')
         break
         
       case 'green':
@@ -298,6 +305,8 @@ export const useThemeStore = defineStore('theme', () => {
         root.style.setProperty('--theme-shadow', 'rgba(22, 163, 74, 0.1)')
         root.style.setProperty('--theme-shadow-sm', 'rgba(22, 163, 74, 0.05)')
         root.style.setProperty('--theme-card-hover', 'rgba(22, 163, 74, 0.02)')
+        root.style.setProperty('--theme-gradient-primary', 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)')
+        root.style.setProperty('--theme-gradient-text', '#ffffff')
         break
         
       case 'purple':
@@ -329,6 +338,8 @@ export const useThemeStore = defineStore('theme', () => {
         root.style.setProperty('--theme-shadow', 'rgba(139, 92, 246, 0.1)')
         root.style.setProperty('--theme-shadow-sm', 'rgba(139, 92, 246, 0.05)')
         root.style.setProperty('--theme-card-hover', 'rgba(139, 92, 246, 0.02)')
+        root.style.setProperty('--theme-gradient-primary', 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)')
+        root.style.setProperty('--theme-gradient-text', '#ffffff')
         break
     }
   }

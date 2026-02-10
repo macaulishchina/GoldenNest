@@ -14,7 +14,7 @@
       </template>
     </n-card>
     
-    <n-card class="card-hover investment-form-card" style="margin-bottom: 24px">
+    <n-card v-if="false" class="card-hover investment-form-card" style="margin-bottom: 24px">
       <template #header>
         <n-space align="center">
           <span>发起理财产品登记申请</span>
@@ -29,16 +29,29 @@
         <n-form-item label="理财类型">
           <n-select v-model:value="formData.investment_type" :options="typeOptions" style="width: 120px" />
         </n-form-item>
-        <n-form-item label="投资本金">
-          <n-input-number v-model:value="formData.principal" :min="1" placeholder="金额" style="width: 120px">
-            <template #prefix>¥</template>
+        <n-form-item label="币种">
+          <n-select v-model:value="formData.currency" :options="currencyOptions" style="width: 130px" @update:value="handleCurrencyChange" />
+        </n-form-item>
+        <n-form-item :label="formData.currency === 'CNY' ? '投资本金' : '外币金额'">
+          <n-input-number 
+            :value="formData.currency === 'CNY' ? formData.principal : formData.foreign_amount" 
+            :min="1" placeholder="金额" style="width: 140px"
+            @update:value="handleAmountUpdate"
+          >
+            <template #prefix>{{ getCurrencySymbol(formData.currency) }}</template>
           </n-input-number>
+        </n-form-item>
+        <n-form-item v-if="formData.currency !== 'CNY' && currentExchangeRate" label="≈人民币">
+          <n-text type="info">¥{{ equivalentCNY?.toLocaleString() }}</n-text>
         </n-form-item>
         <n-form-item label="资金来源">
           <n-radio-group v-model:value="formData.deduct_from_cash" size="small">
             <n-radio :value="false">外部资金</n-radio>
             <n-radio :value="true">从自由资金扣除</n-radio>
           </n-radio-group>
+        </n-form-item>
+        <n-form-item v-if="formData.deduct_from_cash" label="可用余额">
+          <n-text type="warning">¥{{ formatMoney(currentBalance) }}</n-text>
         </n-form-item>
         <n-form-item>
           <n-button type="primary" :loading="submitting" @click="handleSubmit">
@@ -60,12 +73,23 @@
             <n-select v-model:value="formData.investment_type" :options="typeOptions" size="small" />
           </div>
         </div>
+        <!-- 第一点五行：币种 -->
+        <div class="form-row" style="margin-top: 8px">
+          <div class="form-col" style="flex: 1">
+            <label>币种</label>
+            <n-select v-model:value="formData.currency" :options="currencyOptions" size="small" @update:value="handleCurrencyChange" />
+          </div>
+        </div>
         <!-- 第二行：投资本金 + 提交按钮 -->
         <div class="form-row">
           <div class="form-col principal-col" style="flex: 1;">
-            <label>本金</label>
-            <n-input-number v-model:value="formData.principal" :min="1" placeholder="0" size="small">
-              <template #prefix>¥</template>
+            <label>{{ formData.currency === 'CNY' ? '本金' : '外币金额' }}</label>
+            <n-input-number 
+              :value="formData.currency === 'CNY' ? formData.principal : formData.foreign_amount" 
+              :min="1" placeholder="0" size="small"
+              @update:value="handleAmountUpdate"
+            >
+              <template #prefix>{{ getCurrencySymbol(formData.currency) }}</template>
             </n-input-number>
           </div>
           <div class="form-col btn-col">
@@ -73,6 +97,16 @@
             <n-button type="primary" :loading="submitting" @click="handleSubmit" size="small" class="submit-btn">
               申请
             </n-button>
+          </div>
+        </div>
+        <!-- 汇率提示（外币时） -->
+        <div v-if="formData.currency !== 'CNY'" class="form-row" style="margin-top: 4px">
+          <div class="form-col" style="flex: 1">
+            <n-text v-if="exchangeRateLoading" depth="3" style="font-size: 12px">获取汇率中...</n-text>
+            <n-text v-else-if="currentExchangeRate" depth="3" style="font-size: 12px">
+              1 {{ formData.currency }} = ¥{{ currentExchangeRate.toFixed(4) }}
+              <span v-if="equivalentCNY"> | ≈¥{{ equivalentCNY.toLocaleString() }}</span>
+            </n-text>
           </div>
         </div>
         <!-- 第三行：资金来源 -->
@@ -83,6 +117,9 @@
               <n-radio :value="false">外部资金</n-radio>
               <n-radio :value="true">从自由资金扣除</n-radio>
             </n-radio-group>
+            <div v-if="formData.deduct_from_cash" style="margin-top: 4px; font-size: 12px; color: var(--theme-warning)">
+              可用余额: ¥{{ formatMoney(currentBalance) }}
+            </div>
           </div>
         </div>
       </div>
@@ -101,7 +138,7 @@
           </div>
           <div class="approval-card-body">
             <div class="approval-requester">{{ item.requester_nickname }} 发起</div>
-            <div class="approval-detail">{{ formatApprovalDetail(item) }}</div>
+            <div class="approval-detail">{{ item.title }}</div>
           </div>
           <div class="approval-card-footer">
             <span class="approval-progress">审批进度: {{ item.approved_count || 0 }}/{{ getRequiredCount(item) }}</span>
@@ -132,22 +169,23 @@
               </div>
               <div class="card-type">
                 <n-tag size="small" :bordered="false">{{ typeLabels[item.investment_type] || item.investment_type }}</n-tag>
+                <n-tag v-if="item.currency && item.currency !== 'CNY'" size="small" :bordered="false" type="warning">{{ item.currency }}</n-tag>
               </div>
               <div class="card-stats">
                 <div class="stat-item">
                   <span class="stat-label">初始本金</span>
-                  <span class="stat-value">¥{{ formatMoney(item.principal) }}</span>
+                  <span class="stat-value">{{ formatInvAmountWithCNY(item, 'principal') }}</span>
                 </div>
                 <div class="stat-item">
                   <span class="stat-label">当前持仓</span>
-                  <span class="stat-value">¥{{ formatMoney(item.current_principal || item.principal) }}</span>
+                  <span class="stat-value">{{ formatInvAmountWithCNY(item, 'current_principal') }}</span>
                 </div>
               </div>
               <div class="card-stats-row">
                 <div class="stat-item">
                   <span class="stat-label">总收益</span>
                   <span class="stat-value" :class="(item.total_return || 0) >= 0 ? 'profit' : 'loss'">
-                    ¥{{ formatMoney(item.total_return || 0) }}
+                    {{ getCurrencySymbol(item.currency || 'CNY') }}{{ formatMoney(item.total_return || 0) }}
                   </span>
                 </div>
                 <div class="stat-item">
@@ -189,11 +227,11 @@
           <n-text>{{ selectedInvestment?.name }}</n-text>
         </n-form-item>
         <n-form-item label="当前持仓">
-          <n-text type="info">¥{{ formatMoney(selectedInvestment?.current_principal || selectedInvestment?.principal || 0) }}</n-text>
+          <n-text type="info">{{ formatInvAmountWithCNY(selectedInvestment || {}, 'current_principal') }}</n-text>
         </n-form-item>
-        <n-form-item label="当前总价值">
+        <n-form-item :label="selectedInvestment?.currency && selectedInvestment.currency !== 'CNY' ? '当前总价值('+selectedInvestment.currency+')' : '当前总价值'">
           <n-input-number v-model:value="incomeForm.current_value" style="width: 100%" :min="0">
-            <template #prefix>¥</template>
+            <template #prefix>{{ getCurrencySymbol(selectedInvestment?.currency || 'CNY') }}</template>
           </n-input-number>
           <n-text depth="3" style="font-size: 12px; margin-top: 4px; display: block">
             输入投资产品的当前市场价值，系统将自动计算收益
@@ -201,7 +239,7 @@
         </n-form-item>
         <n-form-item label="计算收益" v-if="incomeForm.current_value">
           <n-text :type="calculatedIncome >= 0 ? 'success' : 'error'" strong>
-            ¥{{ formatMoney(calculatedIncome) }}
+            {{ getCurrencySymbol(selectedInvestment?.currency || 'CNY') }}{{ formatMoney(calculatedIncome) }}
           </n-text>
         </n-form-item>
         <n-form-item label="更新日期">
@@ -217,10 +255,10 @@
     <n-modal v-model:show="showIncreaseModal" preset="dialog" title="投资增持" positive-text="提交申请" negative-text="取消" @positive-click="submitIncrease">
       <n-form :model="increaseForm" label-placement="left" label-width="90px">
         <n-form-item label="理财产品">
-          <n-text>{{ selectedInvestment?.name }}</n-text>
+          <n-text>{{ selectedInvestment?.name }}<n-tag v-if="selectedInvestment?.currency && selectedInvestment.currency !== 'CNY'" size="small" :bordered="false" style="margin-left: 8px">{{ selectedInvestment.currency }}</n-tag></n-text>
         </n-form-item>
         <n-form-item label="当前持仓">
-          <n-text type="info">¥{{ formatMoney(selectedInvestment?.current_principal || 0) }}</n-text>
+          <n-text type="info">{{ formatInvAmountWithCNY(selectedInvestment || {}, 'current_principal') }}</n-text>
         </n-form-item>
         <n-form-item label="资金来源">
           <n-radio-group v-model:value="increaseForm.deduct_from_cash" size="small">
@@ -236,9 +274,9 @@
         <n-form-item label="可用余额" v-if="increaseForm.deduct_from_cash">
           <n-text type="warning">¥{{ formatMoney(currentBalance) }}</n-text>
         </n-form-item>
-        <n-form-item label="增持金额">
+        <n-form-item :label="selectedInvestment?.currency && selectedInvestment.currency !== 'CNY' ? '增持金额('+selectedInvestment.currency+')' : '增持金额'">
           <n-input-number v-model:value="increaseForm.amount" style="width: 100%" :min="1" :max="increaseForm.deduct_from_cash ? currentBalance : undefined">
-            <template #prefix>¥</template>
+            <template #prefix>{{ getCurrencySymbol(selectedInvestment?.currency || 'CNY') }}</template>
           </n-input-number>
         </n-form-item>
         <n-form-item label="增持日期">
@@ -254,18 +292,18 @@
     <n-modal v-model:show="showDecreaseModal" preset="dialog" title="投资减持" positive-text="提交申请" negative-text="取消" @positive-click="submitDecrease">
       <n-form :model="decreaseForm" label-placement="left" label-width="90px">
         <n-form-item label="理财产品">
-          <n-text>{{ selectedInvestment?.name }}</n-text>
+          <n-text>{{ selectedInvestment?.name }}<n-tag v-if="selectedInvestment?.currency && selectedInvestment.currency !== 'CNY'" size="small" :bordered="false" style="margin-left: 8px">{{ selectedInvestment.currency }}</n-tag></n-text>
         </n-form-item>
         <n-form-item label="当前持仓">
-          <n-text type="info">¥{{ formatMoney(selectedInvestment?.current_principal || 0) }}</n-text>
+          <n-text type="info">{{ formatInvAmountWithCNY(selectedInvestment || {}, 'current_principal') }}</n-text>
         </n-form-item>
-        <n-form-item label="减持金额">
+        <n-form-item :label="selectedInvestment?.currency && selectedInvestment.currency !== 'CNY' ? '减持金额('+selectedInvestment.currency+')' : '减持金额'">
           <n-input-number v-model:value="decreaseForm.amount" style="width: 100%" 
-            :min="1" :max="selectedInvestment?.current_principal || 0">
-            <template #prefix>¥</template>
+            :min="1" :max="selectedInvestment?.currency && selectedInvestment.currency !== 'CNY' ? (selectedInvestment?.current_foreign_amount || 0) : (selectedInvestment?.current_principal || 0)">
+            <template #prefix>{{ getCurrencySymbol(selectedInvestment?.currency || 'CNY') }}</template>
           </n-input-number>
           <n-text depth="3" style="font-size: 12px; margin-top: 4px; display: block">
-            最多可减持 ¥{{ formatMoney(selectedInvestment?.current_principal || 0) }}
+            最多可减持 {{ formatInvAmount(selectedInvestment || {}, 'current_principal') }}
           </n-text>
         </n-form-item>
         <n-form-item label="减持日期">
@@ -309,7 +347,11 @@
               <div class="history-date">{{ formatHistoryTime(item.timestamp) }}</div>
               <div v-if="item.type === 'position'" class="history-details">
                 <span class="label">金额:</span>
-                <span class="value">¥{{ formatMoney(item.amount) }}</span>
+                <span class="value" v-if="item.foreign_amount && historyData.investment?.currency !== 'CNY'">
+                  {{ getCurrencySymbol(historyData.investment?.currency || 'CNY') }}{{ formatMoney(item.foreign_amount) }}
+                  <span style="color: var(--theme-text-tertiary); font-size: 12px">(≈¥{{ formatMoney(item.amount) }})</span>
+                </span>
+                <span class="value" v-else>¥{{ formatMoney(item.amount) }}</span>
                 <span class="label" style="margin-left: 16px">本金变化:</span>
                 <span class="value">¥{{ formatMoney(item.principal_before || 0) }} → ¥{{ formatMoney(item.principal_after || 0) }}</span>
                 <div v-if="item.note" class="note">{{ item.note }}</div>
@@ -325,9 +367,9 @@
               </div>
               <div v-else-if="item.type === 'income'" class="history-details">
                 <span class="label">收益:</span>
-                <span class="value profit">¥{{ formatMoney(item.amount) }}</span>
+                <span class="value profit">{{ getCurrencySymbol(historyData.investment?.currency || 'CNY') }}{{ formatMoney(item.amount) }}</span>
                 <span v-if="item.current_value" class="label" style="margin-left: 16px">当前价值:</span>
-                <span v-if="item.current_value" class="value">¥{{ formatMoney(item.current_value) }}</span>
+                <span v-if="item.current_value" class="value">{{ getCurrencySymbol(historyData.investment?.currency || 'CNY') }}{{ formatMoney(item.current_value) }}</span>
                 <div v-if="item.note" class="note">{{ item.note }}</div>
               </div>
             </div>
@@ -347,7 +389,7 @@ import { investmentApi, approvalApi, transactionApi, assetApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { useApprovalStore } from '@/stores/approval'
 import { usePrivacyStore } from '@/stores/privacy'
-import { SendOutline } from '@vicons/ionicons5'
+import { SendOutline, CashOutline } from '@vicons/ionicons5'
 import { formatShortDateTime, formatLocalDate } from '@/utils/date'
 import { checkAndShowAchievements } from '@/utils/achievement'
 import dayjs from 'dayjs'
@@ -390,8 +432,95 @@ const formData = ref({
   name: '', 
   investment_type: 'fund' as 'fund' | 'stock' | 'bond' | 'other',
   principal: null as number | null,
+  currency: 'CNY' as string,
+  foreign_amount: null as number | null,
   deduct_from_cash: false
 })
+
+// 币种相关
+const currencyOptions = [
+  { label: '人民币 CNY', value: 'CNY' },
+  { label: '美元 USD', value: 'USD' },
+  { label: '港币 HKD', value: 'HKD' },
+  { label: '日元 JPY', value: 'JPY' },
+  { label: '欧元 EUR', value: 'EUR' },
+  { label: '英镑 GBP', value: 'GBP' },
+  { label: '澳元 AUD', value: 'AUD' },
+  { label: '加元 CAD', value: 'CAD' },
+  { label: '新币 SGD', value: 'SGD' },
+  { label: '韩元 KRW', value: 'KRW' }
+]
+const currencySymbols: Record<string, string> = {
+  CNY: '¥', USD: '$', HKD: 'HK$', JPY: '¥', EUR: '€',
+  GBP: '£', AUD: 'A$', CAD: 'C$', SGD: 'S$', KRW: '₩'
+}
+const getCurrencySymbol = (c: string) => currencySymbols[c] || c
+const currentExchangeRate = ref<number | null>(null)
+const exchangeRateLoading = ref(false)
+
+const handleAmountUpdate = (val: any) => {
+  if (formData.value.currency === 'CNY') {
+    formData.value.principal = val
+  } else {
+    formData.value.foreign_amount = val
+  }
+}
+
+const handleCurrencyChange = async (currency: string) => {
+  if (currency !== 'CNY') {
+    await fetchExchangeRate(currency)
+  } else {
+    currentExchangeRate.value = null
+    formData.value.foreign_amount = null
+  }
+}
+
+const fetchExchangeRate = async (currency: string) => {
+  if (currency === 'CNY') return
+  exchangeRateLoading.value = true
+  try {
+    const { data } = await assetApi.getExchangeRate(currency)
+    currentExchangeRate.value = data.rate
+  } catch (error) {
+    console.error('Failed to fetch exchange rate:', error)
+    currentExchangeRate.value = null
+  } finally {
+    exchangeRateLoading.value = false
+  }
+}
+
+const equivalentCNY = computed(() => {
+  if (formData.value.currency === 'CNY') return formData.value.principal
+  const foreignAmt = formData.value.foreign_amount
+  if (!foreignAmt || foreignAmt <= 0 || !currentExchangeRate.value) return null
+  return Number((foreignAmt * currentExchangeRate.value).toFixed(2))
+})
+
+// 格式化投资产品的金额显示
+const formatInvAmount = (item: any, amountField: string = 'principal') => {
+  const currency = item.currency || 'CNY'
+  if (currency === 'CNY') {
+    return `¥${formatMoney(item[amountField] || 0)}`
+  }
+  // 外币显示外币金额 + CNY换算
+  const symbol = getCurrencySymbol(currency)
+  if (amountField === 'principal') {
+    const foreignAmt = item.foreign_amount || 0
+    return `${symbol}${formatMoney(foreignAmt)}`
+  } else if (amountField === 'current_principal') {
+    const foreignAmt = item.current_foreign_amount || 0
+    return `${symbol}${formatMoney(foreignAmt)}`
+  }
+  return `¥${formatMoney(item[amountField] || 0)}`
+}
+
+const formatInvAmountWithCNY = (item: any, amountField: string = 'principal') => {
+  const currency = item.currency || 'CNY'
+  if (currency === 'CNY') return `¥${formatMoney(item[amountField] || 0)}`
+  const base = formatInvAmount(item, amountField)
+  const cnyVal = item.cny_value || item.current_principal || 0
+  return `${base} (≈¥${formatMoney(cnyVal)})`
+}
 
 // 收益登记相关
 const showIncomeModal = ref(false)
@@ -429,8 +558,13 @@ const currentBalance = ref(0)
 // 计算收益（实时预览）
 const calculatedIncome = computed(() => {
   if (!incomeForm.value.current_value || !selectedInvestment.value) return 0
-  const currentPrincipal = selectedInvestment.value.current_principal || selectedInvestment.value.principal || 0
-  const historicalIncome = selectedInvestment.value.total_return || 0
+  const inv = selectedInvestment.value
+  const isForeign = inv.currency && inv.currency !== 'CNY'
+  // 外币投资用外币持仓计算，人民币投资用CNY持仓计算
+  const currentPrincipal = isForeign 
+    ? (inv.current_foreign_amount || inv.foreign_amount || 0)
+    : (inv.current_principal || inv.principal || 0)
+  const historicalIncome = inv.total_return || 0
   return incomeForm.value.current_value - currentPrincipal - historicalIncome
 })
 
@@ -478,9 +612,14 @@ const requestTypeLabels: Record<string, string> = {
 const columns = computed(() => [
   { title: '产品名称', key: 'name' },
   { title: '类型', key: 'investment_type', render: (row: any) => typeLabels[row.investment_type] || row.investment_type },
-  { title: '初始本金', key: 'principal', render: (row: any) => `¥${formatMoney(row.principal)}` },
-  { title: '当前持仓', key: 'current_principal', render: (row: any) => `¥${formatMoney(row.current_principal || row.principal)}` },
-  { title: '总收益', key: 'total_return', render: (row: any) => h('span', { style: { color: (row.total_return || 0) >= 0 ? 'var(--theme-success)' : 'var(--theme-error)' } }, `¥${formatMoney(row.total_return || 0)}`) },
+  { title: '币种', key: 'currency', render: (row: any) => row.currency && row.currency !== 'CNY' ? row.currency : '' },
+  { title: '初始本金', key: 'principal', render: (row: any) => formatInvAmountWithCNY(row, 'principal') },
+  { title: '当前持仓', key: 'current_principal', render: (row: any) => formatInvAmountWithCNY(row, 'current_principal') },
+  { title: '总收益', key: 'total_return', render: (row: any) => {
+    const cur = row.currency || 'CNY'
+    const sym = currencySymbols[cur] || '¥'
+    return h('span', { style: { color: (row.total_return || 0) >= 0 ? 'var(--theme-success)' : 'var(--theme-error)' } }, `${sym}${formatMoney(row.total_return || 0)}`)
+  }},
   { title: 'ROI', key: 'roi', render: (row: any) => {
     const roi = row.roi || 0
     return h('span', { style: { color: roi >= 0 ? 'var(--theme-success)' : 'var(--theme-error)' } }, `${roi.toFixed(2)}%`)
@@ -523,28 +662,7 @@ const approvalColumns = computed(() => [
   { 
     title: '详情', 
     key: 'details', 
-    render: (row: any) => {
-      try {
-        const data = typeof row.request_data === 'string' ? JSON.parse(row.request_data) : row.request_data
-        if (!data) return '-'
-        
-        if (row.request_type === 'investment_create' || row.request_type === 'asset_create') {
-          return `${data.name || '未命名'} - ¥${formatMoney(data.principal || data.amount || 0)}`
-        } else if (row.request_type === 'investment_income') {
-          return `价值更新: ¥${formatMoney(data.current_value || data.amount || 0)}`
-        } else if (row.request_type === 'investment_increase') {
-          return `增持: ¥${formatMoney(data.amount || 0)}`
-        } else if (row.request_type === 'investment_decrease') {
-          return `减持: ¥${formatMoney(data.amount || 0)}`
-        } else if (row.request_type === 'investment_delete') {
-          return `删除理财产品`
-        }
-        return '-'
-      } catch (error) {
-        console.error('Approval column render error:', error, row)
-        return '数据格式错误'
-      }
-    }
+    render: (row: any) => row.title || '-'
   },
   { title: '申请时间', key: 'created_at', render: (row: any) => dayjs(row.created_at).format('YYYY-MM-DD HH:mm') },
   { 
@@ -589,15 +707,23 @@ async function loadData() {
 }
 
 async function handleSubmit() {
-  if (!formData.value.name || !formData.value.principal) { message.warning('请填写完整信息'); return }
+  const isForeign = formData.value.currency !== 'CNY'
+  const hasAmount = isForeign ? formData.value.foreign_amount : formData.value.principal
+  if (!formData.value.name || !hasAmount) { message.warning('请填写完整信息'); return }
+  
+  // 计算人民币等值金额（外币需要换算）
+  let cnyAmount = formData.value.principal || 0
+  if (isForeign && currentExchangeRate.value && formData.value.foreign_amount) {
+    cnyAmount = Math.round(formData.value.foreign_amount * currentExchangeRate.value * 100) / 100
+  }
   
   // 检查是否需要从自由资金扣除，如果是则检查余额
   if (formData.value.deduct_from_cash) {
     try {
       const { data } = await assetApi.getCashBalance()
       const cashBalance = data.balance || 0
-      if (cashBalance < formData.value.principal) {
-        message.error(`家庭自由资金不足：需要¥${formData.value.principal}，当前仅有¥${cashBalance.toFixed(2)}`)
+      if (cashBalance < cnyAmount) {
+        message.error(`家庭自由资金不足：需要¥${cnyAmount}，当前仅有¥${cashBalance.toFixed(2)}`)
         return
       }
     } catch (error) {
@@ -613,13 +739,15 @@ async function handleSubmit() {
       user_id: userStore.user?.id || 0,
       name: formData.value.name,
       asset_type: formData.value.investment_type as any,
-      currency: 'CNY',
-      amount: formData.value.principal,
+      currency: formData.value.currency as 'CNY' | 'USD' | 'HKD' | 'JPY' | 'EUR' | 'GBP' | 'AUD' | 'CAD' | 'SGD' | 'KRW',
+      amount: isForeign ? cnyAmount : formData.value.principal!,
+      foreign_amount: isForeign ? (formData.value.foreign_amount ?? undefined) : undefined,
       start_date: new Date().toISOString(),
       deduct_from_cash: formData.value.deduct_from_cash
     })
     message.success('申请已提交，等待审批！📈')
-    formData.value = { name: '', investment_type: 'fund', principal: null, deduct_from_cash: false }
+    formData.value = { name: '', investment_type: 'fund', principal: null, currency: 'CNY', foreign_amount: null, deduct_from_cash: false }
+    currentExchangeRate.value = null
     // 延迟加载数据，给后端时间处理（单人家庭自动执行）
     setTimeout(() => {
       loadData()
@@ -650,10 +778,9 @@ async function submitIncome() {
   try {
     await approvalApi.createInvestmentIncome({
       investment_id: selectedInvestment.value.id,
-      amount: null,
       current_value: incomeForm.value.current_value,
       income_date: new Date(incomeForm.value.income_date).toISOString(),
-      note: incomeForm.value.note || null
+      note: incomeForm.value.note || undefined
     })
     message.success('价值更新申请已提交！')
     showIncomeModal.value = false
@@ -691,10 +818,12 @@ async function submitIncrease() {
     message.warning('余额不足')
     return false
   }
+  const isForeign = selectedInvestment.value?.currency && selectedInvestment.value.currency !== 'CNY'
   try {
     await approvalApi.increaseInvestment({
       investment_id: selectedInvestment.value.id,
       amount: increaseForm.value.amount,
+      foreign_amount: isForeign ? increaseForm.value.amount : undefined,
       operation_date: new Date(increaseForm.value.operation_date).toISOString(),
       note: increaseForm.value.note,
       deduct_from_cash: increaseForm.value.deduct_from_cash
@@ -743,15 +872,18 @@ async function submitDecrease() {
     message.warning('请输入减持金额')
     return false
   }
-  const maxDecrease = selectedInvestment.value.current_principal || 0
+  const isForeign = selectedInvestment.value?.currency && selectedInvestment.value.currency !== 'CNY'
+  const maxDecrease = isForeign ? (selectedInvestment.value.current_foreign_amount || 0) : (selectedInvestment.value.current_principal || 0)
   if (decreaseForm.value.amount > maxDecrease) {
-    message.warning(`减持金额不能超过当前持仓 ￥${maxDecrease}`)
+    const sym = getCurrencySymbol(selectedInvestment.value?.currency || 'CNY')
+    message.warning(`减持金额不能超过当前持仓 ${sym}${maxDecrease}`)
     return false
   }
   try {
     await approvalApi.decreaseInvestment({
       investment_id: selectedInvestment.value.id,
       amount: decreaseForm.value.amount,
+      foreign_amount: isForeign ? decreaseForm.value.amount : undefined,
       operation_date: new Date(decreaseForm.value.operation_date).toISOString(),
       note: decreaseForm.value.note
     })
@@ -813,31 +945,6 @@ async function doApprove(id: number, approved: boolean, reason?: string) {
     }
   } catch (e: any) {
     message.error(e.response?.data?.detail || '操作失败')
-  }
-}
-
-// 格式化审批详情（移动端卡片用）
-function formatApprovalDetail(item: any): string {
-  try {
-    // request_data 可能已经是对象或者是字符串，需要判断
-    const data = typeof item.request_data === 'string' ? JSON.parse(item.request_data) : item.request_data
-    if (!data) return '-'
-    
-    if (item.request_type === 'investment_create' || item.request_type === 'asset_create') {
-      return `${data.name || '未命名'} - ¥${formatMoney(data.principal || data.amount || 0)}`
-    } else if (item.request_type === 'investment_income') {
-      return `价值更新: ¥${formatMoney(data.current_value || data.amount || 0)}`
-    } else if (item.request_type === 'investment_increase') {
-      return `增持: ¥${formatMoney(data.amount || 0)}`
-    } else if (item.request_type === 'investment_decrease') {
-      return `减持: ¥${formatMoney(data.amount || 0)}`
-    } else if (item.request_type === 'investment_delete') {
-      return `删除理财产品`
-    }
-    return '-'
-  } catch (error) {
-    console.error('formatApprovalDetail error:', error, item)
-    return '数据格式错误'
   }
 }
 

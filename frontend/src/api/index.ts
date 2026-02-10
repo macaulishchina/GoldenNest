@@ -48,7 +48,11 @@ export const authApi = {
   },
   register: (data: { username: string; email: string; password: string; nickname?: string }) => 
     api.post('/auth/register', data),
-  getMe: () => api.get('/auth/me')
+  getMe: () => api.get('/auth/me'),
+  updateProfile: (data: { nickname?: string; email?: string; phone?: string; gender?: string; birthday?: string; bio?: string }) =>
+    api.put('/auth/profile', data),
+  changePassword: (data: { old_password: string; new_password: string }) =>
+    api.put('/auth/password', data)
 }
 
 export const familyApi = {
@@ -155,7 +159,9 @@ export const approvalApi = {
   createInvestment: (data: {
     name: string
     investment_type: string
-    principal: number
+    principal?: number
+    currency?: string
+    foreign_amount?: number
     start_date: string
     end_date?: string
     deduct_from_cash?: boolean
@@ -184,15 +190,18 @@ export const approvalApi = {
   // 投资增持申请
   increaseInvestment: (data: {
     investment_id: number
-    amount: number
+    amount?: number
+    foreign_amount?: number
     operation_date: string
     note?: string
+    deduct_from_cash?: boolean
   }) => api.post('/approval/investment/increase', data),
   
   // 投资减持申请
   decreaseInvestment: (data: {
     investment_id: number
-    amount: number
+    amount?: number
+    foreign_amount?: number
     operation_date: string
     note?: string
   }) => api.post('/approval/investment/decrease', data),
@@ -279,7 +288,7 @@ export const assetApi = {
   }) => api.get('/asset/list', { params }),
   
   // 获取我的资产
-  myAssets: () => api.get('/asset/my-assets'),
+  myAssets: (params?: { asset_type?: string; currency?: string }) => api.get('/asset/my-assets', { params }),
   
   // 获取实时汇率
   getExchangeRate: (currency: string) => api.get(`/asset/exchange-rate/${currency}`)

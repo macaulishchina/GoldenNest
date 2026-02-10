@@ -6,8 +6,14 @@ interface User {
   id: number
   username: string
   nickname: string
+  email: string
   family_id: number | null
   avatar: string | null
+  avatar_version: number
+  phone: string | null
+  gender: string | null
+  birthday: string | null
+  bio: string | null
   created_at: string
 }
 

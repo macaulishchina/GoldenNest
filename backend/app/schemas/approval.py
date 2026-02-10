@@ -129,11 +129,25 @@ class InvestmentCreateApprovalCreate(BaseModel):
     """创建理财产品申请"""
     name: str = Field(..., max_length=100, description="理财产品名称")
     investment_type: str = Field(..., description="理财类型")
-    principal: float = Field(..., gt=0, description="本金")
+    principal: Optional[float] = Field(None, gt=0, description="本金（CNY，仅当currency=CNY时使用）")
+    currency: CurrencyType = Field(CurrencyType.CNY, description="货币类型")
+    foreign_amount: Optional[float] = Field(None, gt=0, description="外币金额（当currency!=CNY时必填）")
     start_date: datetime = Field(..., description="开始日期")
     end_date: Optional[datetime] = Field(None, description="到期日期")
     deduct_from_cash: bool = Field(default=False, description="是否从自由资金扣除")
     note: Optional[str] = Field(None, max_length=500, description="备注")
+
+    @model_validator(mode='after')
+    def validate_amount_by_currency(self):
+        """根据币种验证金额字段"""
+        if self.currency == CurrencyType.CNY:
+            if self.principal is None or self.principal <= 0:
+                raise ValueError('人民币理财必须提供有效的principal')
+            self.foreign_amount = None
+        else:
+            if self.foreign_amount is None or self.foreign_amount <= 0:
+                raise ValueError(f'{self.currency.value}理财必须提供有效的foreign_amount')
+        return self
 
 
 # ============ 理财产品更新申请 ============
@@ -170,7 +184,8 @@ class InvestmentIncomeApprovalCreate(BaseModel):
 class InvestmentIncreaseApprovalCreate(BaseModel):
     """增持投资申请"""
     investment_id: int = Field(..., description="理财产品ID")
-    amount: float = Field(..., gt=0, description="增持金额")
+    amount: Optional[float] = Field(None, gt=0, description="增持金额（CNY，仅当投资为CNY时使用）")
+    foreign_amount: Optional[float] = Field(None, gt=0, description="增持外币金额（当投资为外币时使用）")
     operation_date: datetime = Field(..., description="增持日期")
     note: Optional[str] = Field(None, max_length=500, description="备注")
     deduct_from_cash: bool = Field(True, description="是否从自由资金扣除（False=外部资金，计入股权）")
@@ -181,7 +196,8 @@ class InvestmentIncreaseApprovalCreate(BaseModel):
 class InvestmentDecreaseApprovalCreate(BaseModel):
     """减持投资申请"""
     investment_id: int = Field(..., description="理财产品ID")
-    amount: float = Field(..., gt=0, description="减持金额")
+    amount: Optional[float] = Field(None, gt=0, description="减持金额（CNY，仅当投资为CNY时使用）")
+    foreign_amount: Optional[float] = Field(None, gt=0, description="减持外币金额（当投资为外币时使用）")
     operation_date: datetime = Field(..., description="减持日期")
     note: Optional[str] = Field(None, max_length=500, description="备注")
 

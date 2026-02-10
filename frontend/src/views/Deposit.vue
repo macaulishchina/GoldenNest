@@ -46,7 +46,7 @@
           <div v-for="item in pendingApprovals" :key="item.id" class="record-card pending-card">
             <div class="record-card-header">
               <span class="record-user">{{ item.requester_nickname }}</span>
-              <n-tag type="warning" size="small">{{ item.approved_count || 0 }}/{{ item.required_count || 0 }} 已审批</n-tag>
+              <n-tag type="warning" size="small">{{ item.approved_count || 0 }}/{{ Math.max((item.total_members || 1) - 1, 1) }} 已审批</n-tag>
             </div>
             <div class="record-card-body">
               <div class="record-amount">¥{{ parseRequestData(item).amount?.toLocaleString() }}</div>
@@ -149,7 +149,7 @@ const approvalColumns = [
   { 
     title: '审批进度', 
     key: 'progress',
-    render: (row: any) => `${row.approved_count || 0}/${row.required_count || 0}`
+    render: (row: any) => `${row.approved_count || 0}/${Math.max((row.total_members || 1) - 1, 1)}`
   },
   { 
     title: '操作', 

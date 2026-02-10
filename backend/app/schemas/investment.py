@@ -71,7 +71,12 @@ class InvestmentResponse(BaseModel):
     family_id: int
     name: str
     investment_type: InvestmentType
-    principal: float  # 初始本金
+    principal: float  # 初始本金（CNY）
+    currency: Optional[str] = "CNY"  # 货币类型
+    foreign_amount: Optional[float] = None  # 外币金额
+    exchange_rate: Optional[float] = None  # 汇率
+    current_foreign_amount: Optional[float] = None  # 当前外币持仓
+    cny_value: Optional[float] = None  # 当前人民币价值（实时汇率）
     start_date: datetime
     end_date: Optional[datetime] = None
     is_active: bool
@@ -82,7 +87,7 @@ class InvestmentResponse(BaseModel):
     
     # 额外字段
     total_income: Optional[float] = None  # 累计收益
-    current_principal: Optional[float] = None  # 当前持仓本金
+    current_principal: Optional[float] = None  # 当前持仓本金（CNY）
     total_return: Optional[float] = None  # 总收益
     roi: Optional[float] = None  # 投资回报率
     annualized_return: Optional[float] = None  # 平均年化收益率
@@ -97,7 +102,8 @@ class InvestmentResponse(BaseModel):
 class InvestmentSummary(BaseModel):
     """理财汇总信息"""
     family_id: int
-    total_principal: float  # 总本金
+    total_principal: float  # 总本金（CNY）
+    total_cny_value: Optional[float] = None  # 总人民币价值（实时汇率）
     total_income: float  # 总收益
     active_count: int  # 活跃理财数量
     average_annualized_return: Optional[float] = None  # 综合平均年化收益率

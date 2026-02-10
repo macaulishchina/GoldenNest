@@ -266,18 +266,38 @@ async def create_investment_create_approval(
     """创建理财产品申请"""
     family_id = await get_user_family_id(current_user.id, db)
     
+    # 多币种处理：计算CNY本金
+    from app.models.models import CurrencyType
+    currency = CurrencyType(data.currency.value) if hasattr(data, 'currency') and data.currency else CurrencyType.CNY
+    
+    if currency == CurrencyType.CNY:
+        principal_cny = data.principal
+        foreign_amount = None
+        exchange_rate_val = 1.0
+        amount_display = f"¥{principal_cny:,.2f}"
+    else:
+        from app.services.exchange_rate import exchange_rate_service
+        exchange_rate_val = await exchange_rate_service.get_rate_to_cny(currency)
+        foreign_amount = data.foreign_amount
+        principal_cny = foreign_amount * exchange_rate_val
+        foreign_display = exchange_rate_service.format_foreign_amount(foreign_amount, currency)
+        amount_display = f"{foreign_display} (约¥{principal_cny:,.2f})"
+    
     service = ApprovalService(db)
     request = await service.create_request(
         family_id=family_id,
         requester_id=current_user.id,
         request_type=ApprovalRequestType.INVESTMENT_CREATE,
-        title=f"创建理财产品: {data.name}",
-        description=f"{current_user.nickname}申请创建理财产品「{data.name}」，本金{data.principal}元",
-        amount=data.principal,
+        title=f"创建理财产品: {data.name} {amount_display}",
+        description=f"{current_user.nickname}申请创建理财产品「{data.name}」，金额{amount_display}",
+        amount=principal_cny,
         request_data={
             "name": data.name,
             "investment_type": data.investment_type,
-            "principal": data.principal,
+            "principal": principal_cny,
+            "currency": currency.value,
+            "foreign_amount": foreign_amount,
+            "exchange_rate": exchange_rate_val if currency != CurrencyType.CNY else None,
             "start_date": data.start_date.isoformat(),
             "end_date": data.end_date.isoformat() if data.end_date else None,
             "deduct_from_cash": data.deduct_from_cash,
@@ -373,14 +393,17 @@ async def create_investment_income_approval(
         raise HTTPException(status_code=404, detail="理财产品不存在")
     
     # 确定收益金额（用于显示，实际计算在执行时）
+    from app.models.models import CurrencyType
+    inv_currency = investment.currency or CurrencyType.CNY
+    currency_label = inv_currency.value if inv_currency != CurrencyType.CNY else "元"
+    
     if data.current_value is not None:
         # 新模式：需要计算收益用于显示
-        # 简化处理：这里用current_value作为amount参数，实际收益在执行时精确计算
         display_amount = data.current_value
-        description = f"{current_user.nickname}申请更新理财产品「{investment.name}」价值至{data.current_value}元"
+        description = f"{current_user.nickname}申请更新理财产品「{investment.name}」价值至{data.current_value}{currency_label}"
     else:
         display_amount = data.amount
-        description = f"{current_user.nickname}申请登记理财产品「{investment.name}」收益{data.amount}元"
+        description = f"{current_user.nickname}申请登记理财产品「{investment.name}」收益{data.amount}{currency_label}"
     
     service = ApprovalService(db)
     request = await service.create_request(
@@ -426,6 +449,23 @@ async def create_investment_increase_approval(
     if not investment:
         raise HTTPException(status_code=404, detail="理财产品不存在或已删除")
     
+    # 多币种处理：根据投资产品的币种计算CNY金额
+    from app.models.models import CurrencyType
+    inv_currency = investment.currency or CurrencyType.CNY
+    
+    if inv_currency == CurrencyType.CNY:
+        amount_cny = data.amount
+        foreign_amount = None
+        exchange_rate_val = 1.0
+        amount_display = f"¥{amount_cny:,.2f}"
+    else:
+        from app.services.exchange_rate import exchange_rate_service
+        foreign_amount = data.foreign_amount or data.amount  # 兼容：如果前端传了foreign_amount用它，否则用amount
+        exchange_rate_val = await exchange_rate_service.get_rate_to_cny(inv_currency)
+        amount_cny = foreign_amount * exchange_rate_val
+        foreign_display = exchange_rate_service.format_foreign_amount(foreign_amount, inv_currency)
+        amount_display = f"{foreign_display} (约¥{amount_cny:,.2f})"
+    
     # 只有从自由资金扣除时才需要验证余额
     if data.deduct_from_cash:
         result = await db.execute(
@@ -437,10 +477,10 @@ async def create_investment_increase_approval(
         last_transaction = result.scalar_one_or_none()
         current_balance = last_transaction.balance_after if last_transaction else 0
         
-        if current_balance < data.amount:
+        if current_balance < amount_cny:
             raise HTTPException(
                 status_code=400,
-                detail=f"家庭余额不足，当前余额: {current_balance}元，需要: {data.amount}元"
+                detail=f"家庭余额不足，当前余额: {current_balance}元，需要: {amount_cny:.2f}元"
             )
     
     # 构建描述信息
@@ -452,11 +492,14 @@ async def create_investment_increase_approval(
         requester_id=current_user.id,
         request_type=ApprovalRequestType.INVESTMENT_INCREASE,
         title=f"投资增持: {investment.name}",
-        description=f"{current_user.nickname}申请对理财产品「{investment.name}」增持{data.amount}元（{funding_source}）",
-        amount=data.amount,
+        description=f"{current_user.nickname}申请对理财产品「{investment.name}」增持{amount_display}（{funding_source}）",
+        amount=amount_cny,
         request_data={
             "investment_id": data.investment_id,
-            "amount": data.amount,
+            "amount": amount_cny,
+            "foreign_amount": foreign_amount,
+            "exchange_rate": exchange_rate_val if inv_currency != CurrencyType.CNY else None,
+            "currency": inv_currency.value,
             "operation_date": data.operation_date.isoformat(),
             "note": data.note,
             "deduct_from_cash": data.deduct_from_cash
@@ -490,8 +533,10 @@ async def create_investment_decrease_approval(
     if not investment:
         raise HTTPException(status_code=404, detail="理财产品不存在或已删除")
     
-    # 计算当前持仓
-    from app.models.models import InvestmentPosition, PositionOperationType
+    # 多币种处理
+    from app.models.models import InvestmentPosition, PositionOperationType, CurrencyType
+    inv_currency = investment.currency or CurrencyType.CNY
+    
     positions_result = await db.execute(
         select(InvestmentPosition).where(
             InvestmentPosition.investment_id == data.investment_id
@@ -504,11 +549,39 @@ async def create_investment_decrease_approval(
         for p in positions
     )
     
-    if data.amount > current_principal:
-        raise HTTPException(
-            status_code=400,
-            detail=f"减持金额超过当前持仓，当前持仓: {current_principal}元，减持金额: {data.amount}元"
+    # 如果是外币，计算外币持仓
+    current_foreign = None
+    if inv_currency != CurrencyType.CNY:
+        current_foreign = sum(
+            (p.foreign_amount or 0) if p.operation_type in [PositionOperationType.CREATE, PositionOperationType.INCREASE]
+            else -(p.foreign_amount or 0)
+            for p in positions
         )
+    
+    if inv_currency == CurrencyType.CNY:
+        amount_cny = data.amount
+        foreign_amount = None
+        exchange_rate_val = 1.0
+        amount_display = f"¥{amount_cny:,.2f}"
+        
+        if data.amount > current_principal:
+            raise HTTPException(
+                status_code=400,
+                detail=f"减持金额超过当前持仓，当前持仓: {current_principal:.2f}元，减持金额: {data.amount:.2f}元"
+            )
+    else:
+        from app.services.exchange_rate import exchange_rate_service
+        foreign_amount = data.foreign_amount or data.amount
+        exchange_rate_val = await exchange_rate_service.get_rate_to_cny(inv_currency)
+        amount_cny = foreign_amount * exchange_rate_val
+        foreign_display = exchange_rate_service.format_foreign_amount(foreign_amount, inv_currency)
+        amount_display = f"{foreign_display} (约¥{amount_cny:,.2f})"
+        
+        if current_foreign is not None and foreign_amount > current_foreign:
+            raise HTTPException(
+                status_code=400,
+                detail=f"减持金额超过当前持仓，当前外币持仓: {current_foreign:.2f} {inv_currency.value}，减持金额: {foreign_amount:.2f} {inv_currency.value}"
+            )
     
     service = ApprovalService(db)
     request = await service.create_request(
@@ -516,11 +589,14 @@ async def create_investment_decrease_approval(
         requester_id=current_user.id,
         request_type=ApprovalRequestType.INVESTMENT_DECREASE,
         title=f"投资减持: {investment.name}",
-        description=f"{current_user.nickname}申请对理财产品「{investment.name}」减持{data.amount}元",
-        amount=data.amount,
+        description=f"{current_user.nickname}申请对理财产品「{investment.name}」减持{amount_display}",
+        amount=amount_cny,
         request_data={
             "investment_id": data.investment_id,
-            "amount": data.amount,
+            "amount": amount_cny,
+            "foreign_amount": foreign_amount,
+            "exchange_rate": exchange_rate_val if inv_currency != CurrencyType.CNY else None,
+            "currency": inv_currency.value,
             "operation_date": data.operation_date.isoformat(),
             "note": data.note
         }

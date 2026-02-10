@@ -350,6 +350,10 @@
           <div class="drawer-section">
             <div class="drawer-section-title">⚙️ 系统设置</div>
             <div class="drawer-menu-items">
+              <div class="drawer-menu-item" @click="navigateAndClose('/settings')">
+                <n-icon :size="20"><PersonOutline /></n-icon>
+                <span>个人设置</span>
+              </div>
               <div class="drawer-menu-item logout" @click="handleLogout">
                 <n-icon :size="20"><LogOutOutline /></n-icon>
                 <span>退出登录</span>
@@ -796,6 +800,11 @@ const menuOptions = computed<MenuOption[]>(() => [
     key: 'settings-group',
     icon: renderIcon(SettingsOutline),
     children: [
+      {
+        label: '个人设置',
+        key: 'settings',
+        icon: renderIcon(PersonOutline)
+      },
       {
         label: '退出登录',
         key: 'logout',
