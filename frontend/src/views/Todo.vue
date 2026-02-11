@@ -65,6 +65,9 @@
             <h3>{{ currentList.name }}</h3>
           </div>
           <div class="task-actions">
+            <button class="btn-ai-assist" @click="showAIDialog = true" title="AI 任务助手">
+              🤖 AI
+            </button>
             <label class="toggle-completed">
               <input type="checkbox" v-model="showCompleted" @change="loadItems">
               显示已完成
@@ -77,7 +80,7 @@
           <input 
             v-model="quickAddTitle"
             @keyup.enter="quickAddItem"
-            placeholder="添加新任务，按回车保存..."
+            placeholder="添加新任务，按回车保存... 或试试 AI 任务建议 🤖"
             class="quick-add-input"
           />
           <button class="btn-quick-add" @click="quickAddItem">添加</button>
@@ -144,6 +147,128 @@
           <div class="empty-icon">📋</div>
           <p>请选择或创建一个清单</p>
         </div>
+      </div>
+    </div>
+
+    <!-- AI 任务助手弹窗 -->
+    <div v-if="showAIDialog" class="modal-overlay" @click.self="showAIDialog = false">
+      <div class="modal-content">
+        <h2>🤖 AI 任务助手</h2>
+        
+        <div class="ai-tabs">
+          <button 
+            class="ai-tab" 
+            :class="{ active: aiMode === 'suggest' }"
+            @click="aiMode = 'suggest'"
+          >
+            💡 任务建议
+          </button>
+          <button 
+            class="ai-tab" 
+            :class="{ active: aiMode === 'prioritize' }"
+            @click="aiMode = 'prioritize'"
+          >
+            📊 优先级分析
+          </button>
+        </div>
+
+        <!-- 任务建议模式 -->
+        <div v-if="aiMode === 'suggest'" class="ai-content">
+          <div class="form-group">
+            <label>描述你的目标或需求</label>
+            <textarea
+              v-model="aiGoal"
+              placeholder="例如：我要准备全家春节旅行、整理家里的杂物、学习新技能..."
+              rows="4"
+            ></textarea>
+          </div>
+          
+          <button 
+            class="btn-primary full-width" 
+            @click="getAISuggestions"
+            :disabled="aiLoading || !aiGoal.trim()"
+          >
+            {{ aiLoading ? '分析中...' : '获取 AI 建议' }}
+          </button>
+
+          <!-- AI 建议结果 -->
+          <div v-if="aiSuggestions" class="ai-results">
+            <div class="ai-reasoning">
+              <p><strong>💭 分析思路：</strong></p>
+              <p>{{ aiSuggestions.reasoning }}</p>
+            </div>
+            
+            <div class="suggested-tasks">
+              <p><strong>📝 建议任务：</strong></p>
+              <div 
+                v-for="(task, index) in aiSuggestions.suggested_tasks"
+                :key="index"
+                class="suggested-task"
+              >
+                <div class="task-header">
+                  <span class="task-title">{{ task.title }}</span>
+                  <span class="task-priority" :class="task.priority">
+                    {{ getPriorityLabel(task.priority) }}
+                  </span>
+                </div>
+                <p class="task-desc">{{ task.description }}</p>
+                <p class="task-due">建议 {{ task.due_days }} 天内完成</p>
+                <button 
+                  class="btn-add-suggested"
+                  @click="addSuggestedTask(task)"
+                >
+                  添加到清单
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 优先级分析模式 -->
+        <div v-if="aiMode === 'prioritize'" class="ai-content">
+          <p class="ai-hint">AI 将分析当前清单中的待办任务，给出优先级建议</p>
+          
+          <button 
+            class="btn-primary full-width" 
+            @click="getAIPrioritization"
+            :disabled="aiLoading || !hasPendingTasks"
+          >
+            {{ aiLoading ? '分析中...' : '开始分析' }}
+          </button>
+
+          <!-- AI 优先级结果 -->
+          <div v-if="aiPrioritization" class="ai-results">
+            <div class="ai-advice">
+              <p><strong>💡 整体建议：</strong></p>
+              <p>{{ aiPrioritization.overall_advice }}</p>
+            </div>
+            
+            <div class="prioritized-tasks">
+              <p><strong>📊 任务优先级：</strong></p>
+              <div 
+                v-for="(task, index) in aiPrioritization.prioritized_tasks"
+                :key="task.task_id"
+                class="prioritized-task"
+              >
+                <div class="task-rank">#{{ index + 1 }}</div>
+                <div class="task-info">
+                  <div class="task-header">
+                    <span class="task-title">{{ task.title }}</span>
+                    <span class="task-priority" :class="task.suggested_priority">
+                      {{ getPriorityLabel(task.suggested_priority) }}
+                    </span>
+                  </div>
+                  <div class="task-urgency">
+                    紧急度：{{ task.urgency_score }}/100
+                  </div>
+                  <p class="task-reasoning">{{ task.reasoning }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn-close" @click="closeAIDialog">关闭</button>
       </div>
     </div>
 
@@ -261,8 +386,11 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { api } from '@/api'
+import { api, todoAiApi } from '@/api'
+import { useMessage } from 'naive-ui'
 import UserAvatar from '@/components/UserAvatar.vue'
+
+const message = useMessage()
 
 // 状态
 const loading = ref(true)
@@ -273,6 +401,14 @@ const currentListId = ref(null)
 const showCompleted = ref(true)
 const stats = ref(null)
 const familyMembers = ref([])
+
+// AI 助手
+const showAIDialog = ref(false)
+const aiMode = ref('suggest') // 'suggest' | 'prioritize'
+const aiLoading = ref(false)
+const aiGoal = ref('')
+const aiSuggestions = ref(null)
+const aiPrioritization = ref(null)
 
 // 快速添加
 const quickAddTitle = ref('')
@@ -306,6 +442,87 @@ const listColors = ['#667eea', '#f97316', '#10b981', '#ef4444', '#8b5cf6', '#ec4
 const currentList = computed(() => {
   return todoLists.value.find(l => l.id === currentListId.value)
 })
+
+const hasPendingTasks = computed(() => {
+  return todoItems.value.some(item => !item.completed)
+})
+
+// AI 助手方法
+async function getAISuggestions() {
+  if (!aiGoal.value.trim()) return
+  
+  aiLoading.value = true
+  try {
+    const response = await todoAiApi.suggest({
+      context: aiGoal.value
+    })
+    aiSuggestions.value = response.data
+  } catch (error) {
+    message.error(error.response?.data?.detail || 'AI 建议获取失败')
+  } finally {
+    aiLoading.value = false
+  }
+}
+
+async function getAIPrioritization() {
+  aiLoading.value = true
+  try {
+    const pendingTaskIds = todoItems.value
+      .filter(item => !item.completed)
+      .map(item => item.id)
+    
+    const response = await todoAiApi.prioritize({
+      task_ids: pendingTaskIds.length > 0 ? pendingTaskIds : undefined
+    })
+    aiPrioritization.value = response.data
+  } catch (error) {
+    message.error(error.response?.data?.detail || 'AI 分析失败')
+  } finally {
+    aiLoading.value = false
+  }
+}
+
+async function addSuggestedTask(task) {
+  if (!currentListId.value) {
+    message.warning('请先选择一个清单')
+    return
+  }
+  
+  try {
+    const dueDate = new Date()
+    dueDate.setDate(dueDate.getDate() + (task.due_days || 7))
+    
+    await api.post('/todo/items', {
+      list_id: currentListId.value,
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      due_date: dueDate.toISOString()
+    })
+    
+    message.success('任务已添加')
+    await loadItems()
+  } catch (error) {
+    message.error('添加任务失败')
+  }
+}
+
+function closeAIDialog() {
+  showAIDialog.value = false
+  aiGoal.value = ''
+  aiSuggestions.value = null
+  aiPrioritization.value = null
+  aiMode.value = 'suggest'
+}
+
+function getPriorityLabel(priority) {
+  const labels = {
+    low: '低',
+    medium: '中',
+    high: '高'
+  }
+  return labels[priority] || priority
+}
 
 // 方法
 const loadLists = async () => {
@@ -1179,5 +1396,178 @@ onMounted(async () => {
     flex-direction: column;
     gap: 0;
   }
+}
+
+/* AI 助手样式 */
+.btn-ai-assist {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  margin-right: 12px;
+  transition: all 0.2s;
+}
+
+.btn-ai-assist:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.ai-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--theme-border);
+  padding-bottom: 2px;
+}
+
+.ai-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.ai-tab.active {
+  border-bottom-color: #667eea;
+  color: #667eea;
+  font-weight: 600;
+}
+
+.ai-content {
+  margin-top: 16px;
+}
+
+.ai-hint {
+  color: var(--theme-text-secondary);
+  font-size: 14px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--theme-bg-soft);
+  border-radius: 6px;
+}
+
+.ai-results {
+  margin-top: 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.ai-reasoning, .ai-advice {
+  background: var(--theme-bg-soft);
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.suggested-tasks, .prioritized-tasks {
+  margin-top: 16px;
+}
+
+.suggested-task, .prioritized-task {
+  background: white;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.prioritized-task {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.task-rank {
+  background: #667eea;
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.task-info {
+  flex: 1;
+}
+
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.task-title {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.task-priority {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.task-priority.low {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.task-priority.medium {
+  background: #fff3e0;
+  color: #f57c00;
+}
+
+.task-priority.high {
+  background: #ffebee;
+  color: #d32f2f;
+}
+
+.task-desc, .task-reasoning {
+  font-size: 13px;
+  color: var(--theme-text-secondary);
+  margin: 8px 0;
+}
+
+.task-due, .task-urgency {
+  font-size: 12px;
+  color: var(--theme-text-tertiary);
+  margin-top: 4px;
+}
+
+.btn-add-suggested {
+  margin-top: 8px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-add-suggested:hover {
+  background: #5568d3;
+}
+
+html.dark .suggested-task,
+html.dark .prioritized-task {
+  background: var(--theme-bg-elevated);
+  border-color: var(--theme-border);
 }
 </style>

@@ -1,9 +1,77 @@
 <template>
   <div class="page-container">
-    <h1 class="page-title"><span class="icon">📝</span> 资金流水</h1>
+    <div class="page-header-row">
+      <h1 class="page-title"><span class="icon">📝</span> 资金流水</h1>
+      <n-button
+        secondary
+        type="info"
+        size="small"
+        @click="showAIInsights"
+        :loading="aiLoading"
+      >
+        <template #icon>
+          <span style="font-size: 16px">🤖</span>
+        </template>
+        AI 分析
+      </n-button>
+    </div>
     
     <!-- 时间范围选择器 -->
     <TimeRangeSelector v-model="timeRange" @change="loadData" />
+    
+    <!-- AI Insights Card -->
+    <n-card v-if="aiInsights" class="card-hover ai-insights-card" style="margin-bottom: 16px">
+      <template #header>
+        <div style="display: flex; align-items: center; justify-content: space-between">
+          <span>🤖 AI 消费洞察</span>
+          <n-button text size="small" @click="aiInsights = null">
+            关闭
+          </n-button>
+        </div>
+      </template>
+      <n-space vertical size="medium">
+        <div>
+          <n-text depth="3" style="font-size: 13px; display: block; margin-bottom: 8px">
+            💡 分析结果
+          </n-text>
+          <n-text>{{ aiInsights.insight }}</n-text>
+        </div>
+        
+        <div v-if="aiInsights.spending_tips.length > 0">
+          <n-text depth="3" style="font-size: 13px; display: block; margin-bottom: 8px">
+            💰 消费建议
+          </n-text>
+          <n-space vertical size="small">
+            <n-tag
+              v-for="(tip, index) in aiInsights.spending_tips"
+              :key="index"
+              type="warning"
+              size="small"
+              :bordered="false"
+            >
+              {{ tip }}
+            </n-tag>
+          </n-space>
+        </div>
+        
+        <div v-if="aiInsights.saving_suggestions.length > 0">
+          <n-text depth="3" style="font-size: 13px; display: block; margin-bottom: 8px">
+            📈 储蓄策略
+          </n-text>
+          <n-space vertical size="small">
+            <n-tag
+              v-for="(suggestion, index) in aiInsights.saving_suggestions"
+              :key="index"
+              type="success"
+              size="small"
+              :bordered="false"
+            >
+              {{ suggestion }}
+            </n-tag>
+          </n-space>
+        </div>
+      </n-space>
+    </n-card>
     
     <n-card class="card-hover">
       <!-- 桌面端：表格 -->
@@ -39,19 +107,22 @@
 
 <script setup lang="ts">
 import { ref, onMounted, h, computed } from 'vue'
-import { NTag } from 'naive-ui'
+import { NTag, useMessage } from 'naive-ui'
 import { storeToRefs } from 'pinia'
-import { transactionApi } from '@/api'
+import { transactionApi, transactionAiApi } from '@/api'
 import { formatShortDateTime } from '@/utils/date'
 import { usePrivacyStore } from '@/stores/privacy'
 import TimeRangeSelector from '@/components/TimeRangeSelector.vue'
 
+const message = useMessage()
 const privacyStore = usePrivacyStore()
 const { privacyMode } = storeToRefs(privacyStore)
 
 const loading = ref(false)
 const transactions = ref<any[]>([])
 const timeRange = ref('month')
+const aiLoading = ref(false)
+const aiInsights = ref<any>(null)
 
 // 格式化金额，支持隐私模式
 const formatAmount = (amount: number) => {
@@ -136,10 +207,45 @@ async function loadData() {
   }
 }
 
+async function showAIInsights() {
+  aiLoading.value = true
+  try {
+    const res = await transactionAiApi.analyze({ time_range: timeRange.value })
+    aiInsights.value = res.data
+    message.success('AI 分析完成')
+  } catch (error: any) {
+    message.error(error.response?.data?.detail || 'AI 分析失败')
+  } finally {
+    aiLoading.value = false
+  }
+}
+
 onMounted(loadData)
 </script>
 
 <style scoped>
+/* Page Header */
+.page-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.page-header-row .page-title {
+  margin-bottom: 0;
+}
+
+/* AI Insights Card */
+.ai-insights-card :deep(.n-card-header) {
+  padding: 14px 18px;
+  font-weight: 600;
+}
+
+.ai-insights-card :deep(.n-card__content) {
+  padding: 16px 18px;
+}
+
 /* 桌面/移动端显示控制 */
 .desktop-only {
   display: block;
@@ -159,6 +265,15 @@ onMounted(loadData)
   
   .page-container {
     padding: 12px;
+  }
+  
+  .page-header-row {
+    flex-direction: row;
+    gap: 12px;
+  }
+  
+  .page-header-row .page-title {
+    font-size: 20px;
   }
   
   :deep(.n-card-header) {
