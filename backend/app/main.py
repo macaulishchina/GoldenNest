@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.limiter import limiter
-from app.api import auth, family, deposit, equity, investment, transaction, achievement, gift, vote, pet, announcement, report, approval, todo, calendar, asset, ai_config, ai_chat
+from app.api import auth, family, deposit, equity, investment, transaction, achievement, gift, vote, pet, announcement, report, approval, todo, calendar, asset, ai_config, ai_chat, bet
 from app.services.notification import set_external_base_url, detect_external_url_from_headers
 
 
@@ -110,6 +110,7 @@ app.include_router(report.router, prefix="/api", tags=["年度报告"])  # 年�
 app.include_router(approval.router, prefix="/api/approval", tags=["通用审批"])  # 通用审批系统
 app.include_router(todo.router, prefix="/api", tags=["家庭清单"])  # 家庭 Todo 清单
 app.include_router(calendar.router, prefix="/api", tags=["共享日历"])  # 共享日历
+app.include_router(bet.router, prefix="/api/bet", tags=["家庭赌注"])  # 家庭赌注系统
 app.include_router(ai_config.router, prefix="/api/ai-config", tags=["AI 配置"])  # AI 服务商管理
 app.include_router(ai_chat.router, prefix="/api", tags=["AI 助手"])  # AI 通用对话助手
 

@@ -818,6 +818,72 @@ class DividendClaim(Base):
     dividend: Mapped["Dividend"] = relationship(back_populates="claims")
 
 
+# ==================== 家庭赌注系统 ====================
+
+class BetStatus(str, enum.Enum):
+    """赌注状态"""
+    DRAFT = "draft"           # 草稿
+    PENDING = "pending"       # 待审批
+    ACTIVE = "active"         # 进行中
+    SETTLED = "settled"       # 已结算
+    CANCELLED = "cancelled"   # 已取消
+
+
+class Bet(Base):
+    """家庭赌注表"""
+    __tablename__ = "bets"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    creator_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text)
+    status: Mapped[BetStatus] = mapped_column(SQLEnum(BetStatus), default=BetStatus.DRAFT)
+    start_date: Mapped[datetime] = mapped_column(DateTime)
+    end_date: Mapped[datetime] = mapped_column(DateTime)
+    settlement_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    approval_request_id: Mapped[Optional[int]] = mapped_column(ForeignKey("approval_requests.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # 关联关系
+    participants: Mapped[List["BetParticipant"]] = relationship(back_populates="bet", cascade="all, delete-orphan")
+    options: Mapped[List["BetOption"]] = relationship(back_populates="bet", cascade="all, delete-orphan")
+
+
+class BetParticipant(Base):
+    """赌注参与者表"""
+    __tablename__ = "bet_participants"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    bet_id: Mapped[int] = mapped_column(ForeignKey("bets.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    selected_option_id: Mapped[Optional[int]] = mapped_column(ForeignKey("bet_options.id"), nullable=True)
+    stake_amount: Mapped[float] = mapped_column(Float, default=0.0)  # 股份押注（可为0）
+    stake_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 其他押注内容
+    is_winner: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    has_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # 关联关系
+    bet: Mapped["Bet"] = relationship(back_populates="participants")
+    user: Mapped["User"] = relationship()
+    selected_option: Mapped[Optional["BetOption"]] = relationship()
+
+
+class BetOption(Base):
+    """赌注选项表"""
+    __tablename__ = "bet_options"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    bet_id: Mapped[int] = mapped_column(ForeignKey("bets.id"))
+    option_text: Mapped[str] = mapped_column(String(200))
+    is_winning_option: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # 关联关系
+    bet: Mapped["Bet"] = relationship(back_populates="options")
+
+
 # ==================== AI 服务商配置模型 ====================
 
 class AIProvider(Base):
