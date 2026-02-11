@@ -115,3 +115,43 @@ class AccountingStatsResponse(BaseModel):
     unaccounted_amount: float
     unaccounted_count: int
     category_stats: List[AccountingCategoryStatsResponse]
+
+
+class DuplicateCheckRequest(BaseModel):
+    """重复检测请求"""
+    entries: List[AccountingEntryCreate] = Field(..., description="待检测的记账条目列表")
+
+
+class DuplicateMatchLevel(str):
+    """重复匹配级别"""
+    EXACT = "exact"           # 完全匹配（时间+金额完全相同）
+    LIKELY = "likely"         # 很可能重复（AI判断相似度高）
+    POSSIBLE = "possible"     # 可能重复（有一定相似性）
+    UNIQUE = "unique"         # 不重复
+
+
+class DuplicateMatch(BaseModel):
+    """重复匹配结果"""
+    existing_entry_id: int = Field(..., description="已存在记账条目的ID")
+    existing_entry: AccountingEntryResponse = Field(..., description="已存在的记账条目详情")
+    match_level: str = Field(..., description="匹配级别: exact/likely/possible/unique")
+    similarity_score: float = Field(..., description="相似度分数 0-1")
+    match_reasons: List[str] = Field(..., description="匹配原因列表")
+
+
+class DuplicateCheckResult(BaseModel):
+    """单个条目的重复检测结果"""
+    index: int = Field(..., description="原始列表中的索引")
+    entry_data: AccountingEntryCreate = Field(..., description="待检测的记账条目数据")
+    is_duplicate: bool = Field(..., description="是否为重复")
+    match_level: str = Field(..., description="匹配级别")
+    duplicates: List[DuplicateMatch] = Field(default_factory=list, description="匹配到的重复条目列表")
+
+
+class DuplicateCheckResponse(BaseModel):
+    """重复检测响应"""
+    results: List[DuplicateCheckResult] = Field(..., description="检测结果列表")
+    exact_duplicates_count: int = Field(..., description="完全匹配的数量")
+    likely_duplicates_count: int = Field(..., description="很可能重复的数量")
+    possible_duplicates_count: int = Field(..., description="可能重复的数量")
+    unique_count: int = Field(..., description="不重复的数量")

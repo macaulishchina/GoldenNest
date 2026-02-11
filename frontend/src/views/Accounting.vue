@@ -246,7 +246,7 @@
           <template #footer>
             <n-space justify="end">
               <n-button @click="showCreateModal = false">取消</n-button>
-              <n-button type="primary" :loading="creating" @click="handleManualCreate">
+              <n-button type="primary" :loading="creating" @click="handleManualCreateWithDuplicateCheck">
                 创建
               </n-button>
             </n-space>
@@ -331,7 +331,7 @@
                 type="primary"
                 :loading="creating"
                 :disabled="!importJson.trim()"
-                @click="handleImportCreate"
+                @click="handleImportCreateWithDuplicateCheck"
               >
                 导入
               </n-button>
@@ -449,6 +449,148 @@
       </template>
     </n-modal>
 
+    <!-- 重复检测确认弹窗 -->
+    <n-modal
+      v-model:show="showDuplicateModal"
+      preset="card"
+      title="⚠️ 检测到可能重复的记账"
+      :style="{ width: isMobile ? '95%' : '700px' }"
+      :segmented="{ content: true }"
+    >
+      <n-space vertical size="large">
+        <n-alert type="warning">
+          检测到 {{ duplicateCheckResults.exact_duplicates_count }} 条完全重复，
+          {{ duplicateCheckResults.likely_duplicates_count }} 条很可能重复，
+          {{ duplicateCheckResults.possible_duplicates_count }} 条可能重复。
+          请确认如何处理这些记录。
+        </n-alert>
+
+        <n-space vertical size="medium">
+          <div v-for="result in duplicateCheckResults.results" :key="result.index">
+            <n-card
+              v-if="result.is_duplicate"
+              :title="`记账 #${result.index + 1}`"
+              size="small"
+              :bordered="true"
+            >
+              <!-- 新记账信息 -->
+              <n-descriptions :column="isMobile ? 1 : 2" size="small">
+                <n-descriptions-item label="金额">
+                  ¥{{ result.entry_data.amount.toFixed(2) }}
+                </n-descriptions-item>
+                <n-descriptions-item label="描述">
+                  {{ result.entry_data.description }}
+                </n-descriptions-item>
+                <n-descriptions-item label="分类">
+                  {{ getCategoryLabel(result.entry_data.category) }}
+                </n-descriptions-item>
+                <n-descriptions-item label="日期">
+                  {{ formatDate(result.entry_data.entry_date) }}
+                </n-descriptions-item>
+              </n-descriptions>
+
+              <!-- 重复匹配信息 -->
+              <n-divider style="margin: 12px 0" />
+              <n-text strong>匹配到 {{ result.duplicates.length }} 条已有记录：</n-text>
+
+              <n-space vertical size="small" style="margin-top: 8px">
+                <n-card
+                  v-for="(dup, dupIndex) in result.duplicates"
+                  :key="dupIndex"
+                  size="small"
+                  embedded
+                >
+                  <template #header>
+                    <n-space align="center">
+                      <n-tag
+                        v-if="dup.match_level === 'exact'"
+                        type="error"
+                        size="small"
+                      >
+                        完全重复
+                      </n-tag>
+                      <n-tag
+                        v-else-if="dup.match_level === 'likely'"
+                        type="warning"
+                        size="small"
+                      >
+                        很可能重复
+                      </n-tag>
+                      <n-tag
+                        v-else
+                        type="info"
+                        size="small"
+                      >
+                        可能重复
+                      </n-tag>
+                      <n-text>相似度: {{ (dup.similarity_score * 100).toFixed(0) }}%</n-text>
+                    </n-space>
+                  </template>
+
+                  <n-space vertical size="small">
+                    <n-text>¥{{ dup.existing_entry.amount.toFixed(2) }} - {{ dup.existing_entry.description }}</n-text>
+                    <n-text depth="3" style="font-size: 12px">
+                      {{ formatDate(dup.existing_entry.entry_date) }} · {{ dup.existing_entry.user_nickname }}
+                    </n-text>
+                    <n-divider style="margin: 4px 0" />
+                    <n-text depth="3" style="font-size: 12px">
+                      匹配原因：{{ dup.match_reasons.join('；') }}
+                    </n-text>
+                  </n-space>
+                </n-card>
+              </n-space>
+
+              <!-- 操作按钮 -->
+              <template #footer>
+                <n-space justify="end">
+                  <n-button
+                    size="small"
+                    @click="handleDuplicateAction(result.index, 'ignore')"
+                  >
+                    忽略重复，仍然记账
+                  </n-button>
+                  <n-button
+                    size="small"
+                    type="error"
+                    @click="handleDuplicateAction(result.index, 'skip')"
+                  >
+                    跳过此条
+                  </n-button>
+                  <n-button
+                    v-if="result.match_level === 'possible'"
+                    size="small"
+                    type="primary"
+                    @click="handleDuplicateAction(result.index, 'ai')"
+                  >
+                    让AI再次判断
+                  </n-button>
+                </n-space>
+              </template>
+            </n-card>
+          </div>
+        </n-space>
+      </n-space>
+
+      <template #footer>
+        <n-space justify="space-between">
+          <n-button @click="handleBatchDuplicateAction('skip-all')">
+            全部跳过重复
+          </n-button>
+          <n-space>
+            <n-button @click="handleBatchDuplicateAction('ignore-all')">
+              全部忽略，继续记账
+            </n-button>
+            <n-button
+              type="primary"
+              @click="handleBatchDuplicateAction('smart')"
+            >
+              智能处理（跳过完全重复，保留其他）
+            </n-button>
+          </n-space>
+        </n-space>
+      </template>
+    </n-modal>
+
     <!-- 查看小票图片弹窗 -->
     <n-modal
       v-model:show="showImageModal"
@@ -511,6 +653,18 @@ const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const showBatchExpenseModal = ref(false)
 const showImageModal = ref(false)
+const showDuplicateModal = ref(false)
+
+// 重复检测相关
+const duplicateCheckResults = ref({
+  results: [],
+  exact_duplicates_count: 0,
+  likely_duplicates_count: 0,
+  possible_duplicates_count: 0,
+  unique_count: 0
+})
+const pendingEntries = ref<any[]>([])  // 待创建的记账条目
+const duplicateActions = ref<Map<number, string>>(new Map())  // 每条记录的处理决定
 
 // 创建方式
 const createMethod = ref('manual')
@@ -914,6 +1068,236 @@ function resetManualForm() {
     consumer_id: null
   }
 }
+
+// ==================== 重复检测功能 ====================
+
+async function checkDuplicates(entries: any[]) {
+  /**
+   * 检查一组记账条目是否重复
+   * @param entries 待检查的记账条目数组
+   * @returns 重复检测结果
+   */
+  try {
+    const { data } = await api.post('/accounting/check-duplicates', { entries })
+    return data
+  } catch (error: any) {
+    console.error('重复检测失败:', error)
+    message.error(error.response?.data?.detail || '重复检测失败')
+    return null
+  }
+}
+
+async function handleManualCreateWithDuplicateCheck() {
+  /**
+   * 手动创建记账（带重复检测）
+   */
+  if (!manualForm.value.amount || !manualForm.value.description) {
+    message.warning('请填写完整信息')
+    return
+  }
+
+  const entryData = {
+    amount: manualForm.value.amount,
+    category: manualForm.value.category,
+    description: manualForm.value.description,
+    entry_date: dayjs(manualForm.value.entry_date).toISOString(),
+    consumer_id: manualForm.value.consumer_id || null
+  }
+
+  // 先检查重复
+  const checkResult = await checkDuplicates([entryData])
+
+  if (!checkResult) {
+    // 检测失败，直接创建
+    await createEntryDirect(entryData)
+    return
+  }
+
+  // 如果有重复，显示确认弹窗
+  if (checkResult.exact_duplicates_count > 0 ||
+      checkResult.likely_duplicates_count > 0 ||
+      checkResult.possible_duplicates_count > 0) {
+    pendingEntries.value = [entryData]
+    duplicateCheckResults.value = checkResult
+    duplicateActions.value.clear()
+    showDuplicateModal.value = true
+  } else {
+    // 没有重复，直接创建
+    await createEntryDirect(entryData)
+  }
+}
+
+async function createEntryDirect(entryData: any) {
+  /**
+   * 直接创建记账条目（不检查重复）
+   */
+  creating.value = true
+  try {
+    await api.post('/accounting/entry', entryData)
+    message.success('记账成功')
+    showCreateModal.value = false
+    showDuplicateModal.value = false
+    resetManualForm()
+    await fetchEntries()
+    await fetchStats()
+  } catch (error: any) {
+    message.error(error.response?.data?.detail || '记账失败')
+  } finally {
+    creating.value = false
+  }
+}
+
+function handleDuplicateAction(index: number, action: 'ignore' | 'skip' | 'ai') {
+  /**
+   * 处理单条记账的重复决定
+   * @param index 记账条目索引
+   * @param action 'ignore'=忽略重复继续记账, 'skip'=跳过此条, 'ai'=让AI再次判断
+   */
+  duplicateActions.value.set(index, action)
+
+  if (action === 'ignore') {
+    // 立即创建这条记账
+    const entryData = pendingEntries.value[index]
+    if (entryData) {
+      createEntryDirect(entryData)
+    }
+  } else if (action === 'skip') {
+    message.info(`已跳过第 ${index + 1} 条记账`)
+  } else if (action === 'ai') {
+    message.info('AI再次判断功能开发中...')
+    // TODO: 调用AI进行更详细的判断
+  }
+}
+
+async function handleBatchDuplicateAction(action: 'skip-all' | 'ignore-all' | 'smart') {
+  /**
+   * 批量处理重复记账
+   * @param action
+   *   - 'skip-all': 全部跳过
+   *   - 'ignore-all': 全部忽略，继续记账
+   *   - 'smart': 智能处理（跳过完全重复，保留其他）
+   */
+  if (action === 'skip-all') {
+    showDuplicateModal.value = false
+    message.info('已跳过所有重复记账')
+  } else if (action === 'ignore-all') {
+    // 全部创建
+    creating.value = true
+    try {
+      for (const entryData of pendingEntries.value) {
+        await api.post('/accounting/entry', entryData)
+      }
+      message.success(`成功创建 ${pendingEntries.value.length} 条记账`)
+      showDuplicateModal.value = false
+      showCreateModal.value = false
+      resetManualForm()
+      await fetchEntries()
+      await fetchStats()
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '批量记账失败')
+    } finally {
+      creating.value = false
+    }
+  } else if (action === 'smart') {
+    // 智能处理：跳过完全重复，创建其他
+    creating.value = true
+    try {
+      let createdCount = 0
+      let skippedCount = 0
+
+      for (let i = 0; i < duplicateCheckResults.value.results.length; i++) {
+        const result = duplicateCheckResults.value.results[i]
+
+        if (result.match_level === 'exact') {
+          // 完全重复，跳过
+          skippedCount++
+        } else {
+          // 其他情况，创建
+          const entryData = pendingEntries.value[i]
+          if (entryData) {
+            await api.post('/accounting/entry', entryData)
+            createdCount++
+          }
+        }
+      }
+
+      message.success(`智能处理完成：创建 ${createdCount} 条，跳过 ${skippedCount} 条重复`)
+      showDuplicateModal.value = false
+      showCreateModal.value = false
+      resetManualForm()
+      await fetchEntries()
+      await fetchStats()
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '智能处理失败')
+    } finally {
+      creating.value = false
+    }
+  }
+}
+
+async function handleImportCreateWithDuplicateCheck() {
+  /**
+   * 批量导入记账（带重复检测）
+   */
+  if (!importJson.value.trim()) {
+    message.warning('请输入JSON数据')
+    return
+  }
+
+  try {
+    const entries = JSON.parse(importJson.value)
+
+    // 先检查重复
+    const checkResult = await checkDuplicates(entries)
+
+    if (!checkResult) {
+      // 检测失败，直接导入
+      await importEntriesDirect(entries)
+      return
+    }
+
+    // 如果有重复，显示确认弹窗
+    if (checkResult.exact_duplicates_count > 0 ||
+        checkResult.likely_duplicates_count > 0 ||
+        checkResult.possible_duplicates_count > 0) {
+      pendingEntries.value = entries
+      duplicateCheckResults.value = checkResult
+      duplicateActions.value.clear()
+      showDuplicateModal.value = true
+    } else {
+      // 没有重复，直接导入
+      await importEntriesDirect(entries)
+    }
+  } catch (error: any) {
+    if (error instanceof SyntaxError) {
+      message.error('JSON格式错误')
+    } else {
+      message.error('解析失败')
+    }
+  }
+}
+
+async function importEntriesDirect(entries: any[]) {
+  /**
+   * 直接导入记账条目（不检查重复）
+   */
+  creating.value = true
+  try {
+    await api.post('/accounting/import', { entries })
+    message.success(`成功导入 ${entries.length} 条记账记录`)
+    showCreateModal.value = false
+    showDuplicateModal.value = false
+    importJson.value = ''
+    await fetchEntries()
+    await fetchStats()
+  } catch (error: any) {
+    message.error(error.response?.data?.detail || '导入失败')
+  } finally {
+    creating.value = false
+  }
+}
+
+// ==================== 原有函数（保留向后兼容） ====================
 
 // 初始化
 onMounted(() => {

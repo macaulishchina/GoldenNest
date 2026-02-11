@@ -249,3 +249,83 @@ async def categorize_entry(description: str, amount: Optional[float] = None) -> 
     except Exception:
         return "other"
 
+
+async def check_duplicate_with_ai(
+    new_entry_description: str,
+    new_entry_amount: float,
+    new_entry_category: str,
+    existing_entry_description: str,
+    existing_entry_amount: float,
+    existing_entry_category: str
+) -> tuple[float, str]:
+    """
+    使用AI判断两条记账记录是否为重复
+
+    Args:
+        new_entry_description: 新记录描述
+        new_entry_amount: 新记录金额
+        new_entry_category: 新记录分类
+        existing_entry_description: 已存在记录描述
+        existing_entry_amount: 已存在记录金额
+        existing_entry_category: 已存在记录分类
+
+    Returns:
+        tuple[float, str]: (相似度分数 0-1, 判断理由)
+    """
+    prompt = f"""请判断以下两条记账记录是否为重复记录，并给出相似度分数（0-1之间）。
+
+新记录：
+- 描述：{new_entry_description}
+- 金额：¥{new_entry_amount}
+- 分类：{new_entry_category}
+
+已存在记录：
+- 描述：{existing_entry_description}
+- 金额：¥{existing_entry_amount}
+- 分类：{existing_entry_category}
+
+请以JSON格式返回判断结果：
+{{
+  "similarity_score": 0.85,
+  "reason": "两条记录的金额相同，描述高度相似，很可能是同一笔消费的重复记录"
+}}
+
+判断标准：
+- 1.0: 完全相同的记录（金额、描述、分类都一致）
+- 0.8-0.9: 很可能是重复（金额相同，描述相似）
+- 0.5-0.7: 可能是重复（金额或描述有一定相似性）
+- 0.0-0.4: 不是重复（差异明显）
+
+注意：
+- 金额完全相同时，相似度至少0.5
+- 描述语义相同但表述不同时（如"超市购物"和"去超市买东西"），也应判定为高相似度
+- 分类不同但金额和描述都相似时，也可能是重复（用户可能选错分类）
+"""
+
+    try:
+        response_text = await ai_service.chat(
+            user_prompt=prompt,
+            system_prompt="你是一个重复检测专家，能够准确判断两条记账记录是否为重复。"
+        )
+
+        # 解析JSON响应
+        import json
+        json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            json_str = response_text
+
+        result = json.loads(json_str)
+        similarity_score = float(result.get("similarity_score", 0.5))
+        reason = str(result.get("reason", "AI判断相似度"))
+
+        # 确保相似度在0-1范围内
+        similarity_score = max(0.0, min(1.0, similarity_score))
+
+        return similarity_score, reason
+
+    except Exception as e:
+        # AI判断失败时，返回保守的相似度
+        return 0.3, f"AI判断失败，请人工确认: {str(e)}"
+
