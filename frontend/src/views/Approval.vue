@@ -611,7 +611,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, h } from 'vue'
+import { ref, onMounted, computed, h, watch } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import { api, approvalApi, investmentApi, familyApi, transactionApi, assetApi } from '@/api'
 import { useUserStore } from '@/stores/user'
@@ -863,6 +863,11 @@ const handleImageSelected = async (event: Event) => {
     imageParseError.value = '读取图片失败'
   }
 }
+
+// 监听表单类型变化，清空图片状态
+watch(() => createForm.value.type, () => {
+  clearImage()
+})
 
 
 const equivalentCNY = computed(() => {
