@@ -414,7 +414,8 @@ import {
   AddOutline,
   CameraOutline,
   ClipboardOutline,
-  CalendarOutline
+  CalendarOutline,
+  DiceOutline
 } from '@vicons/ionicons5'
 import { api } from '@/api'
 
@@ -786,6 +787,11 @@ const menuOptions = computed<MenuOption[]>(() => [
         label: '家庭公告',
         key: 'announcement',
         icon: renderIcon(MegaphoneOutline)
+      },
+      {
+        label: '家庭赌注',
+        key: 'bet',
+        icon: renderIcon(DiceOutline)
       },
       {
         label: '家庭宠物',

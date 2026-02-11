@@ -112,6 +112,11 @@ const router = createRouter({
           component: () => import('@/views/Calendar.vue')
         },
         {
+          path: 'bet',
+          name: 'Bet',
+          component: () => import('@/views/Bet.vue')
+        },
+        {
           path: 'system-settings',
           name: 'SystemSettings',
           component: () => import('@/views/SystemSettings.vue')
