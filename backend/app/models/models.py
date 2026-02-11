@@ -884,6 +884,55 @@ class BetOption(Base):
     bet: Mapped["Bet"] = relationship(back_populates="options")
 
 
+# ==================== 记账系统 ====================
+
+class AccountingCategory(str, enum.Enum):
+    """记账分类"""
+    FOOD = "food"                      # 餐饮
+    TRANSPORT = "transport"            # 交通
+    SHOPPING = "shopping"              # 购物
+    ENTERTAINMENT = "entertainment"    # 娱乐
+    HEALTHCARE = "healthcare"          # 医疗
+    EDUCATION = "education"            # 教育
+    HOUSING = "housing"                # 住房
+    UTILITIES = "utilities"            # 水电煤
+    OTHER = "other"                    # 其他
+
+
+class AccountingEntrySource(str, enum.Enum):
+    """记账来源"""
+    MANUAL = "manual"    # 手动输入
+    PHOTO = "photo"      # 拍照识别
+    VOICE = "voice"      # 语音输入
+    IMPORT = "import"    # 批量导入
+    AUTO = "auto"        # 自动生成
+
+
+class AccountingEntry(Base):
+    """记账条目表"""
+    __tablename__ = "accounting_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))  # 记账人
+    consumer_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)  # 消费人（可为空，表示家庭共同消费）
+    amount: Mapped[float] = mapped_column(Float)
+    category: Mapped[AccountingCategory] = mapped_column(SQLEnum(AccountingCategory))
+    description: Mapped[str] = mapped_column(String(500))
+    entry_date: Mapped[datetime] = mapped_column(DateTime)  # 消费日期
+    source: Mapped[AccountingEntrySource] = mapped_column(SQLEnum(AccountingEntrySource), default=AccountingEntrySource.MANUAL)
+    image_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 照片Base64数据（拍照识别时）
+    is_accounted: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否已入账（转为支出申请）
+    expense_request_id: Mapped[Optional[int]] = mapped_column(ForeignKey("expense_requests.id"), nullable=True)  # 关联的支出申请
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # 关联关系
+    family: Mapped["Family"] = relationship(foreign_keys=[family_id])
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+    consumer: Mapped[Optional["User"]] = relationship(foreign_keys=[consumer_id])
+    expense_request: Mapped[Optional["ExpenseRequest"]] = relationship(foreign_keys=[expense_request_id])
+
+
 # ==================== AI 服务商配置模型 ====================
 
 class AIProvider(Base):
