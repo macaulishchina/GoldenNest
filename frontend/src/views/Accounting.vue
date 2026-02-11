@@ -243,14 +243,12 @@
             </n-form-item>
           </n-form>
 
-          <template #footer>
-            <n-space justify="end">
-              <n-button @click="showCreateModal = false">取消</n-button>
-              <n-button type="primary" :loading="creating" @click="handleManualCreateWithDuplicateCheck">
-                创建
-              </n-button>
-            </n-space>
-          </template>
+          <n-space justify="end" style="margin-top: 16px">
+            <n-button @click="showCreateModal = false">取消</n-button>
+            <n-button type="primary" :loading="creating" @click="handleManualCreateWithDuplicateCheck">
+              创建
+            </n-button>
+          </n-space>
         </n-tab-pane>
 
         <n-tab-pane name="photo" tab="拍照识别">
@@ -284,28 +282,66 @@
             </n-alert>
           </n-space>
 
-          <template #footer>
-            <n-space justify="end">
-              <n-button @click="showCreateModal = false">取消</n-button>
-              <n-button
-                type="primary"
-                :loading="creating"
-                :disabled="!photoFileList.length"
-                @click="handlePhotoCreate"
-              >
-                识别并创建
-              </n-button>
-            </n-space>
-          </template>
+          <n-space justify="end" style="margin-top: 16px">
+            <n-button @click="showCreateModal = false">取消</n-button>
+            <n-button
+              type="primary"
+              :loading="creating"
+              :disabled="!photoFileList.length"
+              @click="handlePhotoCreate"
+            >
+              识别并创建
+            </n-button>
+          </n-space>
         </n-tab-pane>
 
         <n-tab-pane name="voice" tab="语音输入">
-          <n-space vertical size="large" align="center">
-            <n-text depth="3">语音识别功能开发中...</n-text>
+          <n-space vertical size="large" align="center" style="padding: 20px 0">
+            <n-text depth="3">点击麦克风按钮开始录音，说出消费内容</n-text>
             <n-text depth="3">示例："中午吃饭花了38块5"</n-text>
-            <n-button size="large" circle type="primary" disabled>
-              🎤
+
+            <!-- 录音按钮 -->
+            <n-button
+              size="large"
+              circle
+              :type="voiceRecording ? 'error' : 'primary'"
+              :loading="voiceProcessing"
+              @click="toggleVoiceRecording"
+              style="width: 80px; height: 80px; font-size: 32px"
+            >
+              {{ voiceRecording ? '⏹' : '🎤' }}
             </n-button>
+
+            <n-text v-if="voiceRecording" type="error">
+              🔴 录音中... {{ voiceSeconds }}s（点击停止）
+            </n-text>
+            <n-text v-if="voiceProcessing" depth="3">
+              正在识别语音...
+            </n-text>
+
+            <!-- 识别结果 -->
+            <template v-if="voiceResult">
+              <n-divider />
+              <n-alert type="success" title="语音识别结果">
+                <n-space vertical size="small">
+                  <n-text v-if="voiceResult.transcript">原文: {{ voiceResult.transcript }}</n-text>
+                  <n-text>金额: ¥{{ voiceResult.amount?.toFixed(2) || '未识别' }}</n-text>
+                  <n-text>描述: {{ voiceResult.description || '未识别' }}</n-text>
+                  <n-text>分类: {{ getCategoryLabel(voiceResult.category || 'other') }}</n-text>
+                </n-space>
+              </n-alert>
+              <n-space justify="end" style="width: 100%">
+                <n-button @click="voiceResult = null">清除</n-button>
+                <n-button type="primary" :loading="creating" @click="handleVoiceCreate">
+                  确认记账
+                </n-button>
+              </n-space>
+            </template>
+
+            <!-- 不支持提示 -->
+            <n-alert v-if="!voiceSupported" type="warning" title="浏览器不支持">
+              您的浏览器不支持语音录制功能，请使用 Chrome、Edge 等现代浏览器。
+            </n-alert>
           </n-space>
         </n-tab-pane>
 
@@ -324,19 +360,17 @@
             />
           </n-space>
 
-          <template #footer>
-            <n-space justify="end">
-              <n-button @click="showCreateModal = false">取消</n-button>
-              <n-button
-                type="primary"
-                :loading="creating"
-                :disabled="!importJson.trim()"
-                @click="handleImportCreateWithDuplicateCheck"
-              >
-                导入
-              </n-button>
-            </n-space>
-          </template>
+          <n-space justify="end" style="margin-top: 16px">
+            <n-button @click="showCreateModal = false">取消</n-button>
+            <n-button
+              type="primary"
+              :loading="creating"
+              :disabled="!importJson.trim()"
+              @click="handleImportCreateWithDuplicateCheck"
+            >
+              导入
+            </n-button>
+          </n-space>
         </n-tab-pane>
       </n-tabs>
     </n-modal>
@@ -724,6 +758,16 @@ const batchExpenseLoading = ref(false)
 // 查看图片
 const currentImage = ref('')
 
+// 语音录入
+const voiceRecording = ref(false)
+const voiceProcessing = ref(false)
+const voiceSeconds = ref(0)
+const voiceResult = ref<any>(null)
+const voiceSupported = ref(!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia))
+let mediaRecorder: MediaRecorder | null = null
+let audioChunks: Blob[] = []
+let voiceTimer: ReturnType<typeof setInterval> | null = null
+
 // 分类选项
 const categoryOptions = [
   { label: '餐饮', value: 'food' },
@@ -847,6 +891,123 @@ async function fetchFamilyMembers() {
     console.error('获取家庭成员失败:', error)
   }
 }
+
+// ==================== 语音录入功能 ====================
+
+async function toggleVoiceRecording() {
+  if (voiceRecording.value) {
+    stopVoiceRecording()
+  } else {
+    await startVoiceRecording()
+  }
+}
+
+async function startVoiceRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    mediaRecorder = new MediaRecorder(stream)
+    audioChunks = []
+    voiceSeconds.value = 0
+    voiceResult.value = null
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        audioChunks.push(event.data)
+      }
+    }
+
+    mediaRecorder.onstop = async () => {
+      // 停止所有音轨
+      stream.getTracks().forEach(track => track.stop())
+
+      // 合并音频数据
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
+
+      // 转换为 base64
+      const reader = new FileReader()
+      reader.onloadend = async () => {
+        const base64Audio = reader.result as string
+        await sendVoiceToBackend(base64Audio)
+      }
+      reader.readAsDataURL(audioBlob)
+    }
+
+    mediaRecorder.start()
+    voiceRecording.value = true
+
+    // 计时器
+    voiceTimer = setInterval(() => {
+      voiceSeconds.value++
+      // 最长录制60秒
+      if (voiceSeconds.value >= 60) {
+        stopVoiceRecording()
+      }
+    }, 1000)
+
+  } catch (error: any) {
+    if (error.name === 'NotAllowedError') {
+      message.error('请允许麦克风权限以使用语音输入')
+    } else {
+      message.error('无法启动录音: ' + error.message)
+    }
+  }
+}
+
+function stopVoiceRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  }
+  voiceRecording.value = false
+  if (voiceTimer) {
+    clearInterval(voiceTimer)
+    voiceTimer = null
+  }
+}
+
+async function sendVoiceToBackend(base64Audio: string) {
+  voiceProcessing.value = true
+  try {
+    const { data } = await api.post('/accounting/voice', {
+      audio_data: base64Audio
+    })
+    voiceResult.value = data
+    message.success('语音识别成功')
+  } catch (error: any) {
+    message.error(error.response?.data?.detail || '语音识别失败')
+  } finally {
+    voiceProcessing.value = false
+  }
+}
+
+async function handleVoiceCreate() {
+  if (!voiceResult.value || !voiceResult.value.amount) {
+    message.warning('未识别到有效金额')
+    return
+  }
+
+  creating.value = true
+  try {
+    await api.post('/accounting/entry', {
+      amount: voiceResult.value.amount,
+      category: voiceResult.value.category || 'other',
+      description: voiceResult.value.description || voiceResult.value.transcript || '语音记账',
+      entry_date: dayjs().toISOString(),
+      consumer_id: null
+    })
+
+    message.success('语音记账成功')
+    voiceResult.value = null
+    showCreateModal.value = false
+    await fetchEntries()
+    await fetchStats()
+  } catch (error: any) {
+    message.error(error.response?.data?.detail || '记账失败')
+  } finally {
+    creating.value = false
+  }
+}
+
+// ==================== 手动记账功能 ====================
 
 async function handleManualCreate() {
   if (!manualForm.value.amount || !manualForm.value.description) {

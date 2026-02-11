@@ -23,6 +23,8 @@ class TransactionType(str, enum.Enum):
     UNFREEZE = "unfreeze"        # 解冻（投票未通过时）
     INVESTMENT_BUY = "investment_buy"       # 投资买入（从自由资金购买理财）
     INVESTMENT_REDEEM = "investment_redeem" # 投资赎回（理财赎回到自由资金）
+    BET_WIN = "bet_win"                    # 赌注获胜（股权增加）
+    BET_LOSE = "bet_lose"                  # 赌注失败（股权减少）
 
 
 class ExpenseStatus(str, enum.Enum):
@@ -824,7 +826,9 @@ class BetStatus(str, enum.Enum):
     """赌注状态"""
     DRAFT = "draft"           # 草稿
     PENDING = "pending"       # 待审批
-    ACTIVE = "active"         # 进行中
+    ACTIVE = "active"         # 进行中（下注阶段）
+    AWAITING_RESULT = "awaiting_result"  # 等待结果登记（截止后，创建者登记结果）
+    RESULT_PENDING = "result_pending"    # 结果待确认（参与者审批中）
     SETTLED = "settled"       # 已结算
     CANCELLED = "cancelled"   # 已取消
 
@@ -840,14 +844,15 @@ class Bet(Base):
     description: Mapped[str] = mapped_column(Text)
     status: Mapped[BetStatus] = mapped_column(SQLEnum(BetStatus), default=BetStatus.DRAFT)
     start_date: Mapped[datetime] = mapped_column(DateTime)
-    end_date: Mapped[datetime] = mapped_column(DateTime)
+    end_date: Mapped[datetime] = mapped_column(DateTime)  # 下注截止时间
     settlement_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    declared_winning_option_id: Mapped[Optional[int]] = mapped_column(ForeignKey("bet_options.id", use_alter=True), nullable=True)  # 创建者登记的获胜选项
     approval_request_id: Mapped[Optional[int]] = mapped_column(ForeignKey("approval_requests.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # 关联关系
     participants: Mapped[List["BetParticipant"]] = relationship(back_populates="bet", cascade="all, delete-orphan")
-    options: Mapped[List["BetOption"]] = relationship(back_populates="bet", cascade="all, delete-orphan")
+    options: Mapped[List["BetOption"]] = relationship(back_populates="bet", cascade="all, delete-orphan", foreign_keys="[BetOption.bet_id]")
 
 
 class BetParticipant(Base):
@@ -881,7 +886,7 @@ class BetOption(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # 关联关系
-    bet: Mapped["Bet"] = relationship(back_populates="options")
+    bet: Mapped["Bet"] = relationship(back_populates="options", foreign_keys=[bet_id])
 
 
 # ==================== 记账系统 ====================

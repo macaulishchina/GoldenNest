@@ -21,6 +21,15 @@
       <div v-if="showMenu" class="character-menu" @click.stop>
         <div class="menu-header">选择助手形象</div>
         <div class="character-options">
+          <!-- Pet character option (uses real pet data) -->
+          <div
+            class="character-option"
+            :class="{ active: selectedCharacter === 'pet' }"
+            @click="selectCharacter('pet')"
+          >
+            <span class="option-emoji">{{ petInfo ? (petEmojiMap[petInfo.pet_type] || '🥚') : '🥚' }}</span>
+            <span class="option-name">{{ petInfo ? petInfo.name : '宠物' }}<span v-if="petInfo" style="font-size: 11px; opacity: 0.6; margin-left: 4px;">（宠物对话）</span></span>
+          </div>
           <div
             v-for="(char, key) in characters"
             :key="key"
@@ -50,11 +59,11 @@
     <!-- AI Chat Dialog -->
     <AIChatDialog
       v-model:show="showChat"
-      :title="`${currentCharacter.name} AI 助手`"
+      :title="isPetMode ? `💬 与${currentCharacter.name}对话` : `${currentCharacter.name} AI 助手`"
       :ai-name="currentCharacter.name"
-      context-type="general"
+      :context-type="isPetMode ? 'pet' : 'general'"
       :suggestions="chatSuggestions"
-      :on-chat="handleChat"
+      :on-chat="isPetMode ? handlePetChat : handleChat"
     />
   </div>
 </template>
@@ -63,7 +72,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import AIChatDialog from './AIChatDialog.vue'
-import { api } from '@/api'
+import { api, petAiApi } from '@/api'
 
 interface Character {
   emoji: string
@@ -85,10 +94,28 @@ const characters: Record<string, Character> = {
   dragon: { emoji: '🐉', name: '小龙' }
 }
 
+// Pet data
+interface PetInfo {
+  name: string
+  pet_type: string
+  happiness: number
+  checked_in_today: boolean
+}
+const petInfo = ref<PetInfo | null>(null)
+
+// Pet type → emoji mapping (same as Pet.vue evolutionStages)
+const petEmojiMap: Record<string, string> = {
+  golden_egg: '🥚',
+  golden_chick: '🐣',
+  golden_bird: '🐤',
+  golden_phoenix: '🦅',
+  golden_dragon: '🐉'
+}
+
 // State
 const isMobile = ref(window.innerWidth < 768)
 const showOnMobile = ref(true)
-const selectedCharacter = ref<string>('cat')
+const selectedCharacter = ref<string>('pet')
 const position = ref<Position>({ x: 20, y: window.innerHeight - 120 })
 const isDragging = ref(false)
 const dragOffset = ref<Position>({ x: 0, y: 0 })
@@ -97,19 +124,47 @@ const showMenu = ref(false)
 const isMinimized = ref(false)
 const longPressTimer = ref<number | null>(null)
 
-// Chat suggestions
-const chatSuggestions = ref([
-  '今天的家庭财务情况如何？',
-  '帮我分析一下投资组合',
-  '最近有哪些未完成的任务？',
-  '给我一些理财建议'
-])
+// Whether current character mode uses pet chat API
+const isPetMode = computed(() => selectedCharacter.value === 'pet')
 
-const currentCharacter = computed(() => characters[selectedCharacter.value])
+// Chat suggestions - different for pet mode vs general AI mode
+const chatSuggestions = computed(() => {
+  if (isPetMode.value) {
+    const suggestions = ['你好', '今天心情怎么样']
+    if (petInfo.value && petInfo.value.happiness < 50) {
+      suggestions.push('怎么不开心了')
+    }
+    if (petInfo.value && !petInfo.value.checked_in_today) {
+      suggestions.push('一起签到吧')
+    }
+    return suggestions
+  }
+  return [
+    '今天的家庭财务情况如何？',
+    '帮我分析一下投资组合',
+    '最近有哪些未完成的任务？',
+    '给我一些理财建议'
+  ]
+})
+
+// Current character display (pet mode uses real pet info)
+const currentCharacter = computed(() => {
+  if (selectedCharacter.value === 'pet' && petInfo.value) {
+    return {
+      emoji: petEmojiMap[petInfo.value.pet_type] || '🥚',
+      name: petInfo.value.name
+    }
+  }
+  if (selectedCharacter.value === 'pet') {
+    return { emoji: '🥚', name: '宠物' }
+  }
+  return characters[selectedCharacter.value]
+})
 
 // Load saved preferences from localStorage
 onMounted(() => {
   loadPreferences()
+  loadPetInfo()
   window.addEventListener('resize', handleResize)
   document.addEventListener('mousemove', handleDragMove)
   document.addEventListener('touchmove', handleDragMove, { passive: false })
@@ -129,12 +184,30 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 
+// Load pet info from server
+async function loadPetInfo() {
+  try {
+    const res = await api.get('/pet')
+    if (res.data) {
+      petInfo.value = {
+        name: res.data.name,
+        pet_type: res.data.pet_type,
+        happiness: res.data.happiness,
+        checked_in_today: res.data.checked_in_today
+      }
+    }
+  } catch {
+    // No pet or failed to load — keep petInfo null
+    petInfo.value = null
+  }
+}
+
 function loadPreferences() {
   try {
     const saved = localStorage.getItem('floatingAssistant')
     if (saved) {
       const prefs = JSON.parse(saved)
-      if (prefs.character && characters[prefs.character]) {
+      if (prefs.character && (characters[prefs.character] || prefs.character === 'pet')) {
         selectedCharacter.value = prefs.character
       }
       if (prefs.position) {
@@ -262,7 +335,10 @@ function handleClickOutside(e: MouseEvent) {
 function selectCharacter(key: string) {
   selectedCharacter.value = key
   savePreferences()
-  message.success(`已切换至 ${characters[key].name}`)
+  const name = key === 'pet'
+    ? (petInfo.value?.name || '宠物')
+    : characters[key].name
+  message.success(`已切换至 ${name}`)
   closeMenu()
 }
 
@@ -297,6 +373,23 @@ async function handleChat(userMessage: string): Promise<{ reply: string; suggest
   } catch (error: any) {
     console.error('Chat error:', error)
     throw new Error(error.response?.data?.detail || 'AI 服务暂时不可用')
+  }
+}
+
+async function handlePetChat(userMessage: string, history: any[] = []): Promise<{ reply: string; suggestions?: string[] }> {
+  try {
+    const response = await petAiApi.chat({
+      message: userMessage,
+      history: history
+    })
+
+    return {
+      reply: response.data.reply,
+      suggestions: []
+    }
+  } catch (error: any) {
+    console.error('Pet chat error:', error)
+    throw new Error(error.response?.data?.detail || '宠物对话服务暂时不可用')
   }
 }
 </script>

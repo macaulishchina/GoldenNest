@@ -104,6 +104,14 @@ class NotificationType(str, Enum):
     VOTE_PASSED = "vote_passed"                      # 投票通过
     VOTE_REJECTED = "vote_rejected"                  # 投票被拒绝
     
+    # 赌注相关
+    BET_CREATED = "bet_created"                  # 新赌注创建
+    BET_VOTED = "bet_voted"                      # 参与者投票
+    BET_AWAITING_RESULT = "bet_awaiting_result"  # 等待登记结果
+    BET_RESULT_DECLARED = "bet_result_declared"  # 结果已登记待确认
+    BET_SETTLED = "bet_settled"                  # 赌注已结算
+    BET_CANCELLED = "bet_cancelled"              # 赌注已取消
+    
     # 其他通知类型（预留扩展）
     MEMBER_JOINED = "member_joined"              # 新成员加入
     MEMBER_REMOVED = "member_removed"            # 成员被移除
@@ -128,6 +136,7 @@ class NotificationContext:
     request_id: Optional[int] = None       # 审批请求 ID，用于生成详情链接
     gift_id: Optional[int] = None          # 股权赠送 ID，用于生成详情链接
     proposal_id: Optional[int] = None      # 投票提案 ID，用于生成详情链接
+    bet_id: Optional[int] = None           # 赌注 ID，用于生成详情链接
     voter_name: Optional[str] = None       # 投票人名称
     vote_option: Optional[str] = None      # 投票选项
     base_url: Optional[str] = None         # 外网基础 URL
@@ -154,6 +163,12 @@ class NotificationContext:
         if self.base_url and self.proposal_id:
             # 前端路由：/vote?id=xxx
             return f"{self.base_url}/vote?highlight={self.proposal_id}"
+        return None
+    
+    def get_bet_url(self) -> Optional[str]:
+        """获取赌注详情页面 URL"""
+        if self.base_url and self.bet_id:
+            return f"{self.base_url}/bet?highlight={self.bet_id}"
         return None
 
 
@@ -216,6 +231,13 @@ class WeChatWorkChannel(NotificationChannel):
         NotificationType.VOTE_CAST: "✅ 成员已投票",
         NotificationType.VOTE_PASSED: "🎉 投票通过",
         NotificationType.VOTE_REJECTED: "❌ 投票未通过",
+        # 赌注相关
+        NotificationType.BET_CREATED: "🎲 新赌注",
+        NotificationType.BET_VOTED: "✅ 已投票",
+        NotificationType.BET_AWAITING_RESULT: "⏳ 等待登记结果",
+        NotificationType.BET_RESULT_DECLARED: "📝 结果已登记",
+        NotificationType.BET_SETTLED: "🏆 赌注已结算",
+        NotificationType.BET_CANCELLED: "🚫 赌注已取消",
         # 宠物
         NotificationType.PET_EVOLVED: "🎊 宠物进化",
     }
@@ -293,10 +315,22 @@ class WeChatWorkChannel(NotificationChannel):
             NotificationType.VOTE_REJECTED,
         }
         
+        # 判断是否为赌注通知
+        bet_types = {
+            NotificationType.BET_CREATED,
+            NotificationType.BET_VOTED,
+            NotificationType.BET_AWAITING_RESULT,
+            NotificationType.BET_RESULT_DECLARED,
+            NotificationType.BET_SETTLED,
+            NotificationType.BET_CANCELLED,
+        }
+        
         if context.notification_type in gift_types:
             return self._build_gift_markdown(context)
         elif context.notification_type in vote_types:
             return self._build_vote_markdown(context)
+        elif context.notification_type in bet_types:
+            return self._build_bet_markdown(context)
         else:
             return self._build_approval_markdown(context)
     
@@ -418,6 +452,47 @@ class WeChatWorkChannel(NotificationChannel):
         elif context.notification_type == NotificationType.VOTE_PASSED:
             lines.append("")
             lines.append("<font color=\"info\">提案已自动执行</font>")
+        
+        return "\n".join(lines)
+    
+    def _build_bet_markdown(self, context: NotificationContext) -> str:
+        """构建赌注通知的 Markdown 消息"""
+        status_label = self.STATUS_LABELS.get(context.notification_type, "🎲 赌注")
+        
+        lines = [
+            f"### {status_label}",
+            f"**{context.title}**",
+            "",
+        ]
+        
+        lines.append(f"> 家庭：{context.family_name}")
+        
+        if context.requester_name:
+            lines.append(f"> 发起人：{context.requester_name}")
+        
+        if context.notification_type == NotificationType.BET_VOTED and context.voter_name:
+            lines.append(f"> 投票人：<font color=\"info\">{context.voter_name}</font>")
+            if context.vote_option:
+                lines.append(f"> 选择：<font color=\"warning\">{context.vote_option}</font>")
+        
+        if context.amount and context.amount > 0:
+            lines.append(f"> 涉及金额：<font color=\"warning\">¥{context.amount:,.2f}</font>")
+        
+        if context.content:
+            lines.append("")
+            lines.append(context.content)
+        
+        bet_url = context.get_bet_url()
+        if bet_url:
+            lines.append("")
+            lines.append(f"📎 [查看详情]({bet_url})")
+        
+        if context.notification_type == NotificationType.BET_CREATED:
+            lines.append("")
+            if bet_url:
+                lines.append("<font color=\"info\">点击上方链接参与投票</font>")
+            else:
+                lines.append("<font color=\"info\">请登录小金库参与投票</font>")
         
         return "\n".join(lines)
     
@@ -843,6 +918,74 @@ class NotificationService:
         
         await self._send_to_all_channels(context)
     
+    async def notify_bet_created(
+        self,
+        bet,  # Bet对象
+        creator: User,
+        family: Family,
+        participants_names: List[str]
+    ) -> None:
+        """通知：新赌注创建"""
+        content = f"{bet.description}\n\n参与者：{'、'.join(participants_names)}"
+        
+        context = NotificationContext(
+            notification_type=NotificationType.BET_CREATED,
+            family_id=family.id,
+            family_name=family.name,
+            title=bet.title,
+            content=content,
+            requester_name=creator.nickname,
+            bet_id=bet.id,
+            base_url=get_external_base_url(),
+        )
+        
+        await self._send_to_all_channels(context)
+    
+    async def notify_bet_voted(
+        self,
+        bet,  # Bet对象
+        voter: User,
+        option_text: str,
+        family: Family
+    ) -> None:
+        """通知：赌注投票"""
+        context = NotificationContext(
+            notification_type=NotificationType.BET_VOTED,
+            family_id=family.id,
+            family_name=family.name,
+            title=bet.title,
+            content=f"{voter.nickname} 已对赌注投票",
+            requester_name=None,
+            voter_name=voter.nickname,
+            vote_option=option_text,
+            bet_id=bet.id,
+            base_url=get_external_base_url(),
+        )
+        
+        await self._send_to_all_channels(context)
+    
+    async def notify_bet_status_change(
+        self,
+        bet,  # Bet对象
+        notification_type: NotificationType,
+        family: Family,
+        creator_name: str,
+        content: str = ""
+    ) -> None:
+        """通知：赌注状态变更（截止投票、结果登记、结算、取消）"""
+        context = NotificationContext(
+            notification_type=notification_type,
+            family_id=family.id,
+            family_name=family.name,
+            title=bet.title,
+            content=content,
+            requester_name=creator_name,
+            bet_id=bet.id,
+            base_url=get_external_base_url(),
+        )
+        
+        await self._send_to_all_channels(context)
+    
     async def _send_to_all_channels(self, context: NotificationContext) -> None:
         """
         向所有已配置的渠道发送通知
@@ -1053,3 +1196,50 @@ async def send_pet_evolved_notification(
 
     except Exception as e:
         logging.error(f"Failed to send pet evolution notification: {e}")
+
+
+async def send_bet_notification(
+    db: AsyncSession,
+    notification_type: NotificationType,
+    bet,  # Bet对象
+    creator_name: str = "",
+    participants_names: List[str] = None,
+    voter: User = None,
+    option_text: str = "",
+    content: str = ""
+) -> None:
+    """
+    发送赌注通知的便捷函数
+    
+    适用于：赌注创建、投票、截止、结果登记、结算、取消
+    """
+    try:
+        result = await db.execute(
+            select(Family).where(Family.id == bet.family_id)
+        )
+        family = result.scalar_one_or_none()
+        if not family:
+            return
+
+        service = NotificationService(db)
+
+        if notification_type == NotificationType.BET_CREATED:
+            # 获取创建者
+            creator_result = await db.execute(
+                select(User).where(User.id == bet.creator_id)
+            )
+            creator = creator_result.scalar_one_or_none()
+            if creator:
+                await service.notify_bet_created(
+                    bet, creator, family, participants_names or []
+                )
+        elif notification_type == NotificationType.BET_VOTED and voter:
+            await service.notify_bet_voted(bet, voter, option_text, family)
+        else:
+            # 通用状态变更通知
+            await service.notify_bet_status_change(
+                bet, notification_type, family, creator_name, content
+            )
+
+    except Exception as e:
+        logging.error(f"Failed to send bet notification: {e}")

@@ -66,12 +66,11 @@ class BetBase(BaseModel):
     """赌注基础"""
     title: str = Field(..., max_length=200, description="赌注标题")
     description: str = Field(..., description="赌注描述")
-    start_date: datetime = Field(..., description="开始日期")
-    end_date: datetime = Field(..., description="结束日期")
 
 
 class BetCreate(BetBase):
     """创建赌注请求"""
+    deadline_hours: float = Field(..., gt=0, description="下注截止倒计时（小时）")
     options: List[BetOptionCreate] = Field(..., min_length=2, description="赌注选项（至少2个）")
     participants: List[BetParticipantCreate] = Field(..., min_length=2, description="参与者（至少2人）")
 
@@ -80,8 +79,6 @@ class BetUpdate(BaseModel):
     """更新赌注请求"""
     title: Optional[str] = Field(None, max_length=200)
     description: Optional[str] = None
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
 
 
 class BetResponse(BetBase):
@@ -90,7 +87,10 @@ class BetResponse(BetBase):
     family_id: int
     creator_id: int
     status: str
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     settlement_date: Optional[datetime] = None
+    declared_winning_option_id: Optional[int] = None
     approval_request_id: Optional[int] = None
     created_at: datetime
 
@@ -102,6 +102,7 @@ class BetResponse(BetBase):
     creator_nickname: Optional[str] = None
     is_expired: bool = False
     can_settle: bool = False
+    voted_count: int = 0
 
     class Config:
         from_attributes = True

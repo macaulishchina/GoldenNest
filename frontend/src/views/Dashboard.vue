@@ -6,18 +6,6 @@
         仪表盘
       </h1>
       <div class="header-actions">
-        <n-button
-          secondary
-          type="info"
-          size="small"
-          @click="showAIChat = true"
-          class="ai-chat-btn"
-        >
-          <template #icon>
-            <span style="font-size: 16px">🤖</span>
-          </template>
-          AI 助手
-        </n-button>
         <button class="privacy-toggle" @click="togglePrivacy" :title="privacyMode ? '显示金额' : '隐藏金额'">
           <svg v-if="privacyMode" class="privacy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
@@ -31,19 +19,7 @@
       </div>
     </div>
     
-    <!-- AI Chat Dialog -->
-    <AIChatDialog
-      v-model:show="showAIChat"
-      title="💰 财务 AI 助手"
-      ai-name="小金助手"
-      context-type="dashboard"
-      :suggestions="[
-        '分析我的储蓄习惯',
-        '如何提高家庭资产增长率',
-        '给我一些理财建议'
-      ]"
-      :on-chat="handleAIChat"
-    />
+
     
     <template v-if="hasFamily">
       <!-- 储蓄目标 -->
@@ -255,11 +231,10 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { equityApi, familyApi, transactionApi, investmentApi, aiChatApi } from '@/api'
+import { equityApi, familyApi, transactionApi, investmentApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { usePrivacyStore } from '@/stores/privacy'
 import UserAvatar from '@/components/UserAvatar.vue'
-import AIChatDialog from '@/components/AIChatDialog.vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -279,7 +254,6 @@ const equity = ref<any>(null)
 const hasFamily = ref(false)
 const balance = ref(0) // 当前余额
 const investmentSummary = ref<any>(null) // 理财汇总
-const showAIChat = ref(false)
 const showSavingsHelp = ref(false) // 储蓄说明展开状态
 const showEquityDetail = ref(false) // 股权详情展开状态
 
@@ -463,18 +437,6 @@ function getProgressColor(percentage: number) {
 
 function goToInvestment() {
   router.push('/investment')
-}
-
-async function handleAIChat(message: string, history: any[] = []) {
-  const response = await aiChatApi.chat({
-    message,
-    context_type: 'dashboard',
-    history: history
-  })
-  return {
-    reply: response.data.reply,
-    suggestions: response.data.suggestions
-  }
 }
 
 async function loadData() {

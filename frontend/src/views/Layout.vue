@@ -321,7 +321,14 @@
           
           <!-- 🌟 生活协作 -->
           <div class="drawer-section">
-            <div class="drawer-section-title">🌟 生活协作</div>
+            <div class="drawer-section-title">🌟 生活协作
+              <n-badge
+                v-if="betStore.pendingCount > 0"
+                dot
+                type="error"
+                class="drawer-title-dot"
+              />
+            </div>
             <div class="drawer-menu-items">
               <div class="drawer-menu-item" @click="navigateAndClose('/todo')">
                 <n-icon :size="20"><ClipboardOutline /></n-icon>
@@ -334,6 +341,21 @@
               <div class="drawer-menu-item" @click="navigateAndClose('/announcement')">
                 <n-icon :size="20"><MegaphoneOutline /></n-icon>
                 <span>家庭公告</span>
+              </div>
+              <div class="drawer-menu-item" @click="navigateAndClose('/bet')">
+                <n-icon :size="20"><DiceOutline /></n-icon>
+                <span>家庭赌注</span>
+                <n-badge
+                  v-if="betStore.pendingCount > 0"
+                  :value="betStore.pendingCount"
+                  :max="99"
+                  type="error"
+                  style="margin-left: auto"
+                />
+              </div>
+              <div class="drawer-menu-item" @click="navigateAndClose('/accounting')">
+                <n-icon :size="20"><WalletOutline /></n-icon>
+                <span>家庭记账</span>
               </div>
               <div class="drawer-menu-item" @click="navigateAndClose('/pet')">
                 <n-icon :size="20"><PawOutline /></n-icon>
@@ -381,6 +403,7 @@ import { useUserStore } from '@/stores/user'
 import { useApprovalStore } from '@/stores/approval'
 import { useVoteStore } from '@/stores/vote'
 import { useGiftStore } from '@/stores/gift'
+import { useBetStore } from '@/stores/bet'
 import { familyApi } from '@/api'
 import { getHolidayGreeting } from '@/utils/holiday'
 import { compressImage, getAvatarColor } from '@/utils/avatar'
@@ -426,6 +449,7 @@ const userStore = useUserStore()
 const approvalStore = useApprovalStore()
 const voteStore = useVoteStore()
 const giftStore = useGiftStore()
+const betStore = useBetStore()
 
 const collapsed = ref(false)
 const family = ref<any>(null)
@@ -466,6 +490,8 @@ const availableModules = [
   { key: 'todo', label: '清单', icon: markRaw(ClipboardOutline) },
   { key: 'calendar', label: '日历', icon: markRaw(CalendarOutline) },
   { key: 'announcement', label: '公告', icon: markRaw(MegaphoneOutline) },
+  { key: 'bet', label: '赌注', icon: markRaw(DiceOutline) },
+  { key: 'accounting', label: '记账', icon: markRaw(WalletOutline) },
   { key: 'achievement', label: '成就', icon: markRaw(TrophyOutline) }
 ]
 
@@ -481,6 +507,8 @@ const shortcutBadgeValue = computed(() => {
       return approvalStore.pendingCount || 0
     case 'vote':
       return voteStore.pendingCount || 0
+    case 'bet':
+      return betStore.pendingCount || 0
     default:
       return 0
   }
@@ -619,12 +647,14 @@ const badgeState = computed(() => ({
   approval: approvalStore.pendingCount || 0,
   gift: giftStore.pendingCount || 0,
   vote: voteStore.pendingCount || 0,
+  bet: betStore.pendingCount || 0,
   'finance-group': approvalStore.pendingCount || 0,
-  'governance-group': Math.max(voteStore.pendingCount || 0, giftStore.pendingCount || 0)
+  'governance-group': Math.max(voteStore.pendingCount || 0, giftStore.pendingCount || 0),
+  'life-group': betStore.pendingCount || 0
 }))
 
 const drawerHasPending = computed(() =>
-  hasPending('finance-group') || hasPending('governance-group')
+  hasPending('finance-group') || hasPending('governance-group') || hasPending('life-group')
 )
 
 function hasPending(key?: string) {
@@ -771,7 +801,7 @@ const menuOptions = computed<MenuOption[]>(() => [
   {
     label: '生活协作',
     key: 'life-group',
-    icon: renderIcon(CalendarOutline),
+    icon: renderIcon(CalendarOutline, 'life-group'),
     children: [
       {
         label: '家庭清单',
@@ -789,7 +819,7 @@ const menuOptions = computed<MenuOption[]>(() => [
         icon: renderIcon(MegaphoneOutline)
       },
       {
-        label: '家庭赌注',
+        label: createBadgeLabel('家庭赌注', () => betStore.pendingCount),
         key: 'bet',
         icon: renderIcon(DiceOutline)
       },
@@ -951,6 +981,10 @@ onMounted(async () => {
     await giftStore.fetchPendingCount()
     // 启动轮询（保底机制）
     giftStore.startPolling()
+    
+    // 初始加载赌注徽章计数
+    await betStore.fetchPendingCount()
+    betStore.startPolling()
   }
 })
 
@@ -961,6 +995,7 @@ watch(() => route.path, async () => {
     await approvalStore.refreshNow()
     await voteStore.refreshNow()
     await giftStore.refreshNow()
+    await betStore.refreshNow()
   }
 })
 
@@ -970,6 +1005,7 @@ onUnmounted(() => {
   approvalStore.stopPolling()
   voteStore.stopPolling()
   giftStore.stopPolling()
+  betStore.stopPolling()
 })
 </script>
 

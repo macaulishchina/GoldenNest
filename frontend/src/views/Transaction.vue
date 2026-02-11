@@ -140,7 +140,9 @@ const typeMap: Record<string, { color: string, label: string }> = {
   investment_buy: { color: 'var(--theme-warning)', label: '投资买入' },
   investment_redeem: { color: 'var(--theme-success)', label: '投资赎回' },
   freeze: { color: 'var(--theme-border)', label: '冻结' },
-  unfreeze: { color: 'var(--theme-border)', label: '解冻' }
+  unfreeze: { color: 'var(--theme-border)', label: '解冻' },
+  bet_win: { color: 'var(--theme-success)', label: '赌注获胜' },
+  bet_lose: { color: 'var(--theme-error)', label: '赌注失败' }
 }
 
 const columns = computed(() => [
@@ -168,7 +170,9 @@ function getCardClass(type: string) {
     income: 'income-card',
     dividend: 'dividend-card',
     investment_buy: 'investment-card',
-    investment_redeem: 'deposit-card'
+    investment_redeem: 'deposit-card',
+    bet_win: 'deposit-card',
+    bet_lose: 'withdraw-card'
   }
   return classMap[type] || ''
 }
@@ -192,7 +196,9 @@ function getTagType(type: string) {
     investment_buy: 'warning',
     investment_redeem: 'success',
     freeze: 'default',
-    unfreeze: 'default'
+    unfreeze: 'default',
+    bet_win: 'success',
+    bet_lose: 'error'
   }
   return tagMap[type] || 'default'
 }
