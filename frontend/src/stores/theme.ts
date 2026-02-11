@@ -142,7 +142,6 @@ export const useThemeStore = defineStore('theme', () => {
 
   // 设置主题
   const setTheme = (theme: ThemeMode) => {
-    console.log('切换主题:', currentTheme.value, '->', theme)
     currentTheme.value = theme
     localStorage.setItem('theme', theme)
     
@@ -151,8 +150,6 @@ export const useThemeStore = defineStore('theme', () => {
     
     // 设置 CSS 变量到 document root
     applyThemeVariables(theme)
-    
-    console.log('body className:', document.body.className)
   }
 
   // 应用主题 CSS 变量

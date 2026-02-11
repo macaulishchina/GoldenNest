@@ -23,7 +23,6 @@ const themeStore = useThemeStore()
 
 // 监听主题变化，更新 body 类名
 watch(() => themeStore.currentTheme, (newTheme) => {
-  console.log('App.vue 检测到主题变化:', newTheme)
   document.body.className = `theme-${newTheme}`
 }, { immediate: true })
 

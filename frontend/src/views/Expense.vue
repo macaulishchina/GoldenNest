@@ -605,18 +605,18 @@ onMounted(async () => {
   }
 
   .expense-card.status-pending {
-    background: linear-gradient(135deg, var(--theme-warning-bg) 0%, #fef3c7 100%);
-    border-color: #fde68a;
+    background: var(--theme-warning-bg);
+    border-color: var(--theme-warning-light, #fde68a);
   }
 
   .expense-card.status-approved {
-    background: linear-gradient(135deg, var(--theme-success-bg) 0%, #dcfce7 100%);
-    border-color: #86efac;
+    background: var(--theme-success-bg);
+    border-color: var(--theme-success-light, #86efac);
   }
 
   .expense-card.status-rejected {
-    background: linear-gradient(135deg, var(--theme-error-bg) 0%, #fecaca 100%);
-    border-color: #fca5a5;
+    background: var(--theme-error-bg);
+    border-color: var(--theme-error-light, #fca5a5);
   }
 
   .expense-card-header {
@@ -639,7 +639,7 @@ onMounted(async () => {
   .expense-amount {
     font-size: 20px;
     font-weight: 700;
-    color: #0f172a;
+    color: var(--theme-text-primary, #0f172a);
     margin-bottom: 4px;
   }
 
@@ -669,7 +669,7 @@ onMounted(async () => {
 
   .expense-requester {
     font-size: 13px;
-    color: #475569;
+    color: var(--theme-text-secondary, #475569);
   }
 
   .expense-time {
@@ -796,7 +796,7 @@ onMounted(async () => {
   
   .ratio-name {
     font-size: 13px;
-    color: #374151;
+    color: var(--theme-text-primary, #374151);
     min-width: 60px;
     flex-shrink: 0;
   }
@@ -817,7 +817,7 @@ onMounted(async () => {
   
   .ratio-value {
     font-size: 13px;
-    color: #374151;
+    color: var(--theme-text-primary, #374151);
     font-weight: 600;
     min-width: 36px;
     text-align: right;

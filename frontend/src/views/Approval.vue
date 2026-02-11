@@ -1680,7 +1680,7 @@ onMounted(() => {
 
 .btn-remind-small {
   padding: 4px 10px;
-  background: #f59e0b;
+  background: var(--theme-warning, #f59e0b);
   color: white;
   border: none;
   border-radius: 12px;
@@ -1709,12 +1709,12 @@ onMounted(() => {
   font-weight: 600;
 }
 
-.type-deposit { background: #dbeafe; color: #1d4ed8; }
-.type-investment { background: #dcfce7; color: #16a34a; }
-.type-income { background: #fef3c7; color: #d97706; }
-.type-expense { background: #fee2e2; color: #dc2626; }
-.type-member-join { background: #e0e7ff; color: #4f46e5; }
-.type-member-remove { background: #fce7f3; color: #db2777; }
+.type-deposit { background: var(--theme-info-bg, #dbeafe); color: var(--theme-info, #1d4ed8); }
+.type-investment { background: var(--theme-success-bg, #dcfce7); color: var(--theme-success, #16a34a); }
+.type-income { background: var(--theme-warning-bg, #fef3c7); color: var(--theme-warning, #d97706); }
+.type-expense { background: var(--theme-error-bg, #fee2e2); color: var(--theme-error, #dc2626); }
+.type-member-join { background: var(--theme-info-bg, #e0e7ff); color: var(--theme-purple, #4f46e5); }
+.type-member-remove { background: var(--theme-error-bg, #fce7f3); color: var(--theme-error, #db2777); }
 
 .status-badge {
   padding: 4px 12px;
@@ -1723,11 +1723,11 @@ onMounted(() => {
   font-weight: 600;
 }
 
-.status-badge.pending { background: #fef3c7; color: #d97706; }
-.status-badge.approved { background: #dcfce7; color: #16a34a; }
-.status-badge.rejected { background: #fee2e2; color: #dc2626; }
-.status-badge.cancelled { background: #f3f4f6; color: #6b7280; }
-.status-badge.failed { background: #fef3c7; color: #d97706; border: 1px solid #f59e0b; }
+.status-badge.pending { background: var(--theme-warning-bg, #fef3c7); color: var(--theme-warning, #d97706); }
+.status-badge.approved { background: var(--theme-success-bg, #dcfce7); color: var(--theme-success, #16a34a); }
+.status-badge.rejected { background: var(--theme-error-bg, #fee2e2); color: var(--theme-error, #dc2626); }
+.status-badge.cancelled { background: var(--theme-bg-secondary, #f3f4f6); color: var(--theme-text-secondary, #6b7280); }
+.status-badge.failed { background: var(--theme-warning-bg, #fef3c7); color: var(--theme-warning, #d97706); border: 1px solid var(--theme-warning, #f59e0b); }
 
 .card-body h3 {
   margin: 0 0 8px 0;
@@ -1744,7 +1744,7 @@ onMounted(() => {
   display: flex;
   gap: 16px;
   font-size: 13px;
-  color: #888;
+  color: var(--theme-text-tertiary, #888);
   margin-bottom: 12px;
 }
 
@@ -1754,8 +1754,8 @@ onMounted(() => {
   align-items: flex-start;
   gap: 8px;
   padding: 12px 16px;
-  background: linear-gradient(135deg, #fef3c7, #fed7aa);
-  border-left: 4px solid #f59e0b;
+  background: var(--theme-warning-bg, linear-gradient(135deg, #fef3c7, #fed7aa));
+  border-left: 4px solid var(--theme-warning, #f59e0b);
   border-radius: 8px;
   margin-bottom: 12px;
 }
@@ -1768,24 +1768,24 @@ onMounted(() => {
 
 .failure-text {
   font-size: 14px;
-  color: #92400e;
+  color: var(--theme-warning, #92400e);
   font-weight: 500;
   line-height: 1.4;
 }
 
 /* 支付比例分配 - 桌面端卡片式布局 */
 .payment-ratios {
-  background: linear-gradient(135deg, #fef9e7, #fef3c7);
+  background: var(--theme-warning-bg, linear-gradient(135deg, #fef9e7, #fef3c7));
   border-radius: 16px;
   padding: 20px;
   margin: 16px 0;
-  border: 1px solid rgba(251, 191, 36, 0.2);
+  border: 1px solid var(--theme-border-light, rgba(251, 191, 36, 0.2));
 }
 
 .ratios-header {
   font-size: 14px;
   font-weight: 600;
-  color: #92400e;
+  color: var(--theme-warning, #92400e);
   margin-bottom: 16px;
   display: flex;
   align-items: center;
@@ -1824,7 +1824,7 @@ onMounted(() => {
 .member-name {
   font-size: 14px;
   font-weight: 600;
-  color: #374151;
+  color: var(--theme-text-primary, #374151);
 }
 
 /* 桌面端：比例和金额组合靠右 */
@@ -1846,8 +1846,8 @@ onMounted(() => {
 .ratio-text {
   font-size: 13px;
   font-weight: 600;
-  color: #b45309;
-  background: #fef3c7;
+  color: var(--theme-warning, #b45309);
+  background: var(--theme-warning-bg, #fef3c7);
   padding: 4px 10px;
   border-radius: 6px;
   min-width: unset;
@@ -1856,7 +1856,7 @@ onMounted(() => {
 .amount-text {
   font-size: 15px;
   font-weight: 700;
-  color: #16a34a;
+  color: var(--theme-success, #16a34a);
   min-width: 90px;
   text-align: right;
 }
@@ -1911,7 +1911,7 @@ onMounted(() => {
   .ratio-suffix {
     display: inline;
     font-size: 12px;
-    color: #d97706;
+    color: var(--theme-warning, #d97706);
     font-weight: 500;
   }
 
@@ -1925,7 +1925,7 @@ onMounted(() => {
 .progress-bar {
   position: relative;
   height: 24px;
-  background: #f3f4f6;
+  background: var(--theme-bg-secondary, #f3f4f6);
   border-radius: 12px;
   overflow: hidden;
   margin-top: 12px;
@@ -1933,7 +1933,7 @@ onMounted(() => {
 
 .progress {
   height: 100%;
-  background: linear-gradient(135deg, #10b981, #34d399);
+  background: linear-gradient(135deg, var(--theme-success, #10b981), var(--theme-success-light, #34d399));
   transition: width 0.3s ease;
 }
 
@@ -1945,13 +1945,13 @@ onMounted(() => {
   justify-content: center;
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: var(--theme-text-primary, #374151);
 }
 
 .approval-records {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px dashed #e5e7eb;
+  border-top: 1px dashed var(--theme-border, #e5e7eb);
 }
 
 .record {
@@ -1961,10 +1961,10 @@ onMounted(() => {
   margin-bottom: 4px;
 }
 
-.record .approved { color: #16a34a; }
-.record .rejected { color: #dc2626; }
+.record .approved { color: var(--theme-success, #16a34a); }
+.record .rejected { color: var(--theme-error, #dc2626); }
 .record .approver { font-weight: 600; margin-left: 4px; }
-.record .comment { color: #666; }
+.record .comment { color: var(--theme-text-tertiary, #666); }
 
 /* 申请人/审批人头像样式 */
 .requester-info,
@@ -1979,13 +1979,13 @@ onMounted(() => {
   gap: 12px;
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid var(--theme-border-light, #f3f4f6);
 }
 
 .btn-approve {
   flex: 1;
   padding: 12px;
-  background: #10b981;
+  background: var(--theme-success, #10b981);
   color: white;
   border: none;
   border-radius: 8px;
@@ -2006,7 +2006,7 @@ onMounted(() => {
 .btn-reject {
   flex: 1;
   padding: 12px;
-  background: #ef4444;
+  background: var(--theme-error, #ef4444);
   color: white;
   border: none;
   border-radius: 8px;
@@ -2060,8 +2060,8 @@ onMounted(() => {
 
 .btn-cancel {
   padding: 10px 20px;
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--theme-bg-secondary, #f3f4f6);
+  color: var(--theme-text-primary, #374151);
   border: none;
   border-radius: 8px;
   font-weight: 500;
@@ -2069,7 +2069,7 @@ onMounted(() => {
   transition: background 0.2s;
 }
 
-.btn-cancel:hover { background: #e5e7eb; }
+.btn-cancel:hover { background: var(--theme-border, #e5e7eb); }
 
 .btn-retry {
   padding: 10px 20px;
@@ -2123,7 +2123,7 @@ onMounted(() => {
 .loading, .empty {
   text-align: center;
   padding: 48px;
-  color: #888;
+  color: var(--theme-text-tertiary, #888);
 }
 
 /* 弹窗 */
@@ -2275,21 +2275,21 @@ onMounted(() => {
 
 .info-text {
   padding: 8px 12px;
-  background: #f3f4f6;
+  background: var(--theme-bg-secondary, #f3f4f6);
   border-radius: 6px;
   font-size: 14px;
-  color: #374151;
+  color: var(--theme-text-primary, #374151);
   font-weight: 600;
 }
 
 .info-text.success {
-  color: #10b981;
-  background: #d1fae5;
+  color: var(--theme-success, #10b981);
+  background: var(--theme-success-bg, #d1fae5);
 }
 
 .info-text.error {
-  color: #ef4444;
-  background: #fee2e2;
+  color: var(--theme-error, #ef4444);
+  background: var(--theme-error-bg, #fee2e2);
 }
 
 .type-selector {
@@ -2347,7 +2347,7 @@ onMounted(() => {
 
 /* 支出比例列表（弹窗用） */
 .ratio-list {
-  background: #f9fafb;
+  background: var(--theme-bg-secondary, #f9fafb);
   border-radius: 8px;
   padding: 12px;
 }
@@ -2357,7 +2357,7 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   padding: 8px 0;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--theme-border, #e5e7eb);
 }
 
 .ratio-list .ratio-input-item:last-child {
@@ -2367,7 +2367,7 @@ onMounted(() => {
 .member-name {
   flex: 1;
   font-weight: 500;
-  color: #374151;
+  color: var(--theme-text-primary, #374151);
 }
 
 .ratio-input {
@@ -2377,23 +2377,23 @@ onMounted(() => {
 }
 
 .ratio-unit {
-  color: #666;
+  color: var(--theme-text-secondary, #666);
   font-size: 14px;
 }
 
 .ratio-summary {
   margin-top: 12px;
   padding: 10px;
-  background: #dcfce7;
+  background: var(--theme-success-bg, #dcfce7);
   border-radius: 8px;
   text-align: center;
   font-weight: 600;
-  color: #16a34a;
+  color: var(--theme-success, #16a34a);
 }
 
 .ratio-summary.error {
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--theme-error-bg, #fee2e2);
+  color: var(--theme-error, #dc2626);
 }
 
 /* 响应式 */
@@ -2559,7 +2559,7 @@ onMounted(() => {
     transform: translateX(-50%);
     width: 36px;
     height: 4px;
-    background: #d1d5db;
+    background: var(--theme-border, #d1d5db);
     border-radius: 2px;
   }
   
@@ -2696,9 +2696,9 @@ onMounted(() => {
 
 .parse-success {
   padding: 10px 12px;
-  background: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
+  background: var(--theme-success-bg, #d4edda);
+  color: var(--theme-success, #155724);
+  border: 1px solid var(--theme-success-light, #c3e6cb);
   border-radius: 6px;
   font-size: 13px;
   display: inline-flex;
@@ -2708,9 +2708,9 @@ onMounted(() => {
 
 .parse-error {
   padding: 10px 12px;
-  background: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
+  background: var(--theme-error-bg, #f8d7da);
+  color: var(--theme-error, #721c24);
+  border: 1px solid var(--theme-error-light, #f5c6cb);
   border-radius: 6px;
   font-size: 13px;
   display: inline-flex;

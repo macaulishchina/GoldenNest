@@ -81,6 +81,7 @@ class AIService:
         user_prompt: str,
         *,
         system_prompt: str = "",
+        history: list = None,
         model: str = "",
         max_tokens: int = 2000,
         temperature: float = 0.7,
@@ -91,13 +92,14 @@ class AIService:
         Args:
             user_prompt: 用户输入
             system_prompt: 系统提示词（可选）
+            history: 历史对话列表 [{"role": "user"/"assistant", "content": "..."}]（可选）
             model: 覆盖默认模型（可选）
             max_tokens: 最大输出 token 数
             temperature: 生成温度
         Returns:
             AI 回复的文本内容
         """
-        messages = self._build_messages(system_prompt, user_prompt)
+        messages = self._build_messages_with_history(system_prompt, user_prompt, history)
         return await self._call_chat(
             messages=messages,
             model=model,
@@ -156,6 +158,7 @@ class AIService:
         user_prompt: str,
         *,
         system_prompt: str = "",
+        history: list = None,
         model: str = "",
         max_tokens: int = 2000,
         temperature: float = 0.1,
@@ -169,6 +172,7 @@ class AIService:
         raw = await self.chat(
             user_prompt,
             system_prompt=system_prompt,
+            history=history,
             model=model,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -333,6 +337,21 @@ class AIService:
         msgs: List[Dict[str, str]] = []
         if system_prompt:
             msgs.append({"role": "system", "content": system_prompt})
+        msgs.append({"role": "user", "content": user_prompt})
+        return msgs
+
+    @staticmethod
+    def _build_messages_with_history(
+        system_prompt: str, user_prompt: str, history: Optional[List[Dict[str, str]]] = None
+    ) -> List[Dict[str, str]]:
+        """构建带历史对话的 messages 列表"""
+        msgs: List[Dict[str, str]] = []
+        if system_prompt:
+            msgs.append({"role": "system", "content": system_prompt})
+        if history:
+            for h in history:
+                if h.get("role") in ("user", "assistant") and h.get("content"):
+                    msgs.append({"role": h["role"], "content": h["content"]})
         msgs.append({"role": "user", "content": user_prompt})
         return msgs
 

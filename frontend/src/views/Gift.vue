@@ -243,7 +243,7 @@
                 </div>
                 
                 <div v-if="gift.message" class="gift-message">
-                  <n-card size="small" style="background: #fffbe6; border: 1px dashed #ffe58f">
+                  <n-card size="small" :style="{ background: 'var(--theme-warning-bg)', border: '1px dashed var(--theme-warning-light)' }">
                     💌 {{ gift.message }}
                   </n-card>
                 </div>
@@ -297,7 +297,7 @@
                 </div>
                 
                 <div v-if="gift.message" class="gift-message">
-                  <n-card size="small" style="background: #f6ffed; border: 1px dashed #b7eb8f">
+                  <n-card size="small" :style="{ background: 'var(--theme-success-bg)', border: '1px dashed var(--theme-success-light)' }">
                     💌 {{ gift.message }}
                   </n-card>
                 </div>
@@ -599,7 +599,7 @@ onMounted(() => {
 
 .sender-name {
   font-weight: 600;
-  color: #1890ff;
+  color: var(--theme-info, #1890ff);
 }
 
 .gift-time {

@@ -2207,6 +2207,7 @@ async def grant_pet_exp(db: AsyncSession, family_id: int, source: str, multiplie
 class PetChatRequest(BaseModel):
     """宠物对话请求"""
     message: str
+    history: list = []
 
 
 class PetChatResponse(BaseModel):
@@ -2225,8 +2226,10 @@ async def chat_with_pet(
     """
     与宠物对话 - AI 赋予宠物独特的个性和语言风格
     宠物会根据当前状态、进化阶段、心情等做出不同反应
+    宠物根据对话内容自主判断是否需要查询主人的财务数据
     """
     from app.services.ai_service import ai_service
+    from app.services.ai_tools import build_tool_selection_prompt, execute_tools
     
     if not ai_service.is_configured:
         raise HTTPException(status_code=503, detail="AI 服务暂未配置")
@@ -2251,11 +2254,45 @@ async def chat_with_pet(
         current_happiness = max(0, current_happiness - days_since_played * 5)
     
     mood = "开心" if current_happiness >= 80 else "一般" if current_happiness >= 50 else "低落"
-    
-    # 获取签到连续天数
     checkin_streak = pet.checkin_streak
     
-    # 构建宠物人格和状态描述
+    # 构建历史对话
+    history = [
+        {"role": h.get("role", "user"), "content": h.get("content", "")}
+        for h in request.history[-20:]
+    ] if request.history else None
+
+    # ===== Phase 1: AI 判断是否需要查询数据 =====
+    tool_data = ""
+    try:
+        tool_prompt = build_tool_selection_prompt(request.message)
+        recent_history = (history or [])[-6:]
+        tool_decision = await ai_service.chat_json(
+            user_prompt=f"用户的问题是：{request.message}",
+            system_prompt=tool_prompt,
+            history=recent_history if recent_history else None,
+            temperature=0.1,
+        )
+        logger.info(f"Pet chat tool decision: {tool_decision}")
+
+        if tool_decision and tool_decision.get("needs_data") and tool_decision.get("tools"):
+            valid_tools = [t for t in tool_decision["tools"] if isinstance(t, str)][:5]
+            if valid_tools:
+                # ===== Phase 2: 执行查询 =====
+                tool_data = await execute_tools(valid_tools, db, current_user, family_id)
+                logger.info(f"Pet chat tools executed: {valid_tools}")
+    except Exception as e:
+        logger.warning(f"Pet chat tool selection failed (non-fatal): {e}")
+    
+    # ===== Phase 3: 构建宠物人格 + 查询数据 → 生成回复 =====
+    data_section = ""
+    if tool_data:
+        data_section = f"""
+
+以下是根据主人问题实时查询到的财务数据，请基于这些数据用宠物语气准确回答：
+{tool_data}
+"""
+
     system_prompt = f"""你是一只名叫"{pet.name}"的家庭理财宠物，当前形态是"{pet_config['name']}" {pet_config['emoji']}。
 
 你的基本属性：
@@ -2268,13 +2305,17 @@ async def chat_with_pet(
 你的性格特点：
 {_get_pet_personality(pet.pet_type, pet.level)}
 
+主人昵称：{current_user.nickname}
+{data_section}
 与用户对话时：
 1. 保持角色一致性，使用第一人称"我"
 2. 根据当前心情调整语气（开心时更活泼，低落时略显疲惫）
 3. 偶尔提到自己的状态（饿了、想玩游戏、需要休息等）
-4. 鼓励用户养成良好的理财习惯
-5. 回复简短有趣，50字以内
-6. 使用emoji表达情感
+4. 当有查询数据时，必须基于数据准确回答，用宠物的可爱语气描述
+5. 当没有查询数据且主人问具体数字时，可以说"让我查查看"，引导主人再说具体一点
+6. 鼓励用户养成良好的理财习惯
+7. 回复简短有趣，100字以内
+8. 使用emoji表达情感
 
 输出JSON格式：
 {{
@@ -2290,11 +2331,11 @@ async def chat_with_pet(
         result_json = await ai_service.chat_json(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
-            temperature=0.9  # 更高的温度让对话更有趣
+            history=history,
+            temperature=0.9
         )
         
         if not result_json:
-            # 降级方案：返回预设回复
             return PetChatResponse(
                 reply=f"咕咕~ 我是{pet.name}，很高兴和你聊天！{pet_config['emoji']}",
                 emotion="happy"
@@ -2307,7 +2348,6 @@ async def chat_with_pet(
         )
     except Exception as e:
         logger.error(f"Pet chat AI error: {e}", exc_info=True)
-        # 降级方案
         return PetChatResponse(
             reply=f"{pet_config['emoji']} 我有点累了，待会再聊好吗？",
             emotion="neutral"

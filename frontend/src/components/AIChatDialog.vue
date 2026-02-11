@@ -2,12 +2,24 @@
   <n-modal
     v-model:show="showModal"
     preset="card"
-    :title="title"
     :style="{ width: isMobile ? '95%' : '600px', maxHeight: '80vh' }"
     :segmented="{ content: true }"
     @close="handleClose"
   >
-    <n-scrollbar :style="{ maxHeight: isMobile ? '60vh' : '500px' }">
+    <template #header>
+      <n-space justify="space-between" align="center" style="width: 100%">
+        <span>{{ title }}</span>
+        <n-button
+          v-if="messages.length > 0"
+          quaternary
+          size="small"
+          @click="handleReset"
+        >
+          🔄 新对话
+        </n-button>
+      </n-space>
+    </template>
+    <n-scrollbar ref="scrollbarRef" :style="{ maxHeight: isMobile ? '60vh' : '500px' }">
       <n-space vertical size="large">
         <!-- 对话历史 -->
         <n-space vertical size="medium">
@@ -15,14 +27,17 @@
             v-for="(msg, index) in messages"
             :key="index"
             :class="['chat-message', msg.role]"
+            :style="msg.role === 'user' ? userBubbleStyle : {}"
           >
             <div class="message-header">
-              <n-text :depth="3" style="font-size: 12px">
+              <n-text :depth="3" :style="msg.role === 'user' ? { fontSize: '12px', color: isDark ? 'rgba(255,255,255,0.75)' : undefined } : { fontSize: '12px' }">
                 {{ msg.role === 'user' ? '我' : aiName }}
               </n-text>
             </div>
             <div class="message-content">
-              <n-text>{{ msg.content }}</n-text>
+              <n-text :style="msg.role === 'user' && isDark ? { color: '#ffffff' } : {}">
+                {{ msg.content }}
+              </n-text>
             </div>
           </div>
         </n-space>
@@ -65,9 +80,10 @@
           @keydown.enter.prevent="handleEnterKey"
         />
         <n-space justify="space-between">
-          <n-text :depth="3" style="font-size: 12px">
+          <n-text v-if="!isMobile" :depth="3" style="font-size: 12px">
             提示：按 Ctrl+Enter 发送
           </n-text>
+          <div v-else></div>
           <n-button
             type="primary"
             :loading="loading"
@@ -83,8 +99,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useMessage } from 'naive-ui'
+import { useThemeStore } from '@/stores/theme'
+import { useUserStore } from '@/stores/user'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -97,7 +115,7 @@ interface Props {
   aiName?: string
   contextType?: string
   suggestions?: string[]
-  onChat: (message: string) => Promise<{ reply: string; suggestions?: string[] }>
+  onChat: (message: string, history: Message[]) => Promise<{ reply: string; suggestions?: string[] }>
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -117,15 +135,70 @@ const showModal = computed({
   set: (val) => emit('update:show', val)
 })
 
+const themeStore = useThemeStore()
+const userStore = useUserStore()
+const isDark = computed(() => themeStore.currentTheme === 'dark')
+const userBubbleStyle = computed(() => {
+  if (isDark.value) {
+    return { backgroundColor: '#0d9668', color: '#ffffff' }
+  }
+  return {}
+})
+
 const isMobile = ref(window.innerWidth < 768)
+const scrollbarRef = ref<any>(null)
 const messages = ref<Message[]>([])
 const inputMessage = ref('')
 const loading = ref(false)
 const currentSuggestions = ref<string[]>([...props.suggestions])
 
+// localStorage 持久化 key
+const storageKey = computed(() => {
+  const userId = userStore.user?.id || 'anonymous'
+  return `ai_chat_${userId}_${props.contextType}`
+})
+
+// 从 localStorage 加载历史消息
+function loadMessages() {
+  try {
+    const saved = localStorage.getItem(storageKey.value)
+    if (saved) {
+      messages.value = JSON.parse(saved)
+    }
+  } catch {
+    messages.value = []
+  }
+}
+
+// 保存消息到 localStorage
+function saveMessages() {
+  try {
+    // 最多保存最近 50 条消息
+    const toSave = messages.value.slice(-50)
+    localStorage.setItem(storageKey.value, JSON.stringify(toSave))
+  } catch {
+    // localStorage 满了则忽略
+  }
+}
+
+// 滚动到底部
+function scrollToBottom() {
+  nextTick(() => {
+    scrollbarRef.value?.scrollTo({ top: 99999, behavior: 'smooth' })
+  })
+}
+
 // 响应式监听窗口大小
 window.addEventListener('resize', () => {
   isMobile.value = window.innerWidth < 768
+})
+
+// 监听对话框打开时加载历史
+watch(() => props.show, (val) => {
+  if (val) {
+    loadMessages()
+    scrollToBottom()
+  }
 })
 
 // 监听建议变化
@@ -146,17 +219,23 @@ async function sendMessage(msg: string) {
     role: 'user',
     content: userMessage
   })
+  saveMessages()
+  scrollToBottom()
 
   loading.value = true
 
   try {
-    const response = await props.onChat(userMessage)
+    // 传递历史消息（最多最近 10 轮对话作为上下文）
+    const historyForAI = messages.value.slice(0, -1).slice(-20)
+    const response = await props.onChat(userMessage, historyForAI)
     
     // 添加 AI 回复
     messages.value.push({
       role: 'assistant',
       content: response.reply
     })
+    saveMessages()
+    scrollToBottom()
 
     // 更新建议
     if (response.suggestions && response.suggestions.length > 0) {
@@ -166,6 +245,7 @@ async function sendMessage(msg: string) {
     message.error(error.response?.data?.detail || 'AI 服务暂时不可用')
     // 移除用户消息（因为发送失败）
     messages.value.pop()
+    saveMessages()
   } finally {
     loading.value = false
   }
@@ -183,11 +263,16 @@ function handleEnterKey(e: KeyboardEvent) {
   }
 }
 
-function handleClose() {
-  // 清空对话历史
+function handleReset() {
   messages.value = []
   inputMessage.value = ''
   currentSuggestions.value = [...props.suggestions]
+  saveMessages()
+}
+
+function handleClose() {
+  // 关闭时不清空，保留对话历史
+  inputMessage.value = ''
 }
 </script>
 
@@ -218,12 +303,5 @@ function handleClose() {
   line-height: 1.6;
 }
 
-/* 深色模式适配 */
-html.dark .chat-message.user {
-  background-color: rgba(99, 226, 183, 0.15);
-}
 
-html.dark .chat-message.assistant {
-  background-color: rgba(255, 255, 255, 0.08);
-}
 </style>

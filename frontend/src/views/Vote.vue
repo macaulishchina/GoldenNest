@@ -662,19 +662,19 @@ onMounted(() => {
 }
 
 .proposal-card.status-voting {
-  border-left-color: #4caf50;
+  border-left-color: var(--theme-success, #4caf50);
 }
 
 .proposal-card.status-passed {
-  border-left-color: #2196f3;
+  border-left-color: var(--theme-info, #2196f3);
 }
 
 .proposal-card.status-rejected {
-  border-left-color: #f44336;
+  border-left-color: var(--theme-error, #f44336);
 }
 
 .proposal-card.status-expired {
-  border-left-color: #9e9e9e;
+  border-left-color: var(--theme-text-tertiary, #9e9e9e);
 }
 
 .proposal-header {
@@ -692,23 +692,23 @@ onMounted(() => {
 }
 
 .status-badge.voting {
-  background: #e8f5e9;
-  color: #4caf50;
+  background: var(--theme-success-bg, #e8f5e9);
+  color: var(--theme-success, #4caf50);
 }
 
 .status-badge.passed {
-  background: #e3f2fd;
-  color: #2196f3;
+  background: var(--theme-info-bg, #e3f2fd);
+  color: var(--theme-info, #2196f3);
 }
 
 .status-badge.rejected {
-  background: #ffebee;
-  color: #f44336;
+  background: var(--theme-error-bg, #ffebee);
+  color: var(--theme-error, #f44336);
 }
 
 .status-badge.expired {
-  background: #fafafa;
-  color: #9e9e9e;
+  background: var(--theme-bg-secondary, #fafafa);
+  color: var(--theme-text-tertiary, #9e9e9e);
 }
 
 .proposal-date {
@@ -753,18 +753,18 @@ onMounted(() => {
 
 .progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, #4caf50, #8bc34a);
+  background: linear-gradient(90deg, var(--theme-success, #4caf50), var(--theme-success-light, #8bc34a));
   border-radius: 3px;
   transition: width 0.3s;
 }
 
 .my-vote {
   font-size: 13px;
-  color: #4caf50;
+  color: var(--theme-success, #4caf50);
 }
 
 .my-vote.pending {
-  color: #ff9800;
+  color: var(--theme-warning, #ff9800);
 }
 
 /* Modal Styles */
@@ -844,7 +844,7 @@ onMounted(() => {
 }
 
 .btn-remove {
-  background: #f44336;
+  background: var(--theme-error, #f44336);
   color: white;
   border: none;
   width: 36px;
@@ -891,7 +891,7 @@ onMounted(() => {
 
 .btn-submit {
   padding: 10px 20px;
-  background: #667eea;
+  background: var(--theme-purple, #667eea);
   color: white;
   border: none;
   border-radius: 8px;
@@ -917,7 +917,7 @@ onMounted(() => {
 }
 
 .detail-body .description {
-  color: #555;
+  color: var(--theme-text-secondary, #555);
   line-height: 1.6;
   margin-bottom: 16px;
 }
@@ -1000,7 +1000,7 @@ onMounted(() => {
 .btn-vote {
   width: 100%;
   padding: 10px;
-  background: #667eea;
+  background: var(--theme-purple, #667eea);
   color: white;
   border: none;
   border-radius: 6px;
@@ -1042,7 +1042,7 @@ onMounted(() => {
 }
 
 .result-bar.winner .result-fill.agree {
-  background: linear-gradient(90deg, #4caf50, #81c784);
+  background: linear-gradient(90deg, var(--theme-success, #4caf50), var(--theme-success-light, #81c784));
 }
 
 .result-label {
@@ -1067,11 +1067,11 @@ onMounted(() => {
 }
 
 .result-fill.agree {
-  background: linear-gradient(90deg, #66bb6a, #a5d6a7);
+  background: linear-gradient(90deg, var(--theme-success, #66bb6a), var(--theme-success-light, #a5d6a7));
 }
 
 .result-fill.disagree {
-  background: linear-gradient(90deg, #ef5350, #e57373);
+  background: linear-gradient(90deg, var(--theme-error, #ef5350), var(--theme-error-light, #e57373));
 }
 
 /* 详情页发起人头像 */

@@ -24,7 +24,7 @@
 
       <!-- 服务商列表 -->
       <n-spin :show="loading">
-        <div v-if="providers.length === 0 && !loading" style="text-align: center; padding: 40px; color: #999">
+        <div v-if="providers.length === 0 && !loading" style="text-align: center; padding: 40px; color: var(--theme-text-tertiary)">
           暂无已配置的 AI 服务商，点击右上角「添加服务商」开始配置
         </div>
         
@@ -140,7 +140,7 @@
     <!-- 模型选择 Modal -->
     <n-modal v-model:show="showModelModal" title="选择模型" preset="dialog" style="width: 600px">
       <n-spin :show="modelsLoading">
-        <div v-if="modelList.length === 0 && !modelsLoading" style="text-align: center; padding: 20px; color: #999">
+        <div v-if="modelList.length === 0 && !modelsLoading" style="text-align: center; padding: 20px; color: var(--theme-text-tertiary)">
           无法获取模型列表，请检查 API Key 和 Base URL 是否正确
         </div>
 
@@ -440,7 +440,7 @@ onMounted(() => {
   flex-direction: column;
   gap: 4px;
   font-size: 13px;
-  color: #666;
+  color: var(--theme-text-secondary, #666);
 }
 
 .info-row {
@@ -450,7 +450,7 @@ onMounted(() => {
 }
 
 .info-label {
-  color: #999;
+  color: var(--theme-text-tertiary, #999);
   min-width: 70px;
   flex-shrink: 0;
 }
@@ -489,7 +489,7 @@ onMounted(() => {
 
 .model-owner {
   font-size: 12px;
-  color: #999;
+  color: var(--theme-text-tertiary, #999);
 }
 
 @media (max-width: 768px) {

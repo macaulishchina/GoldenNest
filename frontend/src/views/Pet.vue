@@ -145,6 +145,7 @@
         v-model:show="showPetChat"
         :title="`💬 与${pet.name}对话`"
         :ai-name="pet.name"
+        context-type="pet"
         :suggestions="getPetChatSuggestions()"
         :on-chat="handlePetChat"
       />
@@ -614,9 +615,10 @@ const checkin = async () => {
 }
 
 // AI Pet Chat
-const handlePetChat = async (messageText) => {
+const handlePetChat = async (messageText, history = []) => {
   const response = await petAiApi.chat({
-    message: messageText
+    message: messageText,
+    history: history
   })
   return {
     reply: response.data.reply,
@@ -975,7 +977,7 @@ onMounted(() => {
   display: inline-block;
   width: 40px;
   height: 40px;
-  border: 4px solid #f3f3f3;
+  border: 4px solid var(--theme-border-light, #f3f3f3);
   border-top: 4px solid #ffc107;
   border-radius: 50%;
   animation: spin 1s linear infinite;
@@ -1285,8 +1287,8 @@ onMounted(() => {
 }
 
 .multiplier-high {
-  background: #e8f5e9;
-  color: #2e7d32;
+  background: var(--theme-success-bg, #e8f5e9);
+  color: var(--theme-success, #2e7d32);
 }
 
 .multiplier-normal {
@@ -1920,7 +1922,7 @@ onMounted(() => {
 .tips-box h4 {
   margin: 0 0 10px 0;
   font-size: 14px;
-  color: #856404;
+  color: var(--theme-warning, #856404);
 }
 
 .tips-box ul {
@@ -1952,7 +1954,7 @@ onMounted(() => {
 .spinner-small {
   width: 16px;
   height: 16px;
-  border: 2px solid #f3f3f3;
+  border: 2px solid var(--theme-border-light, #f3f3f3);
   border-top: 2px solid #ffc107;
   border-radius: 50%;
   animation: spin 1s linear infinite;
@@ -2005,7 +2007,7 @@ onMounted(() => {
 }
 
 .log-separator {
-  color: #ccc;
+  color: var(--theme-border, #ccc);
 }
 
 .log-time {
@@ -2028,7 +2030,7 @@ onMounted(() => {
 
 .load-more button {
   background: none;
-  border: 1px solid #ddd;
+  border: 1px solid var(--theme-border, #ddd);
   padding: 8px 20px;
   border-radius: 20px;
   color: var(--theme-text-secondary);
@@ -2174,10 +2176,12 @@ onMounted(() => {
 .form-group input {
   width: 100%;
   padding: 12px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--theme-border, #e0e0e0);
   border-radius: 8px;
   font-size: 16px;
   box-sizing: border-box;
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-primary);
 }
 
 .modal-actions {

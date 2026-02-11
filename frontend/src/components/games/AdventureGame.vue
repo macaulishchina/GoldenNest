@@ -199,7 +199,7 @@ function doAbandon() {
 .hp-bar {
   position: relative;
   height: 22px;
-  background: #eee;
+  background: var(--theme-bg-secondary, #eee);
   border-radius: 11px;
   overflow: hidden;
   margin-bottom: 6px;
@@ -216,8 +216,8 @@ function doAbandon() {
   transform: translate(-50%, -50%);
   font-size: 12px;
   font-weight: bold;
-  color: #333;
-  text-shadow: 0 0 3px #fff;
+  color: var(--theme-text-primary, #333);
+  text-shadow: 0 0 3px var(--theme-bg-card, #fff);
 }
 .stats {
   display: flex;
@@ -237,29 +237,29 @@ function doAbandon() {
   font-size: 11px;
   padding: 2px 6px;
   border-radius: 10px;
-  background: linear-gradient(135deg, #e8f5e9, #fff8e1);
-  border: 1px solid #c8e6c9;
-  color: #2e7d32;
+  background: var(--theme-success-bg, linear-gradient(135deg, #e8f5e9, #fff8e1));
+  border: 1px solid var(--theme-success-light, #c8e6c9);
+  color: var(--theme-success, #2e7d32);
   white-space: nowrap;
 }
 .abandon-btn-inline {
   padding: 4px 8px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--theme-border, #ddd);
   border-radius: 6px;
-  background: #fff;
+  background: var(--theme-bg-card, #fff);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
   margin-left: 4px;
 }
 .abandon-btn-inline:hover {
-  background: #ffebee;
-  border-color: #ef9a9a;
+  background: var(--theme-error-bg, #ffebee);
+  border-color: var(--theme-error-light, #ef9a9a);
 }
 .log-area {
   height: 120px;
   overflow-y: auto;
-  background: #f9f9f9;
+  background: var(--theme-bg-secondary, #f9f9f9);
   border-radius: 8px;
   padding: 8px;
   margin-bottom: 8px;
@@ -267,13 +267,13 @@ function doAbandon() {
   line-height: 1.6;
 }
 .log-line {
-  color: #555;
+  color: var(--theme-text-secondary, #555);
 }
 .encounter-panel {
-  background: #fff;
+  background: var(--theme-bg-card, #fff);
   border-radius: 8px;
   padding: 12px;
-  border: 1px solid #eee;
+  border: 1px solid var(--theme-border-light, #eee);
 }
 .encounter-info {
   display: flex;
@@ -305,7 +305,7 @@ function doAbandon() {
   left: 50%;
   transform: translate(-50%, -50%);
   font-size: 10px;
-  color: #333;
+  color: var(--theme-text-primary, #333);
   font-weight: bold;
 }
 .action-btns {
@@ -343,7 +343,7 @@ function doAbandon() {
 /* 祝福选择 */
 .blessing-hint {
   font-size: 13px;
-  color: #666;
+  color: var(--theme-text-secondary, #666);
   margin-bottom: 8px;
   text-align: center;
 }
@@ -356,26 +356,26 @@ function doAbandon() {
   display: flex;
   flex-direction: column;
   padding: 10px 14px;
-  border: 2px solid #e8e8e8;
+  border: 2px solid var(--theme-border, #e8e8e8);
   border-radius: 10px;
-  background: linear-gradient(135deg, #fafafa, #f5f0ff);
+  background: var(--theme-bg-secondary, linear-gradient(135deg, #fafafa, #f5f0ff));
   cursor: pointer;
   transition: all 0.2s;
 }
 .blessing-choice:hover {
-  border-color: #9c7cf4;
-  background: linear-gradient(135deg, #f3edff, #e8e0ff);
+  border-color: var(--theme-purple, #9c7cf4);
+  background: var(--theme-purple-light, linear-gradient(135deg, #f3edff, #e8e0ff));
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(103, 58, 183, 0.15);
 }
 .blessing-name {
   font-size: 15px;
   font-weight: bold;
-  color: #5e35b1;
+  color: var(--theme-purple, #5e35b1);
 }
 .blessing-desc {
   font-size: 12px;
-  color: #888;
+  color: var(--theme-text-tertiary, #888);
   margin-top: 2px;
 }
 
@@ -387,30 +387,30 @@ function doAbandon() {
   margin-top: 8px;
 }
 .game-result.win {
-  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+  background: var(--theme-success-bg, linear-gradient(135deg, #e8f5e9, #c8e6c9));
 }
 .game-result.lose {
-  background: linear-gradient(135deg, #ffebee, #ffcdd2);
+  background: var(--theme-error-bg, linear-gradient(135deg, #ffebee, #ffcdd2));
 }
 .result-title {
   font-size: 18px;
   font-weight: bold;
 }
-.win .result-title { color: #2e7d32; }
-.lose .result-title { color: #c62828; }
+.win .result-title { color: var(--theme-success, #2e7d32); }
+.lose .result-title { color: var(--theme-error, #c62828); }
 .result-detail {
   font-size: 14px;
   margin-top: 4px;
 }
-.win .result-detail { color: #388e3c; }
-.lose .result-detail { color: #e57373; }
+.win .result-detail { color: var(--theme-success, #388e3c); }
+.lose .result-detail { color: var(--theme-error-light, #e57373); }
 .result-exp {
   font-size: 14px;
-  color: #388e3c;
+  color: var(--theme-success, #388e3c);
   margin-top: 4px;
 }
 .result-exp.lost {
-  color: #999;
+  color: var(--theme-text-tertiary, #999);
 }
 
 /* 确认弹窗 */
@@ -428,7 +428,7 @@ function doAbandon() {
   z-index: 100;
 }
 .confirm-dialog {
-  background: white;
+  background: var(--theme-bg-card, white);
   border-radius: 12px;
   padding: 20px;
   max-width: 280px;
@@ -442,7 +442,7 @@ function doAbandon() {
 }
 .confirm-message {
   font-size: 14px;
-  color: #666;
+  color: var(--theme-text-secondary, #666);
   margin-bottom: 20px;
   line-height: 1.5;
 }
@@ -461,11 +461,11 @@ function doAbandon() {
   border: none;
 }
 .confirm-btn.cancel {
-  background: #f5f5f5;
-  color: #666;
+  background: var(--theme-bg-secondary, #f5f5f5);
+  color: var(--theme-text-secondary, #666);
 }
 .confirm-btn.cancel:hover {
-  background: #e0e0e0;
+  background: var(--theme-border, #e0e0e0);
 }
 .confirm-btn.confirm {
   background: #ef5350;

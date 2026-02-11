@@ -475,7 +475,7 @@ watch(() => userStore.user, () => {
   font-size: 12px;
   opacity: 0.7;
   transition: opacity 0.2s;
-  border: 2px solid #fff;
+  border: 2px solid var(--theme-bg-card, #fff);
 }
 
 .profile-header-info {
@@ -491,7 +491,7 @@ watch(() => userStore.user, () => {
 
 .profile-join-date {
   font-size: 13px;
-  color: #999;
+  color: var(--theme-text-tertiary, #999);
 }
 
 /* ===== 主题 ===== */

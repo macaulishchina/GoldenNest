@@ -62,7 +62,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center">
           <div>
             <h2 style="margin: 0; font-size: 20px">{{ family?.name }}</h2>
-            <p style="margin: 8px 0 0; color: #64748b">邀请码：<n-tag size="small">{{ family?.invite_code }}</n-tag></p>
+            <p style="margin: 8px 0 0; color: var(--theme-text-secondary)">邀请码：<n-tag size="small">{{ family?.invite_code }}</n-tag></p>
           </div>
           <n-button size="small" @click="copyInviteCode">复制邀请码</n-button>
         </div>
@@ -254,7 +254,7 @@
       <template #default>
         <div style="padding: 16px 0;">
           <p>您确定要发起剔除「<strong>{{ removingMember?.nickname }}</strong>」的申请吗？</p>
-          <p style="color: #666; font-size: 14px; margin-top: 12px;">
+          <p style="color: var(--theme-text-secondary); font-size: 14px; margin-top: 12px;">
             ⚠️ 该申请需要管理员审批后才会生效
           </p>
           <n-form-item label="剔除原因（可选）" style="margin-top: 16px;">

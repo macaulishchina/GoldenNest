@@ -538,8 +538,8 @@ function doAbandon() {
   transition: all 0.2s;
 }
 .abandon-btn-inline:hover {
-  background: #ffebee;
-  border-color: #ef9a9a;
+  background: var(--theme-error-bg, #ffebee);
+  border-color: var(--theme-error-light, #ef9a9a);
 }
 
 /* 雷区滚动容器 */
@@ -678,7 +678,7 @@ function doAbandon() {
 .n4 { color: #1a237e; }
 .n5 { color: #795548; }
 .n6 { color: #00897b; }
-.n7 { color: #212121; }
+.n7 { color: var(--theme-text-primary, #212121); }
 .n8 { color: #9e9e9e; }
 
 /* ===== 和弦提示 Toast（组件内部，新覆盖旧）===== */
@@ -763,11 +763,11 @@ function doAbandon() {
   font-size: 18px;
   font-weight: bold;
 }
-.win .result-title { color: #2e7d32; }
-.lose .result-title { color: #c62828; }
+.win .result-title { color: var(--theme-success, #2e7d32); }
+.lose .result-title { color: var(--theme-error, #c62828); }
 .result-exp {
   font-size: 14px;
-  color: #388e3c;
+  color: var(--theme-success, #388e3c);
   margin-top: 4px;
 }
 .result-exp.lost {

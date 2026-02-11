@@ -1744,18 +1744,18 @@ onMounted(async () => {
 }
 
 .task-priority.low {
-  background: #e3f2fd;
-  color: #1976d2;
+  background: var(--theme-info-bg, #e3f2fd);
+  color: var(--theme-info, #1976d2);
 }
 
 .task-priority.medium {
-  background: #fff3e0;
-  color: #f57c00;
+  background: var(--theme-warning-bg, #fff3e0);
+  color: var(--theme-warning, #f57c00);
 }
 
 .task-priority.high {
-  background: #ffebee;
-  color: #d32f2f;
+  background: var(--theme-error-bg, #ffebee);
+  color: var(--theme-error, #d32f2f);
 }
 
 .task-desc, .task-reasoning {

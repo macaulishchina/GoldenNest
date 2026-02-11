@@ -1527,7 +1527,7 @@ onMounted(loadData)
   
   .mobile-investment-form label {
     font-size: 12px;
-    color: #6b7280;
+    color: var(--theme-text-secondary, #6b7280);
     font-weight: 500;
   }
   

@@ -1289,12 +1289,12 @@ onUnmounted(() => {
   right: -2px;
   width: 20px;
   height: 20px;
-  background: white;
+  background: var(--theme-bg-card, white);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #6b7280;
+  color: var(--theme-text-secondary, #6b7280);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
@@ -1365,11 +1365,11 @@ onUnmounted(() => {
 }
 
 .drawer-menu-item.logout {
-  color: #ef4444;
+  color: var(--theme-error, #ef4444);
 }
 
 .drawer-menu-item.logout:active {
-  background: #fef2f2;
+  background: var(--theme-error-bg, #fef2f2);
 }
 
 /* 移动端全局调整 */

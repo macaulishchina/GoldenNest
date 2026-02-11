@@ -41,19 +41,7 @@ import type { ThemeMode } from '@/stores/theme'
 const themeStore = useThemeStore()
 
 const selectTheme = (theme: ThemeMode) => {
-  console.log('ThemeSelector: 切换主题到', theme)
   themeStore.setTheme(theme)
-  
-  // 调试：检查 CSS 变量是否正确设置
-  setTimeout(() => {
-    const root = document.documentElement
-    const cardBg = getComputedStyle(root).getPropertyValue('--theme-bg-card')
-    const primary = getComputedStyle(root).getPropertyValue('--theme-primary')
-    console.log('CSS 变量检查:')
-    console.log('  --theme-bg-card:', cardBg.trim())
-    console.log('  --theme-primary:', primary.trim())
-    console.log('  body.className:', document.body.className)
-  }, 100)
 }
 </script>
 

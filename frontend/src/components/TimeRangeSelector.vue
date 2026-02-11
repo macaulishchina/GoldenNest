@@ -63,12 +63,12 @@ function selectRange(value) {
 }
 
 .range-btn:hover {
-  border-color: #667eea;
-  color: #667eea;
+  border-color: var(--theme-primary, #667eea);
+  color: var(--theme-primary, #667eea);
 }
 
 .range-btn.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--theme-gradient-primary, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
   border-color: transparent;
   color: #fff;
   box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);

@@ -163,24 +163,24 @@ function doAbandon() {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #666;
+  color: var(--theme-text-secondary, #666);
   margin-bottom: 8px;
 }
 .abandon-btn-inline {
   padding: 4px 8px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--theme-border, #ddd);
   border-radius: 6px;
-  background: #fff;
+  background: var(--theme-bg-card, #fff);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
 }
 .abandon-btn-inline:hover {
-  background: #ffebee;
-  border-color: #ef9a9a;
+  background: var(--theme-error-bg, #ffebee);
+  border-color: var(--theme-error-light, #ef9a9a);
 }
 .chart-area {
-  background: #fafafa;
+  background: var(--theme-bg-secondary, #fafafa);
   border-radius: 8px;
   padding: 12px;
   margin-bottom: 8px;
@@ -199,7 +199,7 @@ function doAbandon() {
 .portfolio {
   text-align: center;
   padding: 8px;
-  background: #f5f5f5;
+  background: var(--theme-bg-secondary, #f5f5f5);
   border-radius: 8px;
   margin-bottom: 8px;
   font-size: 14px;
@@ -215,25 +215,28 @@ function doAbandon() {
 }
 .quantity-row label {
   font-size: 13px;
-  color: #666;
+  color: var(--theme-text-secondary, #666);
 }
 .qty-input {
   flex: 1;
-  border: 1px solid #ddd;
+  border: 1px solid var(--theme-border, #ddd);
   border-radius: 4px;
   padding: 6px 8px;
   font-size: 14px;
   max-width: 80px;
+  background: var(--theme-bg-card, #fff);
+  color: var(--theme-text-primary);
 }
 .qty-btn {
   padding: 4px 8px;
   font-size: 12px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--theme-border, #ccc);
   border-radius: 4px;
-  background: #fff;
+  background: var(--theme-bg-card, #fff);
+  color: var(--theme-text-primary);
   cursor: pointer;
 }
-.qty-btn:hover { background: #f0f0f0; }
+.qty-btn:hover { background: var(--theme-bg-secondary, #f0f0f0); }
 .btn-row {
   display: flex;
   gap: 8px;
@@ -261,30 +264,30 @@ function doAbandon() {
   margin-top: 8px;
 }
 .game-result.win {
-  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+  background: var(--theme-info-bg, linear-gradient(135deg, #e3f2fd, #bbdefb));
 }
 .game-result.lose {
-  background: linear-gradient(135deg, #ffebee, #ffcdd2);
+  background: var(--theme-error-bg, linear-gradient(135deg, #ffebee, #ffcdd2));
 }
 .result-title {
   font-size: 18px;
   font-weight: bold;
 }
-.win .result-title { color: #1565c0; }
-.lose .result-title { color: #c62828; }
+.win .result-title { color: var(--theme-info, #1565c0); }
+.lose .result-title { color: var(--theme-error, #c62828); }
 .result-detail {
   font-size: 14px;
   margin-top: 4px;
 }
-.win .result-detail { color: #1976d2; }
-.lose .result-detail { color: #e57373; }
+.win .result-detail { color: var(--theme-info, #1976d2); }
+.lose .result-detail { color: var(--theme-error-light, #e57373); }
 .result-exp {
   font-size: 14px;
-  color: #388e3c;
+  color: var(--theme-success, #388e3c);
   margin-top: 4px;
 }
 .result-exp.lost {
-  color: #999;
+  color: var(--theme-text-tertiary, #999);
 }
 
 /* 确认弹窗 */
@@ -302,7 +305,7 @@ function doAbandon() {
   z-index: 100;
 }
 .confirm-dialog {
-  background: white;
+  background: var(--theme-bg-card, white);
   border-radius: 12px;
   padding: 20px;
   max-width: 280px;
@@ -316,7 +319,7 @@ function doAbandon() {
 }
 .confirm-message {
   font-size: 14px;
-  color: #666;
+  color: var(--theme-text-secondary, #666);
   margin-bottom: 20px;
   line-height: 1.5;
 }
@@ -335,11 +338,11 @@ function doAbandon() {
   border: none;
 }
 .confirm-btn.cancel {
-  background: #f5f5f5;
-  color: #666;
+  background: var(--theme-bg-secondary, #f5f5f5);
+  color: var(--theme-text-secondary, #666);
 }
 .confirm-btn.cancel:hover {
-  background: #e0e0e0;
+  background: var(--theme-border, #e0e0e0);
 }
 .confirm-btn.confirm {
   background: #ef5350;

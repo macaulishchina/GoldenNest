@@ -143,16 +143,16 @@ async function handleRegister() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #ecfdf5 0%, #f0fdfa 50%, #f0f9ff 100%);
+  background: var(--theme-bg-primary, linear-gradient(135deg, #ecfdf5 0%, #f0fdfa 50%, #f0f9ff 100%));
   padding: 24px;
 }
 
 .login-card {
-  background: white;
+  background: var(--theme-bg-card, white);
   border-radius: 24px;
   padding: 40px;
   width: 420px;
-  box-shadow: 0 20px 60px rgba(16, 185, 129, 0.1);
+  box-shadow: 0 20px 60px var(--theme-shadow, rgba(16, 185, 129, 0.1));
 }
 
 .logo {
@@ -169,12 +169,12 @@ async function handleRegister() {
 .logo-text {
   font-size: 24px;
   font-weight: 700;
-  color: #10b981;
+  color: var(--theme-primary, #10b981);
   margin: 0;
 }
 
 .logo-subtitle {
-  color: #94a3b8;
+  color: var(--theme-text-tertiary, #94a3b8);
   font-size: 14px;
   margin: 4px 0 0;
 }
@@ -185,11 +185,11 @@ async function handleRegister() {
 
 .login-footer {
   text-align: center;
-  color: #64748b;
+  color: var(--theme-text-secondary, #64748b);
 }
 
 .login-footer a {
-  color: #10b981;
+  color: var(--theme-primary, #10b981);
   text-decoration: none;
   font-weight: 500;
   margin-left: 4px;

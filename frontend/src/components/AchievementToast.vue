@@ -306,7 +306,7 @@ function getRarityName(rarity: string): string {
 .achievement-name {
   font-size: 15px;
   font-weight: 600;
-  color: #fff;
+  color: var(--theme-text-primary, #fff);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -315,7 +315,7 @@ function getRarityName(rarity: string): string {
 
 .achievement-desc {
   font-size: 12px;
-  color: #aaa;
+  color: var(--theme-text-tertiary, #aaa);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -347,7 +347,7 @@ function getRarityName(rarity: string): string {
 
 .points-label {
   font-size: 10px;
-  color: #888;
+  color: var(--theme-text-tertiary, #888);
 }
 
 /* 稀有度标签 */

@@ -465,10 +465,11 @@ function goToInvestment() {
   router.push('/investment')
 }
 
-async function handleAIChat(message: string) {
+async function handleAIChat(message: string, history: any[] = []) {
   const response = await aiChatApi.chat({
     message,
-    context_type: 'dashboard'
+    context_type: 'dashboard',
+    history: history
   })
   return {
     reply: response.data.reply,

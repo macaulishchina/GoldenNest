@@ -332,7 +332,7 @@ export const aiConfigApi = {
 // AI Chat API - 通用 AI 对话助手
 export const aiChatApi = {
   // 与 AI 助手对话
-  chat: (data: { message: string; context_type?: string }) => 
+  chat: (data: { message: string; context_type?: string; history?: Array<{role: string; content: string}> }) => 
     api.post('/ai/chat', data)
 }
 
@@ -349,7 +349,7 @@ export const transactionAiApi = {
 // Pet AI API - 宠物对话
 export const petAiApi = {
   // 与宠物对话
-  chat: (data: { message: string }) =>
+  chat: (data: { message: string; history?: Array<{role: string; content: string}> }) =>
     api.post('/pet/chat', data)
 }
 
