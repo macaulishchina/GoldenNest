@@ -794,6 +794,11 @@ const menuOptions = computed<MenuOption[]>(() => [
         icon: renderIcon(DiceOutline)
       },
       {
+        label: '家庭记账',
+        key: 'accounting',
+        icon: renderIcon(WalletOutline)
+      },
+      {
         label: '家庭宠物',
         key: 'pet',
         icon: renderIcon(PawOutline)
