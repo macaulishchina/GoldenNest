@@ -318,6 +318,33 @@
               <label>备注 (可选)</label>
               <textarea v-model="createForm.note" placeholder="备注说明"></textarea>
             </div>
+            <!-- 图片识别上传 -->
+            <div class="form-group">
+              <label>上传凭证图片 (可选)</label>
+              <div class="image-upload-section">
+                <input 
+                  ref="imageInputRef" 
+                  type="file" 
+                  accept="image/*" 
+                  style="display: none" 
+                  @change="handleImageSelected" 
+                />
+                <button 
+                  @click="triggerImageUpload" 
+                  class="btn-image-upload"
+                  type="button"
+                  :disabled="imageParsing"
+                >
+                  📷 {{ imageParsing ? '识别中...' : '导入图片识别' }}
+                </button>
+                <div v-if="imagePreview" class="image-preview">
+                  <img :src="imagePreview" alt="预览" />
+                  <button @click="clearImage" class="btn-clear-image" type="button">✕</button>
+                </div>
+                <div v-if="imageParseSuccess" class="parse-success">✓ {{ imageParseSuccess }}</div>
+                <div v-if="imageParseError" class="parse-error">⚠ {{ imageParseError }}</div>
+              </div>
+            </div>
           </template>
 
           <!-- 创建理财产品表单 -->
@@ -521,6 +548,33 @@
               <label>支出原因</label>
               <textarea v-model="createForm.expense_reason" placeholder="请详细说明支出原因"></textarea>
             </div>
+            <!-- 图片识别上传 -->
+            <div class="form-group">
+              <label>上传凭证图片 (可选)</label>
+              <div class="image-upload-section">
+                <input 
+                  ref="imageInputRef" 
+                  type="file" 
+                  accept="image/*" 
+                  style="display: none" 
+                  @change="handleImageSelected" 
+                />
+                <button 
+                  @click="triggerImageUpload" 
+                  class="btn-image-upload"
+                  type="button"
+                  :disabled="imageParsing"
+                >
+                  📷 {{ imageParsing ? '识别中...' : '导入图片识别' }}
+                </button>
+                <div v-if="imagePreview" class="image-preview">
+                  <img :src="imagePreview" alt="预览" />
+                  <button @click="clearImage" class="btn-clear-image" type="button">✕</button>
+                </div>
+                <div v-if="imageParseSuccess" class="parse-success">✓ {{ imageParseSuccess }}</div>
+                <div v-if="imageParseError" class="parse-error">⚠ {{ imageParseError }}</div>
+              </div>
+            </div>
             <div class="form-group">
               <label>各成员扣减比例 (%)</label>
               <div class="ratio-list">
@@ -718,6 +772,99 @@ const handleCurrencyChange = async () => {
   }
 }
 
+// ==================== 图片识别功能 ====================
+const imageInputRef = ref<HTMLInputElement | null>(null)
+const imageParsing = ref(false)
+const imagePreview = ref('')
+const imageParseError = ref('')
+const imageParseSuccess = ref('')
+
+const triggerImageUpload = () => {
+  imageInputRef.value?.click()
+}
+
+const clearImage = () => {
+  imagePreview.value = ''
+  imageParseError.value = ''
+  imageParseSuccess.value = ''
+  if (imageInputRef.value) {
+    imageInputRef.value.value = ''
+  }
+}
+
+const handleImageSelected = async (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  
+  if (!file) return
+  
+  // 验证文件类型
+  if (!file.type.startsWith('image/')) {
+    imageParseError.value = '请上传图片文件'
+    return
+  }
+  
+  // 验证文件大小（最大20MB）
+  if (file.size > 20 * 1024 * 1024) {
+    imageParseError.value = '图片大小不能超过 20MB'
+    return
+  }
+  
+  // 清空之前的状态
+  imageParseError.value = ''
+  imageParseSuccess.value = ''
+  
+  try {
+    // 读取图片为 Base64
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      const base64 = e.target?.result as string
+      imagePreview.value = base64
+      
+      // 开始解析
+      imageParsing.value = true
+      try {
+        const { data } = await assetApi.parseImage(base64)
+        
+        if (data.success) {
+          const parsed = data.data
+          
+          // 根据表单类型自动填充
+          if (createForm.value.type === 'deposit') {
+            if (parsed.amount) createForm.value.amount = parsed.amount
+            if (parsed.start_date) createForm.value.deposit_date = parsed.start_date
+            if (parsed.note) createForm.value.note = parsed.note
+            if (parsed.name && !createForm.value.note) {
+              createForm.value.note = parsed.name
+            }
+          } else if (createForm.value.type === 'expense') {
+            if (parsed.amount) createForm.value.amount = parsed.amount
+            if (parsed.name) createForm.value.expense_title = parsed.name
+            if (parsed.note) createForm.value.expense_reason = parsed.note
+          }
+          
+          imageParseSuccess.value = '识别成功！已自动填充表单'
+          message.success('图片识别成功，已自动填充表单')
+        } else {
+          imageParseError.value = data.error || '图片识别失败'
+          message.warning('图片识别失败，请手动填写')
+        }
+      } catch (error: any) {
+        console.error('图片解析失败:', error)
+        imageParseError.value = error.response?.data?.detail || '图片解析失败，请重试'
+        message.error('图片解析失败: ' + (error.response?.data?.detail || error.message))
+      } finally {
+        imageParsing.value = false
+      }
+    }
+    reader.readAsDataURL(file)
+  } catch (error) {
+    console.error('读取图片失败:', error)
+    imageParseError.value = '读取图片失败'
+  }
+}
+
+
 const equivalentCNY = computed(() => {
   if (createForm.value.currency === 'CNY') return null
   if (!createForm.value.foreign_amount || !currentExchangeRate.value) return null
@@ -885,6 +1032,8 @@ const loadBalance = async () => {
 // 打开创建申请模态框
 const openCreateModal = async () => {
   await Promise.all([loadInvestments(), loadBalance()])
+  // 清空图片上传状态
+  clearImage()
   showCreateModal.value = true
 }
 
@@ -1258,6 +1407,8 @@ const resetForm = () => {
   selectedInvestmentForDecrease.value = null
   // 重新初始化支出扣减比例
   initDeductionRatios()
+  // 清空图片上传状态
+  clearImage()
 }
 
 const formatAmount = (amount: number) => {
@@ -2463,5 +2614,99 @@ onMounted(() => {
   .loading, .empty {
     padding: 32px;
   }
+}
+
+/* ==================== 图片上传样式 ==================== */
+.image-upload-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn-image-upload {
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+}
+
+.btn-image-upload:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-image-upload:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.image-preview {
+  position: relative;
+  max-width: 300px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.image-preview img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.btn-clear-image {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 59, 48, 0.9);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.btn-clear-image:hover {
+  background: rgba(255, 59, 48, 1);
+  transform: scale(1.1);
+}
+
+.parse-success {
+  padding: 10px 12px;
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+  border-radius: 6px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.parse-error {
+  padding: 10px 12px;
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+  border-radius: 6px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 </style>
