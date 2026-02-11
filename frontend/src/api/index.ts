@@ -328,3 +328,54 @@ export const aiConfigApi = {
   // 获取 AI 服务状态
   getStatus: () => api.get('/ai-config/status')
 }
+
+// AI Chat API - 通用 AI 对话助手
+export const aiChatApi = {
+  // 与 AI 助手对话
+  chat: (data: { message: string; context_type?: string }) => 
+    api.post('/ai/chat', data)
+}
+
+// Transaction AI API - 交易智能分析
+export const transactionAiApi = {
+  // AI 分析交易数据
+  analyze: (params?: { time_range?: string }) =>
+    api.post('/transaction/ai/analyze', null, { params }),
+  // AI 智能分类交易
+  categorize: (data: { description: string; amount: number }) =>
+    api.post('/transaction/ai/categorize', data)
+}
+
+// Pet AI API - 宠物对话
+export const petAiApi = {
+  // 与宠物对话
+  chat: (data: { message: string }) =>
+    api.post('/pet/chat', data)
+}
+
+// Todo AI API - 任务智能管理
+export const todoAiApi = {
+  // AI 任务建议
+  suggest: (data: { context: string }) =>
+    api.post('/todo/ai/suggest', data),
+  // AI 任务优先级分析
+  prioritize: (data: { task_ids?: number[] }) =>
+    api.post('/todo/ai/prioritize', data)
+}
+
+// Investment AI API - 投资组合分析
+export const investmentAiApi = {
+  // AI 分析投资组合
+  analyze: () =>
+    api.post('/investment/ai/analyze')
+}
+
+// Announcement AI API - 公告内容助手
+export const announcementAiApi = {
+  // AI 生成公告草稿
+  draft: (data: { topic: string; style?: string }) =>
+    api.post('/announcements/ai/draft', data),
+  // AI 改进公告内容
+  improve: (data: { content: string; improve_type?: string }) =>
+    api.post('/announcements/ai/improve', data)
+}

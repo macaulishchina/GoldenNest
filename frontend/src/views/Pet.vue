@@ -122,6 +122,14 @@
         </button>
 
         <button
+          class="btn-action chat"
+          @click="showPetChat = true"
+        >
+          <span class="btn-icon">💬</span>
+          <span class="btn-text">聊天</span>
+        </button>
+
+        <button
           class="btn-action game"
           @click="showGamePanel = !showGamePanel"
         >
@@ -131,6 +139,15 @@
         </button>
 
       </div>
+
+      <!-- Pet AI Chat Dialog -->
+      <AIChatDialog
+        v-model:show="showPetChat"
+        :title="`💬 与${pet.name}对话`"
+        :ai-name="pet.name"
+        :suggestions="getPetChatSuggestions()"
+        :on-chat="handlePetChat"
+      />
 
       <!-- 小游戏面板 -->
       <div v-if="showGamePanel" class="game-panel">
@@ -399,8 +416,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
-import { api } from '@/api'
+import { api, petAiApi } from '@/api'
 import { useUserStore } from '@/stores/user'
+import AIChatDialog from '@/components/AIChatDialog.vue'
 import MemoryGame from '@/components/games/MemoryGame.vue'
 import StockGame from '@/components/games/StockGame.vue'
 import AdventureGame from '@/components/games/AdventureGame.vue'
@@ -422,6 +440,7 @@ const showRenameModal = ref(false)
 const showLevelUp = ref(false)
 const showEvolution = ref(false)
 const showGamePanel = ref(false)
+const showPetChat = ref(false)
 const newName = ref('')
 const levelUpInfo = ref({})
 
@@ -592,6 +611,33 @@ const checkin = async () => {
   } finally {
     checkinLoading.value = false
   }
+}
+
+// AI Pet Chat
+const handlePetChat = async (messageText) => {
+  const response = await petAiApi.chat({
+    message: messageText
+  })
+  return {
+    reply: response.data.reply,
+    suggestions: []
+  }
+}
+
+const getPetChatSuggestions = () => {
+  if (!pet.value) return []
+  
+  const suggestions = ['你好', '今天心情怎么样']
+  
+  if (pet.value.happiness < 50) {
+    suggestions.push('怎么不开心了')
+  }
+  
+  if (!pet.value.checked_in_today) {
+    suggestions.push('一起签到吧')
+  }
+  
+  return suggestions
 }
 
 // 喂食
@@ -1366,6 +1412,11 @@ onMounted(() => {
 
 .btn-action.feed {
   background: linear-gradient(135deg, #ff9800 0%, #ffc107 100%);
+  color: white;
+}
+
+.btn-action.chat {
+  background: linear-gradient(135deg, #00bcd4 0%, #03a9f4 100%);
   color: white;
 }
 
