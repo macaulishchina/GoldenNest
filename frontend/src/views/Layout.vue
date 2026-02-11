@@ -367,6 +367,9 @@
         </div>
       </n-drawer-content>
     </n-drawer>
+
+    <!-- Floating AI Assistant -->
+    <FloatingAIAssistant />
   </n-layout>
 </template>
 
@@ -384,6 +387,7 @@ import { compressImage, getAvatarColor } from '@/utils/avatar'
 import type { MenuOption } from 'naive-ui'
 import { markRaw } from 'vue'
 import ThemeSelector from '@/components/ThemeSelector.vue'
+import FloatingAIAssistant from '@/components/FloatingAIAssistant.vue'
 import { 
   HomeOutline, 
   WalletOutline, 
