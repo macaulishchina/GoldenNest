@@ -327,7 +327,8 @@
                   type="file" 
                   accept="image/*" 
                   style="display: none" 
-                  @change="handleImageSelected" 
+                  @change="handleImageSelected"
+                  aria-label="选择凭证图片文件"
                 />
                 <button 
                   @click="triggerImageUpload" 
@@ -338,8 +339,8 @@
                   📷 {{ imageParsing ? '识别中...' : '导入图片识别' }}
                 </button>
                 <div v-if="imagePreview" class="image-preview">
-                  <img :src="imagePreview" alt="预览" />
-                  <button @click="clearImage" class="btn-clear-image" type="button">✕</button>
+                  <img :src="imagePreview" alt="上传的凭证图片预览" />
+                  <button @click="clearImage" class="btn-clear-image" type="button" aria-label="清除图片">✕</button>
                 </div>
                 <div v-if="imageParseSuccess" class="parse-success">✓ {{ imageParseSuccess }}</div>
                 <div v-if="imageParseError" class="parse-error">⚠ {{ imageParseError }}</div>
@@ -557,7 +558,8 @@
                   type="file" 
                   accept="image/*" 
                   style="display: none" 
-                  @change="handleImageSelected" 
+                  @change="handleImageSelected"
+                  aria-label="选择凭证图片文件"
                 />
                 <button 
                   @click="triggerImageUpload" 
@@ -568,8 +570,8 @@
                   📷 {{ imageParsing ? '识别中...' : '导入图片识别' }}
                 </button>
                 <div v-if="imagePreview" class="image-preview">
-                  <img :src="imagePreview" alt="预览" />
-                  <button @click="clearImage" class="btn-clear-image" type="button">✕</button>
+                  <img :src="imagePreview" alt="上传的凭证图片预览" />
+                  <button @click="clearImage" class="btn-clear-image" type="button" aria-label="清除图片">✕</button>
                 </div>
                 <div v-if="imageParseSuccess" class="parse-success">✓ {{ imageParseSuccess }}</div>
                 <div v-if="imageParseError" class="parse-error">⚠ {{ imageParseError }}</div>
@@ -836,12 +838,8 @@ const handleImageSelected = async (event: Event) => {
           if (createForm.value.type === 'deposit') {
             if (parsed.amount) createForm.value.amount = parsed.amount
             if (parsed.start_date) createForm.value.deposit_date = parsed.start_date
-            // Prefer parsed.note, fallback to parsed.name if note is empty
-            if (parsed.note) {
-              createForm.value.note = parsed.note
-            } else if (parsed.name) {
-              createForm.value.note = parsed.name
-            }
+            // Prefer parsed.note, fallback to parsed.name
+            createForm.value.note = parsed.note || parsed.name || ''
           } else if (createForm.value.type === 'expense') {
             if (parsed.amount) createForm.value.amount = parsed.amount
             if (parsed.name) createForm.value.expense_title = parsed.name
