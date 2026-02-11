@@ -112,6 +112,11 @@ const router = createRouter({
           component: () => import('@/views/Calendar.vue')
         },
         {
+          path: 'system-settings',
+          name: 'SystemSettings',
+          component: () => import('@/views/SystemSettings.vue')
+        },
+        {
           path: 'settings',
           name: 'Settings',
           component: () => import('@/views/Settings.vue')

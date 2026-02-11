@@ -136,7 +136,8 @@ async def get_me(
         bio=current_user.bio,
         is_active=current_user.is_active,
         created_at=current_user.created_at,
-        family_id=membership.family_id if membership else None
+        family_id=membership.family_id if membership else None,
+        role=membership.role if membership else None
     )
 
 
@@ -205,7 +206,8 @@ async def update_profile(
         bio=current_user.bio,
         is_active=current_user.is_active,
         created_at=current_user.created_at,
-        family_id=membership.family_id if membership else None
+        family_id=membership.family_id if membership else None,
+        role=membership.role if membership else None
     )
 
 

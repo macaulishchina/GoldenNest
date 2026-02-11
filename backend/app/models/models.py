@@ -816,3 +816,22 @@ class DividendClaim(Base):
     
     # 关联关系
     dividend: Mapped["Dividend"] = relationship(back_populates="claims")
+
+
+# ==================== AI 服务商配置模型 ====================
+
+class AIProvider(Base):
+    """AI 服务商配置表（支持配置多个服务商，切换活跃服务商）"""
+    __tablename__ = "ai_providers"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, index=True)  # 服务商显示名称（如"通义千问"、"OpenAI"）
+    provider_type: Mapped[str] = mapped_column(String(30))  # 服务商类型标识（如 qwen, openai, deepseek, zhipu, moonshot）
+    api_key: Mapped[str] = mapped_column(Text, default="")  # API Key（敏感信息，前端脱敏显示）
+    base_url: Mapped[str] = mapped_column(String(500), default="")  # API Base URL
+    default_model: Mapped[str] = mapped_column(String(100), default="")  # 默认模型（从可用模型中选择）
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True)  # 是否为当前活跃服务商（全局唯一一个）
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)  # 是否启用（可关闭但保留配置）
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

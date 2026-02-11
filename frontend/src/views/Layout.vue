@@ -350,6 +350,10 @@
           <div class="drawer-section">
             <div class="drawer-section-title">⚙️ 系统设置</div>
             <div class="drawer-menu-items">
+              <div v-if="userStore.isAdmin" class="drawer-menu-item" @click="navigateAndClose('/system-settings')">
+                <n-icon :size="20"><SettingsOutline /></n-icon>
+                <span>AI 服务配置</span>
+              </div>
               <div class="drawer-menu-item" @click="navigateAndClose('/settings')">
                 <n-icon :size="20"><PersonOutline /></n-icon>
                 <span>个人设置</span>
@@ -800,6 +804,11 @@ const menuOptions = computed<MenuOption[]>(() => [
     key: 'settings-group',
     icon: renderIcon(SettingsOutline),
     children: [
+      ...(userStore.isAdmin ? [{
+        label: 'AI 服务配置',
+        key: 'system-settings',
+        icon: renderIcon(SettingsOutline)
+      }] : []),
       {
         label: '个人设置',
         key: 'settings',

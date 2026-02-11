@@ -15,6 +15,7 @@ interface User {
   birthday: string | null
   bio: string | null
   created_at: string
+  role: string | null
 }
 
 export const useUserStore = defineStore('user', () => {
@@ -22,6 +23,7 @@ export const useUserStore = defineStore('user', () => {
   const user = ref<User | null>(null)
   
   const isLoggedIn = computed(() => !!token.value)
+  const isAdmin = computed(() => user.value?.role === 'admin')
   
   function setToken(newToken: string) {
     token.value = newToken
@@ -55,6 +57,7 @@ export const useUserStore = defineStore('user', () => {
     token,
     user,
     isLoggedIn,
+    isAdmin,
     setToken,
     fetchUser,
     logout

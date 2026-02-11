@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.limiter import limiter
-from app.api import auth, family, deposit, equity, investment, transaction, achievement, gift, vote, pet, announcement, report, approval, todo, calendar, asset
+from app.api import auth, family, deposit, equity, investment, transaction, achievement, gift, vote, pet, announcement, report, approval, todo, calendar, asset, ai_config
 from app.services.notification import set_external_base_url, detect_external_url_from_headers
 
 
@@ -22,6 +22,15 @@ async def lifespan(app: FastAPI):
     # 启动时初始化数据库
     await init_db()
     print("🏠 小金库数据库初始化完成！")
+    
+    # 加载活跃 AI 服务商配置到内存
+    try:
+        from app.core.database import async_session_maker
+        async with async_session_maker() as db:
+            await ai_config.sync_active_provider_to_config(db)
+    except Exception as e:
+        print(f"⚠️ 加载 AI 服务商配置失败（可能是首次启动）: {e}")
+    
     yield
     # 关闭时清理资源
     print("👋 小金库服务关闭")
@@ -101,6 +110,7 @@ app.include_router(report.router, prefix="/api", tags=["年度报告"])  # 年�
 app.include_router(approval.router, prefix="/api/approval", tags=["通用审批"])  # 通用审批系统
 app.include_router(todo.router, prefix="/api", tags=["家庭清单"])  # 家庭 Todo 清单
 app.include_router(calendar.router, prefix="/api", tags=["共享日历"])  # 共享日历
+app.include_router(ai_config.router, prefix="/api/ai-config", tags=["AI 配置"])  # AI 服务商管理
 
 
 @app.get("/api/health")

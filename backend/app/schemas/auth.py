@@ -35,6 +35,7 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: datetime
     family_id: Optional[int] = None  # 用户所属家庭ID
+    role: Optional[str] = None  # 家庭角色（admin/member）
     
     class Config:
         from_attributes = True

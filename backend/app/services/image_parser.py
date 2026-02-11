@@ -1,18 +1,14 @@
 """
 小金库 (Golden Nest) - 资产凭证图片解析服务
-通过 AI 视觉模型（OpenAI兼容格式）识别图片内容并提取资产信息
+基于 AI 基础服务（ai_service）实现金融凭证图片的结构化信息提取
 """
-import json
 import logging
 import base64
 import io
 import re
-import asyncio
 from typing import Optional, Dict, Any
 
-import httpx
-
-from app.core.config import settings
+from app.services.ai_service import ai_service
 
 logger = logging.getLogger(__name__)
 
@@ -65,21 +61,12 @@ USER_PROMPT = """请分析这张图片，从中提取资产/投资相关信息�
 
 
 class ImageParserService:
-    """资产凭证图片解析服务"""
-    
-    def __init__(self):
-        self._client: Optional[httpx.AsyncClient] = None
+    """资产凭证图片解析服务（基于 ai_service）"""
     
     @property
     def is_configured(self) -> bool:
         """检查 AI 服务是否已配置"""
-        return bool(settings.AI_API_KEY)
-    
-    async def _get_client(self) -> httpx.AsyncClient:
-        """获取或创建 HTTP 客户端"""
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=60.0)
-        return self._client
+        return ai_service.is_configured
     
     async def parse_image(self, image_base64: str) -> Dict[str, Any]:
         """
@@ -92,7 +79,7 @@ class ImageParserService:
             解析结果字典，包含识别出的字段
         """
         if not self.is_configured:
-            raise ValueError("AI 服务未配置，请在 .env 中设置 AI_API_KEY")
+            raise ValueError("AI 服务未配置，请联系管理员配置 AI 服务商")
         
         # 处理 base64 前缀
         image_data = image_base64
@@ -117,94 +104,23 @@ class ImageParserService:
         # 压缩图片以减少 token 消耗（目标: 短边不超过 768px）
         image_data, mime_type = self._compress_image(decoded, mime_type)
         
-        # 构建请求
+        # 构建 data URL
         data_url = f"data:{mime_type};base64,{image_data}"
         
-        request_body = {
-            "model": settings.AI_MODEL,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": USER_PROMPT
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": data_url,
-                                "detail": "low"
-                            }
-                        }
-                    ]
-                }
-            ],
-            "max_tokens": 1000,
-            "temperature": 0.1
-        }
+        # 通过 ai_service 调用视觉模型
+        raw_response = await ai_service.chat_with_vision(
+            text=USER_PROMPT,
+            image_base64=data_url,
+            system_prompt=SYSTEM_PROMPT,
+            max_tokens=1000,
+            temperature=0.1,
+        )
         
-        # 调用 API
-        client = await self._get_client()
-        api_url = f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions"
-        
-        logger.info(f"Calling AI vision API: {api_url}, model: {settings.AI_MODEL}")
-        
-        # 带重试的 API 调用（429 自动重试最多2次）
-        max_retries = 2
-        last_error = None
-        for attempt in range(max_retries + 1):
-            try:
-                response = await client.post(
-                    api_url,
-                    json=request_body,
-                    headers={
-                        "Authorization": f"Bearer {settings.AI_API_KEY}",
-                        "Content-Type": "application/json"
-                    }
-                )
-                response.raise_for_status()
-                break  # 成功，跳出重试循环
-            except httpx.HTTPStatusError as e:
-                last_error = e
-                if e.response.status_code == 429 and attempt < max_retries:
-                    # 从响应头提取等待时间，默认等 5 秒
-                    retry_after = int(e.response.headers.get("retry-after", "5"))
-                    retry_after = min(retry_after, 30)  # 最多等 30 秒
-                    logger.warning(f"AI API rate limited (429), retry after {retry_after}s (attempt {attempt + 1}/{max_retries})")
-                    await asyncio.sleep(retry_after)
-                    continue
-                logger.error(f"AI API HTTP error: {e.response.status_code} - {e.response.text}")
-                if e.response.status_code == 429:
-                    raise ValueError("AI 服务请求频率超限，请稍后再试（建议等待 30 秒）")
-                raise ValueError(f"AI 服务调用失败: HTTP {e.response.status_code}")
-            except httpx.RequestError as e:
-                logger.error(f"AI API request error: {e}")
-                raise ValueError(f"AI 服务连接失败: {str(e)}")
-        else:
-            # 所有重试都失败
-            if last_error:
-                raise ValueError("AI 服务请求频率超限，请稍后再试（建议等待 30 秒）")
-        
-        # 解析响应
-        result = response.json()
-        
-        if "choices" not in result or not result["choices"]:
-            logger.error(f"AI API unexpected response: {result}")
-            raise ValueError("AI 服务返回了意外的结果")
-        
-        content = result["choices"][0]["message"]["content"].strip()
-        logger.info(f"AI raw response: {content}")
-        
-        # 提取 JSON（处理可能的 markdown 代码块包裹）
-        parsed = self._extract_json(content)
+        # 提取 JSON
+        parsed = ai_service.extract_json(raw_response)
         
         if parsed is None:
-            logger.warning(f"Failed to parse AI response as JSON: {content}")
+            logger.warning(f"Failed to parse AI response as JSON: {raw_response}")
             raise ValueError("AI 返回的结果无法解析")
         
         if "error" in parsed:
@@ -212,33 +128,6 @@ class ImageParserService:
         
         # 校验和标准化字段
         return self._normalize_result(parsed)
-    
-    def _extract_json(self, text: str) -> Optional[Dict]:
-        """从 AI 响应中提取 JSON"""
-        # 先尝试直接解析
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-        
-        # 尝试从 markdown 代码块中提取
-        json_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
-        
-        # 尝试找到第一个 { 和最后一个 }
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            try:
-                return json.loads(text[start:end + 1])
-            except json.JSONDecodeError:
-                pass
-        
-        return None
     
     def _normalize_result(self, parsed: Dict[str, Any]) -> Dict[str, Any]:
         """标准化解析结果"""
@@ -365,11 +254,6 @@ class ImageParserService:
         except Exception as e:
             logger.warning(f"Image compression failed, using original: {e}")
             return base64.b64encode(image_bytes).decode("utf-8"), mime_type
-    
-    async def close(self):
-        """关闭 HTTP 客户端"""
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
 
 
 # 全局单例

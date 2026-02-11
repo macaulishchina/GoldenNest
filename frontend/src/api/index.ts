@@ -302,3 +302,29 @@ export const voteApi = {
   // 获取待投票数量（用于红点显示）
   getPendingCount: () => api.get('/vote/pending-count')
 }
+
+// AI 服务商配置 API
+export const aiConfigApi = {
+  // 获取服务商模板列表
+  getTemplates: () => api.get('/ai-config/templates'),
+  // 获取所有已配置的服务商
+  listProviders: () => api.get('/ai-config/providers'),
+  // 创建服务商
+  createProvider: (data: { name: string; provider_type: string; api_key: string; base_url: string; default_model: string }) =>
+    api.post('/ai-config/providers', data),
+  // 更新服务商
+  updateProvider: (id: number, data: { name?: string; api_key?: string; base_url?: string; default_model?: string; is_enabled?: boolean }) =>
+    api.put(`/ai-config/providers/${id}`, data),
+  // 删除服务商
+  deleteProvider: (id: number) => api.delete(`/ai-config/providers/${id}`),
+  // 激活服务商
+  activateProvider: (id: number) => api.post(`/ai-config/providers/${id}/activate`),
+  // 取消激活
+  deactivateProvider: (id: number) => api.post(`/ai-config/providers/${id}/deactivate`),
+  // 设置模型
+  setModel: (id: number, model: string) => api.post(`/ai-config/providers/${id}/set-model`, { model }),
+  // 获取服务商可用模型列表
+  fetchModels: (id: number) => api.get(`/ai-config/providers/${id}/models`),
+  // 获取 AI 服务状态
+  getStatus: () => api.get('/ai-config/status')
+}
