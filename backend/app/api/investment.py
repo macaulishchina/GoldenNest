@@ -568,3 +568,128 @@ async def get_investment_history(
         },
         "history": history
     }
+
+
+# ==================== AI 功能 ====================
+
+from pydantic import BaseModel
+
+
+class InvestmentAIAnalysisResponse(BaseModel):
+    """投资组合 AI 分析响应"""
+    risk_assessment: str
+    diversification_score: int  # 0-100
+    suggestions: List[str]
+    asset_allocation: dict  # 资产配置分析
+
+
+@router.post("/ai/analyze", response_model=InvestmentAIAnalysisResponse)
+async def ai_analyze_portfolio(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    AI 投资组合分析 - 分析投资组合的风险、多样性、资产配置
+    """
+    from app.services.ai_service import ai_service
+    
+    if not ai_service.is_configured:
+        raise HTTPException(status_code=503, detail="AI 服务暂未配置")
+    
+    family_id = await get_user_family_id(current_user.id, db)
+    
+    # 获取所有活跃投资
+    result = await db.execute(
+        select(Investment)
+        .where(
+            Investment.family_id == family_id,
+            Investment.is_deleted == False
+        )
+    )
+    investments = result.scalars().all()
+    
+    if not investments:
+        raise HTTPException(status_code=404, detail="暂无投资数据可分析")
+    
+    # 计算投资统计
+    total_principal = sum(inv.principal for inv in investments)
+    by_type = {}
+    for inv in investments:
+        inv_type = inv.investment_type.value
+        by_type[inv_type] = by_type.get(inv_type, 0) + inv.principal
+    
+    # 获取收益数据
+    total_income = 0
+    for inv in investments:
+        income_result = await db.execute(
+            select(func.sum(InvestmentIncome.amount))
+            .where(InvestmentIncome.investment_id == inv.id)
+        )
+        inv_income = income_result.scalar() or 0
+        total_income += inv_income
+    
+    # 构建投资组合描述
+    portfolio_desc = f"""
+投资总额：¥{total_principal:,.2f}
+总收益：¥{total_income:,.2f}
+收益率：{(total_income / total_principal * 100) if total_principal > 0 else 0:.2f}%
+
+投资分布：
+"""
+    for inv_type, amount in by_type.items():
+        percentage = (amount / total_principal * 100) if total_principal > 0 else 0
+        portfolio_desc += f"- {inv_type}: ¥{amount:,.2f} ({percentage:.1f}%)\n"
+    
+    portfolio_desc += f"\n投资项目详情：\n"
+    for inv in investments[:10]:  # 最多展示10个
+        portfolio_desc += f"- {inv.name} ({inv.investment_type.value}): ¥{inv.principal:,.2f}\n"
+    
+    system_prompt = """你是一位专业的投资顾问，擅长分析投资组合并提供建议。
+
+分析要点：
+1. 风险评估：根据投资类型判断整体风险水平
+   - 股票、基金：高风险
+   - 债券、定期存款：低风险
+   - 其他：中风险
+2. 多样性评分（0-100）：投资类型和品种的分散程度
+3. 资产配置建议：是否需要调整各类资产比例
+4. 具体建议：3-5条可执行的改进建议
+
+输出JSON格式：
+{
+  "risk_assessment": "风险评估（100字内）",
+  "diversification_score": 75,
+  "suggestions": ["建议1", "建议2", "建议3"],
+  "asset_allocation": {
+    "stock": "建议比例或评价",
+    "fund": "建议比例或评价",
+    "bond": "建议比例或评价",
+    "other": "建议比例或评价"
+  }
+}
+"""
+    
+    user_prompt = f"""请分析以下投资组合：
+
+{portfolio_desc}
+
+请给出风险评估、多样性评分和改进建议。"""
+    
+    try:
+        result_json = await ai_service.chat_json(
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            temperature=0.4
+        )
+        
+        if not result_json:
+            raise ValueError("AI 返回了无效的响应")
+        
+        return InvestmentAIAnalysisResponse(
+            risk_assessment=result_json.get("risk_assessment", ""),
+            diversification_score=result_json.get("diversification_score", 50),
+            suggestions=result_json.get("suggestions", []),
+            asset_allocation=result_json.get("asset_allocation", {})
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 分析失败: {str(e)}")

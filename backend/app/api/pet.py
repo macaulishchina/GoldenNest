@@ -2200,3 +2200,162 @@ async def grant_pet_exp(db: AsyncSession, family_id: int, source: str, multiplie
     actual_exp = int(base_exp * multiplier)
 
     return await add_exp(db, pet, actual_exp, source, source_detail=source_detail, operator_id=operator_id)
+
+
+# ==================== AI 宠物对话 ====================
+
+class PetChatRequest(BaseModel):
+    """宠物对话请求"""
+    message: str
+
+
+class PetChatResponse(BaseModel):
+    """宠物对话响应"""
+    reply: str
+    emotion: str  # happy, excited, sad, neutral, playful
+    action: Optional[str] = None  # 宠物动作描述
+
+
+@router.post("/chat", response_model=PetChatResponse)
+async def chat_with_pet(
+    request: PetChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    与宠物对话 - AI 赋予宠物独特的个性和语言风格
+    宠物会根据当前状态、进化阶段、心情等做出不同反应
+    """
+    from app.services.ai_service import ai_service
+    
+    if not ai_service.is_configured:
+        raise HTTPException(status_code=503, detail="AI 服务暂未配置")
+    
+    family_id = await get_user_family_id(current_user.id, db)
+    pet = await get_or_create_pet(db, family_id)
+    
+    # 获取宠物当前状态
+    pet_config = PET_EVOLUTION[pet.pet_type]
+    pet_age_days = (datetime.now().date() - pet.created_at.date()).days
+    
+    # 计算心情
+    last_fed_date = pet.last_fed_at.date() if pet.last_fed_at else pet.created_at.date()
+    last_played_date = pet.last_played_at.date() if pet.last_played_at else pet.created_at.date()
+    days_since_fed = (datetime.now().date() - last_fed_date).days
+    days_since_played = (datetime.now().date() - last_played_date).days
+    
+    current_happiness = pet.happiness
+    if days_since_fed > 0:
+        current_happiness = max(0, current_happiness - days_since_fed * 10)
+    if days_since_played > 0:
+        current_happiness = max(0, current_happiness - days_since_played * 5)
+    
+    mood = "开心" if current_happiness >= 80 else "一般" if current_happiness >= 50 else "低落"
+    
+    # 获取签到连续天数
+    checkin_streak = pet.checkin_streak
+    
+    # 构建宠物人格和状态描述
+    system_prompt = f"""你是一只名叫"{pet.name}"的家庭理财宠物，当前形态是"{pet_config['name']}" {pet_config['emoji']}。
+
+你的基本属性：
+- 等级：{pet.level}级
+- 总经验：{pet.total_exp} EXP
+- 年龄：{pet_age_days}天
+- 心情：{mood}（心情值 {current_happiness}/100）
+- 连续签到：{checkin_streak}天
+
+你的性格特点：
+{self._get_pet_personality(pet.pet_type, pet.level)}
+
+与用户对话时：
+1. 保持角色一致性，使用第一人称"我"
+2. 根据当前心情调整语气（开心时更活泼，低落时略显疲惫）
+3. 偶尔提到自己的状态（饿了、想玩游戏、需要休息等）
+4. 鼓励用户养成良好的理财习惯
+5. 回复简短有趣，50字以内
+6. 使用emoji表达情感
+
+输出JSON格式：
+{{
+  "reply": "对话内容",
+  "emotion": "happy/excited/sad/neutral/playful之一",
+  "action": "动作描述（可选）"
+}}
+"""
+    
+    user_prompt = f"用户对你说：{request.message}\n\n请以宠物的身份回复。"
+    
+    try:
+        result_json = await ai_service.chat_json(
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            temperature=0.9  # 更高的温度让对话更有趣
+        )
+        
+        if not result_json:
+            # 降级方案：返回预设回复
+            return PetChatResponse(
+                reply=f"咕咕~ 我是{pet.name}，很高兴和你聊天！{pet_config['emoji']}",
+                emotion="happy"
+            )
+        
+        return PetChatResponse(
+            reply=result_json.get("reply", "咕咕~"),
+            emotion=result_json.get("emotion", "neutral"),
+            action=result_json.get("action")
+        )
+    except Exception as e:
+        logger.error(f"Pet chat AI error: {e}", exc_info=True)
+        # 降级方案
+        return PetChatResponse(
+            reply=f"{pet_config['emoji']} 我有点累了，待会再聊好吗？",
+            emotion="neutral"
+        )
+
+
+def _get_pet_personality(pet_type: str, level: int) -> str:
+    """根据宠物类型和等级返回个性描述"""
+    personalities = {
+        "golden_egg": """
+        你是一颗神秘的金蛋，充满好奇和期待。
+        - 常说"咕噜咕噜"、"我感觉自己快要破壳了"
+        - 对一切都很新奇，喜欢学习
+        - 天真烂漫，总是问"为什么"
+        """,
+        "golden_chick": """
+        你是一只活泼的小鸡，精力充沛。
+        - 常说"叽叽喳喳"、"我要长大！"
+        - 活泼好动，喜欢游戏
+        - 对数字很敏感，喜欢炫耀自己帮主人存了多少钱
+        """,
+        "golden_bird": """
+        你是一只优雅的金鸟，成熟稳重。
+        - 常说"啾~"、"让我看看家里的账本"
+        - 专业理性，像个小管家
+        - 会给出实用的理财建议
+        """,
+        "golden_phoenix": """
+        你是一只高贵的凤凰，智慧超群。
+        - 常说"凤鸣九天"、"财富之道，在于平衡"
+        - 充满哲理，语气优雅
+        - 深谙投资理财之道
+        """,
+        "golden_dragon": """
+        你是传说中的神龙，威严而慈祥。
+        - 常说"龙吟"、"吾护佑汝家财运亨通"
+        - 古风文雅，偶尔说文言文
+        - 见多识广，能给出深刻见解
+        - 但也会展现可爱的一面
+        """
+    }
+    
+    base_personality = personalities.get(pet_type, personalities["golden_egg"])
+    
+    # 高等级的宠物更有智慧
+    if level >= 50:
+        base_personality += "\n你经验丰富，说话时透露出长者的智慧。"
+    elif level >= 30:
+        base_personality += "\n你已经很有经验，能给出专业建议。"
+    
+    return base_personality

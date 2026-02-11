@@ -717,3 +717,203 @@ async def get_family_members(
         })
     
     return members
+
+
+# ==================== AI 功能 ====================
+
+class TodoAISuggestionRequest(BaseModel):
+    """AI 任务建议请求"""
+    context: str  # 用户输入的任务描述或目标
+
+
+class TodoAISuggestionResponse(BaseModel):
+    """AI 任务建议响应"""
+    suggested_tasks: List[dict]  # [{title, description, priority, due_days}]
+    reasoning: str
+
+
+class TodoAIPrioritizeRequest(BaseModel):
+    """AI 任务优先级分析请求"""
+    task_ids: Optional[List[int]] = None  # 如果为空，分析所有未完成任务
+
+
+class TodoAIPrioritizeResponse(BaseModel):
+    """AI 任务优先级分析响应"""
+    prioritized_tasks: List[dict]  # [{task_id, title, suggested_priority, reasoning, urgency_score}]
+    overall_advice: str
+
+
+@router.post("/ai/suggest", response_model=TodoAISuggestionResponse)
+async def ai_suggest_tasks(
+    request: TodoAISuggestionRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    AI 智能任务建议 - 根据用户输入的目标或描述，生成结构化的任务列表
+    例如："我要准备全家的春节旅行" -> 分解为多个具体任务
+    """
+    from app.services.ai_service import ai_service
+    
+    if not ai_service.is_configured:
+        raise HTTPException(status_code=503, detail="AI 服务暂未配置")
+    
+    system_prompt = """你是一个任务规划专家，擅长将大目标分解为可执行的小任务。
+
+任务分解原则：
+1. 每个任务应该具体、可执行
+2. 设置合理的优先级（low/medium/high）
+3. 建议合理的完成时间（从现在开始的天数）
+4. 任务数量通常3-7个为宜
+
+优先级判断：
+- high：紧急重要，需立即处理
+- medium：重要但不紧急，或紧急但不重要
+- low：可以延后处理
+
+输出JSON格式：
+{
+  "suggested_tasks": [
+    {
+      "title": "任务标题（简短）",
+      "description": "任务详细描述",
+      "priority": "low/medium/high",
+      "due_days": 3
+    }
+  ],
+  "reasoning": "分解思路简述"
+}
+"""
+    
+    user_prompt = f"""请帮我分解以下目标/需求为具体的待办任务：
+
+{request.context}
+
+请给出任务列表和分解理由。"""
+    
+    try:
+        result_json = await ai_service.chat_json(
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            temperature=0.7
+        )
+        
+        if not result_json:
+            raise ValueError("AI 返回了无效的响应")
+        
+        return TodoAISuggestionResponse(
+            suggested_tasks=result_json.get("suggested_tasks", []),
+            reasoning=result_json.get("reasoning", "")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 任务建议失败: {str(e)}")
+
+
+@router.post("/ai/prioritize", response_model=TodoAIPrioritizeResponse)
+async def ai_prioritize_tasks(
+    request: TodoAIPrioritizeRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    AI 智能任务优先级分析 - 分析待办任务，给出优先级建议和执行顺序
+    """
+    from app.services.ai_service import ai_service
+    
+    if not ai_service.is_configured:
+        raise HTTPException(status_code=503, detail="AI 服务暂未配置")
+    
+    family_id = await get_user_family_id(current_user.id, db)
+    
+    # 查询待办任务
+    query = select(TodoItem).where(
+        TodoItem.family_id == family_id,
+        TodoItem.is_deleted == False,
+        TodoItem.completed == False
+    )
+    
+    if request.task_ids:
+        query = query.where(TodoItem.id.in_(request.task_ids))
+    
+    result = await db.execute(query)
+    tasks = result.scalars().all()
+    
+    if not tasks:
+        raise HTTPException(status_code=404, detail="没有找到待办任务")
+    
+    # 构建任务信息
+    task_info = []
+    for task in tasks:
+        due_info = ""
+        if task.due_date:
+            days_until_due = (task.due_date - datetime.now()).days
+            if days_until_due < 0:
+                due_info = f"已逾期 {abs(days_until_due)} 天"
+            elif days_until_due == 0:
+                due_info = "今天到期"
+            else:
+                due_info = f"{days_until_due} 天后到期"
+        
+        task_info.append({
+            "id": task.id,
+            "title": task.title,
+            "description": task.description or "",
+            "current_priority": task.priority,
+            "due_info": due_info,
+            "repeat": task.repeat_type != "none"
+        })
+    
+    system_prompt = """你是一个时间管理专家，帮助用户合理安排任务优先级。
+
+分析要点：
+1. 考虑任务的紧急程度（截止日期）
+2. 考虑任务的重要程度（从描述推断）
+3. 重复任务通常优先级较高（养成习惯）
+4. 已逾期的任务需立即处理
+
+优先级建议：
+- high：必须立即处理的任务
+- medium：重要且应尽快处理的任务
+- low：可以稍后处理的任务
+
+输出JSON格式：
+{
+  "prioritized_tasks": [
+    {
+      "task_id": 1,
+      "title": "任务标题",
+      "suggested_priority": "high",
+      "reasoning": "建议理由（30字内）",
+      "urgency_score": 95
+    }
+  ],
+  "overall_advice": "整体建议（80字内）"
+}
+
+urgency_score: 0-100，数字越大越紧急
+"""
+    
+    user_prompt = f"""请分析以下待办任务，给出优先级建议：
+
+任务列表：
+{json.dumps(task_info, ensure_ascii=False, indent=2)}
+
+请按紧急程度排序并给出建议。"""
+    
+    try:
+        import json as json_lib
+        result_json = await ai_service.chat_json(
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            temperature=0.3
+        )
+        
+        if not result_json:
+            raise ValueError("AI 返回了无效的响应")
+        
+        return TodoAIPrioritizeResponse(
+            prioritized_tasks=result_json.get("prioritized_tasks", []),
+            overall_advice=result_json.get("overall_advice", "")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 优先级分析失败: {str(e)}")

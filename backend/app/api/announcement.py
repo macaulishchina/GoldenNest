@@ -552,3 +552,156 @@ async def get_announcement_stats(
         "total_comments": total_comments,
         "total_likes_received": total_likes_received
     }
+
+
+# ==================== AI 功能 ====================
+
+class AnnouncementAIDraftRequest(BaseModel):
+    """AI 公告草稿请求"""
+    topic: str  # 公告主题
+    style: str = "formal"  # formal/casual/humorous
+
+
+class AnnouncementAIDraftResponse(BaseModel):
+    """AI 公告草稿响应"""
+    draft: str
+    emojis: List[str]
+
+
+class AnnouncementAIImproveRequest(BaseModel):
+    """AI 内容改进请求"""
+    content: str
+    improve_type: str = "clarity"  # clarity/emotion/brevity
+
+
+class AnnouncementAIImproveResponse(BaseModel):
+    """AI 内容改进响应"""
+    improved: str
+    changes: List[str]
+
+
+@router.post("/ai/draft", response_model=AnnouncementAIDraftResponse)
+async def ai_generate_draft(
+    request: AnnouncementAIDraftRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    AI 生成公告草稿 - 根据主题和风格自动生成公告内容
+    """
+    from app.services.ai_service import ai_service
+    
+    if not ai_service.is_configured:
+        raise HTTPException(status_code=503, detail="AI 服务暂未配置")
+    
+    style_prompts = {
+        "formal": "正式、专业的语气，适合重要通知",
+        "casual": "轻松、随意的语气，适合日常分享",
+        "humorous": "幽默、有趣的语气，适合娱乐互动"
+    }
+    
+    style_desc = style_prompts.get(request.style, style_prompts["casual"])
+    
+    system_prompt = f"""你是一个家庭公告撰写助手，帮助用户生成家庭内部公告。
+
+写作要求：
+1. 使用{style_desc}
+2. 内容简洁明了，一般80-200字
+3. 适当使用emoji增加亲和力
+4. 语言温暖、拉近家庭成员距离
+
+输出JSON格式：
+{{
+  "draft": "公告正文",
+  "emojis": ["😊", "🎉"]
+}}
+"""
+    
+    user_prompt = f"""请为以下主题生成一则家庭公告：
+
+主题：{request.topic}
+风格：{request.style}
+
+请生成公告内容。"""
+    
+    try:
+        result_json = await ai_service.chat_json(
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            temperature=0.8
+        )
+        
+        if not result_json:
+            raise ValueError("AI 返回了无效的响应")
+        
+        return AnnouncementAIDraftResponse(
+            draft=result_json.get("draft", ""),
+            emojis=result_json.get("emojis", [])
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 草稿生成失败: {str(e)}")
+
+
+@router.post("/ai/improve", response_model=AnnouncementAIImproveResponse)
+async def ai_improve_content(
+    request: AnnouncementAIImproveRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    AI 改进公告内容 - 优化现有公告的表达
+    """
+    from app.services.ai_service import ai_service
+    
+    if not ai_service.is_configured:
+        raise HTTPException(status_code=503, detail="AI 服务暂未配置")
+    
+    improve_prompts = {
+        "clarity": "让表达更清晰明确",
+        "emotion": "增强情感表达，更温暖",
+        "brevity": "精简内容，更简洁"
+    }
+    
+    improve_desc = improve_prompts.get(request.improve_type, improve_prompts["clarity"])
+    
+    system_prompt = f"""你是一个文字编辑助手，帮助改进家庭公告内容。
+
+改进方向：{improve_desc}
+
+注意事项：
+1. 保持原意不变
+2. 保留重要信息
+3. 让语言更适合家庭内部沟通
+
+输出JSON格式：
+{{
+  "improved": "改进后的内容",
+  "changes": ["改进点1", "改进点2"]
+}}
+"""
+    
+    user_prompt = f"""请改进以下公告内容：
+
+原文：
+{request.content}
+
+改进类型：{request.improve_type}
+
+请给出改进后的版本。"""
+    
+    try:
+        result_json = await ai_service.chat_json(
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            temperature=0.6
+        )
+        
+        if not result_json:
+            raise ValueError("AI 返回了无效的响应")
+        
+        return AnnouncementAIImproveResponse(
+            improved=result_json.get("improved", request.content),
+            changes=result_json.get("changes", [])
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 内容改进失败: {str(e)}")
