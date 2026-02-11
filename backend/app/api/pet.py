@@ -2240,7 +2240,7 @@ async def chat_with_pet(
     
     # 计算心情
     last_fed_date = pet.last_fed_at.date() if pet.last_fed_at else pet.created_at.date()
-    last_played_date = pet.last_played_at.date() if pet.last_played_at else pet.created_at.date()
+    last_played_date = pet.last_interaction_at.date() if pet.last_interaction_at else pet.created_at.date()
     days_since_fed = (datetime.now().date() - last_fed_date).days
     days_since_played = (datetime.now().date() - last_played_date).days
     
@@ -2266,7 +2266,7 @@ async def chat_with_pet(
 - 连续签到：{checkin_streak}天
 
 你的性格特点：
-{self._get_pet_personality(pet.pet_type, pet.level)}
+{_get_pet_personality(pet.pet_type, pet.level)}
 
 与用户对话时：
 1. 保持角色一致性，使用第一人称"我"

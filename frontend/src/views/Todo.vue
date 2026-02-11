@@ -80,7 +80,7 @@
           <input 
             v-model="quickAddTitle"
             @keyup.enter="quickAddItem"
-            placeholder="添加新任务，按回车保存... 或试试 AI 任务建议 🤖"
+            placeholder="添加新任务或试试 AI 任务建议 🤖"
             class="quick-add-input"
           />
           <button class="btn-quick-add" @click="quickAddItem">添加</button>
@@ -153,7 +153,14 @@
     <!-- AI 任务助手弹窗 -->
     <div v-if="showAIDialog" class="modal-overlay" @click.self="showAIDialog = false">
       <div class="modal-content">
-        <h2>🤖 AI 任务助手</h2>
+        <div class="modal-header">
+          <h2>🤖 AI 任务助手</h2>
+          <button class="btn-close-modal" @click="closeAIDialog">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
         
         <div class="ai-tabs">
           <button 
@@ -180,15 +187,27 @@
               v-model="aiGoal"
               placeholder="例如：我要准备全家春节旅行、整理家里的杂物、学习新技能..."
               rows="4"
+              class="ai-input"
             ></textarea>
           </div>
           
           <button 
-            class="btn-primary full-width" 
+            class="btn-ai-suggest" 
             @click="getAISuggestions"
             :disabled="aiLoading || !aiGoal.trim()"
           >
-            {{ aiLoading ? '分析中...' : '获取 AI 建议' }}
+            <span v-if="aiLoading" class="btn-loading">
+              <svg class="spinner" viewBox="0 0 50 50">
+                <circle cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
+              </svg>
+              AI 分析中...
+            </span>
+            <span v-else>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="margin-right: 6px;">
+                <path d="M8 2L8 14M2 8L14 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              获取 AI 建议
+            </span>
           </button>
 
           <!-- AI 建议结果 -->
@@ -214,11 +233,20 @@
                 <p class="task-desc">{{ task.description }}</p>
                 <p class="task-due">建议 {{ task.due_days }} 天内完成</p>
                 <button 
+                  v-if="!addedSuggestedTaskIndexes.has(index)"
                   class="btn-add-suggested"
-                  @click="addSuggestedTask(task)"
+                  @click="addSuggestedTask(task, index)"
+                  :disabled="addingTaskIndex === index"
                 >
-                  添加到清单
+                  <span v-if="addingTaskIndex === index" class="btn-loading-small">
+                    <svg class="spinner-small" viewBox="0 0 50 50">
+                      <circle cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
+                    </svg>
+                    添加中...
+                  </span>
+                  <span v-else>添加到清单</span>
                 </button>
+                <span v-else class="adopted-badge">✓ 已添加</span>
               </div>
             </div>
           </div>
@@ -226,14 +254,27 @@
 
         <!-- 优先级分析模式 -->
         <div v-if="aiMode === 'prioritize'" class="ai-content">
-          <p class="ai-hint">AI 将分析当前清单中的待办任务，给出优先级建议</p>
+          <div class="form-group">
+            <label>AI 将分析当前清单中的待办任务，给出优先级建议</label>
+          </div>
           
           <button 
-            class="btn-primary full-width" 
+            class="btn-ai-suggest" 
             @click="getAIPrioritization"
             :disabled="aiLoading || !hasPendingTasks"
           >
-            {{ aiLoading ? '分析中...' : '开始分析' }}
+            <span v-if="aiLoading" class="btn-loading">
+              <svg class="spinner" viewBox="0 0 50 50">
+                <circle cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
+              </svg>
+              AI 分析中...
+            </span>
+            <span v-else>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="margin-right: 6px;">
+                <path d="M8 2L8 14M2 8L14 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              开始分析
+            </span>
           </button>
 
           <!-- AI 优先级结果 -->
@@ -262,13 +303,26 @@
                     紧急度：{{ task.urgency_score }}/100
                   </div>
                   <p class="task-reasoning">{{ task.reasoning }}</p>
+                  <button 
+                    v-if="!adoptedTaskIds.has(task.task_id) && shouldShowAdoptButton(task)"
+                    class="btn-add-suggested"
+                    @click="adoptPrioritySuggestion(task)"
+                    :disabled="adoptingTaskId === task.task_id"
+                  >
+                    <span v-if="adoptingTaskId === task.task_id" class="btn-loading-small">
+                      <svg class="spinner-small" viewBox="0 0 50 50">
+                        <circle cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
+                      </svg>
+                      采纳中...
+                    </span>
+                    <span v-else>采纳建议</span>
+                  </button>
+                  <span v-else-if="adoptedTaskIds.has(task.task_id)" class="adopted-badge">✓ 已采纳</span>
                 </div>
               </div>
             </div>
           </div>
         </div>
-
-        <button class="btn-close" @click="closeAIDialog">关闭</button>
       </div>
     </div>
 
@@ -409,6 +463,10 @@ const aiLoading = ref(false)
 const aiGoal = ref('')
 const aiSuggestions = ref(null)
 const aiPrioritization = ref(null)
+const adoptingTaskId = ref(null)
+const adoptedTaskIds = ref(new Set())
+const addedSuggestedTaskIndexes = ref(new Set())
+const addingTaskIndex = ref(null)
 
 // 快速添加
 const quickAddTitle = ref('')
@@ -458,7 +516,9 @@ async function getAISuggestions() {
     })
     aiSuggestions.value = response.data
   } catch (error) {
-    message.error(error.response?.data?.detail || 'AI 建议获取失败')
+    console.error('AI suggest error:', error)
+    const errorMsg = error.response?.data?.detail || 'AI 建议获取失败'
+    message.error(errorMsg)
   } finally {
     aiLoading.value = false
   }
@@ -476,18 +536,21 @@ async function getAIPrioritization() {
     })
     aiPrioritization.value = response.data
   } catch (error) {
-    message.error(error.response?.data?.detail || 'AI 分析失败')
+    console.error('AI prioritize error:', error)
+    const errorMsg = error.response?.data?.detail || 'AI 分析失败'
+    message.error(errorMsg)
   } finally {
     aiLoading.value = false
   }
 }
 
-async function addSuggestedTask(task) {
+async function addSuggestedTask(task, index) {
   if (!currentListId.value) {
     message.warning('请先选择一个清单')
     return
   }
   
+  addingTaskIndex.value = index
   try {
     const dueDate = new Date()
     dueDate.setDate(dueDate.getDate() + (task.due_days || 7))
@@ -501,9 +564,12 @@ async function addSuggestedTask(task) {
     })
     
     message.success('任务已添加')
+    addedSuggestedTaskIndexes.value.add(index)
     await loadItems()
   } catch (error) {
     message.error('添加任务失败')
+  } finally {
+    addingTaskIndex.value = null
   }
 }
 
@@ -513,6 +579,8 @@ function closeAIDialog() {
   aiSuggestions.value = null
   aiPrioritization.value = null
   aiMode.value = 'suggest'
+  adoptedTaskIds.value.clear()
+  addedSuggestedTaskIndexes.value.clear()
 }
 
 function getPriorityLabel(priority) {
@@ -522,6 +590,36 @@ function getPriorityLabel(priority) {
     high: '高'
   }
   return labels[priority] || priority
+}
+
+function shouldShowAdoptButton(task) {
+  const currentItem = todoItems.value.find(t => t.id === task.task_id)
+  if (!currentItem) return false
+  return currentItem.priority !== task.suggested_priority
+}
+
+async function adoptPrioritySuggestion(task) {
+  adoptingTaskId.value = task.task_id
+  try {
+    await api.put(`/todo/items/${task.task_id}`, {
+      priority: task.suggested_priority
+    })
+    message.success(`已将"${task.title}"的优先级调整为${getPriorityLabel(task.suggested_priority)}`)
+    // 添加到已采纳集合
+    adoptedTaskIds.value.add(task.task_id)
+    // 刷新任务列表
+    await loadItems()
+    // 更新本地优先级显示
+    const item = todoItems.value.find(t => t.id === task.task_id)
+    if (item) {
+      item.priority = task.suggested_priority
+    }
+  } catch (error) {
+    console.error('Adopt priority error:', error)
+    message.error('采纳建议失败')
+  } finally {
+    adoptingTaskId.value = null
+  }
 }
 
 // 方法
@@ -1417,6 +1515,31 @@ onMounted(async () => {
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.btn-close-modal {
+  background: none;
+  border: none;
+  color: var(--theme-text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-close-modal:hover {
+  background: var(--theme-bg-soft);
+  color: var(--theme-text-primary);
+}
+
 .ai-tabs {
   display: flex;
   gap: 8px;
@@ -1433,17 +1556,114 @@ onMounted(async () => {
   padding: 10px;
   cursor: pointer;
   font-size: 14px;
+  color: var(--theme-text-primary);
   transition: all 0.2s;
 }
 
 .ai-tab.active {
-  border-bottom-color: #667eea;
-  color: #667eea;
+  border-bottom-color: var(--theme-primary);
+  color: var(--theme-primary);
   font-weight: 600;
 }
 
 .ai-content {
   margin-top: 16px;
+}
+
+.ai-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-primary);
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  transition: all 0.2s;
+}
+
+.ai-input:focus {
+  outline: none;
+  border-color: var(--theme-primary);
+  box-shadow: 0 0 0 3px var(--theme-primary-light, rgba(102, 126, 234, 0.1));
+}
+
+.ai-input::placeholder {
+  color: var(--theme-text-tertiary);
+}
+
+.btn-ai-suggest {
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, var(--theme-primary) 0%, var(--theme-primary-hover) 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.25);
+}
+
+.btn-ai-suggest:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
+}
+
+.btn-ai-suggest:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-ai-suggest:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  animation: rotate 1s linear infinite;
+}
+
+.spinner circle {
+  stroke: currentColor;
+  stroke-linecap: round;
+  animation: dash 1.5s ease-in-out infinite;
+}
+
+@keyframes rotate {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes dash {
+  0% {
+    stroke-dasharray: 1, 150;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 90, 150;
+    stroke-dashoffset: -35;
+  }
+  100% {
+    stroke-dasharray: 90, 150;
+    stroke-dashoffset: -124;
+  }
 }
 
 .ai-hint {
@@ -1473,7 +1693,7 @@ onMounted(async () => {
 }
 
 .suggested-task, .prioritized-task {
-  background: white;
+  background: var(--theme-bg-secondary);
   border: 1px solid var(--theme-border);
   border-radius: 8px;
   padding: 12px;
@@ -1487,7 +1707,7 @@ onMounted(async () => {
 }
 
 .task-rank {
-  background: #667eea;
+  background: var(--theme-primary);
   color: white;
   width: 32px;
   height: 32px;
@@ -1513,6 +1733,7 @@ onMounted(async () => {
 .task-title {
   font-weight: 500;
   font-size: 14px;
+  color: var(--theme-text-primary);
 }
 
 .task-priority {
@@ -1551,7 +1772,7 @@ onMounted(async () => {
 
 .btn-add-suggested {
   margin-top: 8px;
-  background: #667eea;
+  background: var(--theme-primary);
   color: white;
   border: none;
   border-radius: 6px;
@@ -1562,12 +1783,47 @@ onMounted(async () => {
 }
 
 .btn-add-suggested:hover {
-  background: #5568d3;
+  background: var(--theme-primary-hover);
+  transform: translateY(-1px);
 }
 
 html.dark .suggested-task,
 html.dark .prioritized-task {
   background: var(--theme-bg-elevated);
   border-color: var(--theme-border);
+}
+
+.btn-loading-small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spinner-small {
+  width: 12px;
+  height: 12px;
+  animation: rotate 1s linear infinite;
+}
+
+.spinner-small circle {
+  stroke: currentColor;
+  stroke-linecap: round;
+  animation: dash 1.5s ease-in-out infinite;
+}
+
+.adopted-badge {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 4px 12px;
+  background: var(--theme-success-bg, #f0fdf4);
+  color: var(--theme-success, #16a34a);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+html.dark .adopted-badge {
+  background: rgba(22, 163, 74, 0.15);
+  color: #4ade80;
 }
 </style>

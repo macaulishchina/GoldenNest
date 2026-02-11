@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.api.auth import get_current_user
 from app.models.models import User, Family, FamilyMember, Deposit, Transaction, Investment, Asset, ExpenseRequest
 from app.services.ai_service import ai_service
 

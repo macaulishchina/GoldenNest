@@ -2,7 +2,9 @@
 家庭清单 API - Todo List
 支持多清单、任务指派、截止日期、重复任务等功能
 """
-from datetime import datetime, timedelta
+import logging
+from datetime import datetime, timedelta, timezone
+import json
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +21,7 @@ from app.models.models import (
 from app.services.calendar import calendar_service
 from app.services.achievement import AchievementService
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/todo", tags=["todo"])
 
 
@@ -348,14 +351,17 @@ async def create_item(
     await db.flush()  # 获取 item.id
     
     # 自动创建日历提醒（如果有截止日期）
-    if data.due_date and data.due_date > datetime.utcnow():
-        await calendar_service.create_todo_reminder(
-            db=db,
-            family_id=family_id,
-            todo=item,
-            created_by=current_user.id,
-            assignee_id=data.assignee_id
-        )
+    if data.due_date:
+        # 移除时区信息进行比较
+        due_date_naive = data.due_date.replace(tzinfo=None) if data.due_date.tzinfo else data.due_date
+        if due_date_naive > datetime.utcnow():
+            await calendar_service.create_todo_reminder(
+                db=db,
+                family_id=family_id,
+                todo=item,
+                created_by=current_user.id,
+                assignee_id=data.assignee_id
+            )
     
     await db.commit()
     await db.refresh(item)
@@ -484,14 +490,17 @@ async def complete_item(
         await db.flush()  # 获取 new_item.id
         
         # 为新的重复任务创建日历提醒
-        if next_due_date and next_due_date > datetime.utcnow():
-            await calendar_service.create_todo_reminder(
-                db=db,
-                family_id=family_id,
-                todo=new_item,
-                created_by=current_user.id,
-                assignee_id=item.assignee_id
-            )
+        if next_due_date:
+            # 移除时区信息进行比较
+            next_due_naive = next_due_date.replace(tzinfo=None) if next_due_date.tzinfo else next_due_date
+            if next_due_naive > datetime.utcnow():
+                await calendar_service.create_todo_reminder(
+                    db=db,
+                    family_id=family_id,
+                    todo=new_item,
+                    created_by=current_user.id,
+                    assignee_id=item.assignee_id
+                )
     
     # 删除原任务的日历提醒（任务已完成）
     await calendar_service.delete_todo_reminder(
@@ -574,10 +583,13 @@ async def uncomplete_item(
     item.completed_at = None
     
     # 重新创建日历提醒（如果有截止日期且未过期）
-    if item.due_date and item.due_date > datetime.utcnow():
-        await calendar_service.create_todo_reminder(
-            db=db,
-            family_id=family_id,
+    if item.due_date:
+        # 移除时区信息进行比较
+        due_date_naive = item.due_date.replace(tzinfo=None) if item.due_date.tzinfo else item.due_date
+        if due_date_naive > datetime.utcnow():
+            await calendar_service.create_todo_reminder(
+                db=db,
+                family_id=family_id,
             todo=item,
             created_by=current_user.id,
             assignee_id=item.assignee_id
@@ -675,7 +687,8 @@ async def get_stats(
         .where(
             TodoList.family_id == family_id,
             TodoItem.is_completed == False,
-            TodoItem.due_date <= today
+            TodoItem.due_date != None,
+            func.datetime(TodoItem.due_date) <= today
         )
     )
     due_today = result.scalar() or 0
@@ -721,6 +734,16 @@ async def get_family_members(
 
 # ==================== AI 功能 ====================
 
+class SuggestedTask(BaseModel):
+    """AI 建议的任务"""
+    title: str
+    description: str
+    priority: str
+    due_days: int
+    
+    class Config:
+        from_attributes = True
+
 class TodoAISuggestionRequest(BaseModel):
     """AI 任务建议请求"""
     context: str  # 用户输入的任务描述或目标
@@ -728,8 +751,11 @@ class TodoAISuggestionRequest(BaseModel):
 
 class TodoAISuggestionResponse(BaseModel):
     """AI 任务建议响应"""
-    suggested_tasks: List[dict]  # [{title, description, priority, due_days}]
+    suggested_tasks: List[SuggestedTask]
     reasoning: str
+    
+    class Config:
+        from_attributes = True
 
 
 class TodoAIPrioritizeRequest(BaseModel):
@@ -737,10 +763,25 @@ class TodoAIPrioritizeRequest(BaseModel):
     task_ids: Optional[List[int]] = None  # 如果为空，分析所有未完成任务
 
 
+class PrioritizedTask(BaseModel):
+    """AI 优先级分析的任务"""
+    task_id: int
+    title: str
+    suggested_priority: str
+    reasoning: str
+    urgency_score: float
+    
+    class Config:
+        from_attributes = True
+
+
 class TodoAIPrioritizeResponse(BaseModel):
     """AI 任务优先级分析响应"""
-    prioritized_tasks: List[dict]  # [{task_id, title, suggested_priority, reasoning, urgency_score}]
+    prioritized_tasks: List[PrioritizedTask]
     overall_advice: str
+    
+    class Config:
+        from_attributes = True
 
 
 @router.post("/ai/suggest", response_model=TodoAISuggestionResponse)
@@ -801,11 +842,28 @@ async def ai_suggest_tasks(
         if not result_json:
             raise ValueError("AI 返回了无效的响应")
         
+        # 确保返回正确的数据结构
+        suggested_tasks_raw = result_json.get("suggested_tasks", [])
+        reasoning = result_json.get("reasoning", "")
+        
+        # 验证数据并转换为 SuggestedTask 对象
+        suggested_tasks = []
+        if isinstance(suggested_tasks_raw, list):
+            for task_dict in suggested_tasks_raw:
+                try:
+                    task = SuggestedTask(**task_dict)
+                    suggested_tasks.append(task)
+                except Exception as e:
+                    logger.warning(f"Failed to parse task: {task_dict}, error: {e}")
+        
         return TodoAISuggestionResponse(
-            suggested_tasks=result_json.get("suggested_tasks", []),
-            reasoning=result_json.get("reasoning", "")
+            suggested_tasks=suggested_tasks,
+            reasoning=reasoning
         )
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"AI suggest failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"AI 任务建议失败: {str(e)}")
 
 
@@ -825,19 +883,23 @@ async def ai_prioritize_tasks(
     
     family_id = await get_user_family_id(current_user.id, db)
     
-    # 查询待办任务
+    # 查询该家庭下所有清单ID
+    list_id_query = select(TodoList.id).where(TodoList.family_id == family_id)
+    result = await db.execute(list_id_query)
+    list_ids = [row[0] for row in result.fetchall()]
+    if not list_ids:
+        raise HTTPException(status_code=404, detail="没有找到家庭清单")
+
+    # 查询待办任务（属于这些清单，未删除、未完成）
     query = select(TodoItem).where(
-        TodoItem.family_id == family_id,
-        TodoItem.is_deleted == False,
-        TodoItem.completed == False
+        TodoItem.list_id.in_(list_ids),
+        getattr(TodoItem, "is_deleted", False) == False,
+        getattr(TodoItem, "is_completed", False) == False
     )
-    
     if request.task_ids:
         query = query.where(TodoItem.id.in_(request.task_ids))
-    
     result = await db.execute(query)
     tasks = result.scalars().all()
-    
     if not tasks:
         raise HTTPException(status_code=404, detail="没有找到待办任务")
     
@@ -911,9 +973,25 @@ urgency_score: 0-100，数字越大越紧急
         if not result_json:
             raise ValueError("AI 返回了无效的响应")
         
+        # 转换为 PrioritizedTask 对象
+        prioritized_tasks_raw = result_json.get("prioritized_tasks", [])
+        overall_advice = result_json.get("overall_advice", "")
+        
+        prioritized_tasks = []
+        if isinstance(prioritized_tasks_raw, list):
+            for task_dict in prioritized_tasks_raw:
+                try:
+                    task = PrioritizedTask(**task_dict)
+                    prioritized_tasks.append(task)
+                except Exception as e:
+                    logger.warning(f"Failed to parse prioritized task: {task_dict}, error: {e}")
+        
         return TodoAIPrioritizeResponse(
-            prioritized_tasks=result_json.get("prioritized_tasks", []),
-            overall_advice=result_json.get("overall_advice", "")
+            prioritized_tasks=prioritized_tasks,
+            overall_advice=overall_advice
         )
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"AI prioritize failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"AI 优先级分析失败: {str(e)}")
