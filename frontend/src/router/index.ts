@@ -117,6 +117,11 @@ const router = createRouter({
           component: () => import('@/views/Bet.vue')
         },
         {
+          path: 'accounting',
+          name: 'Accounting',
+          component: () => import('@/views/Accounting.vue')
+        },
+        {
           path: 'system-settings',
           name: 'SystemSettings',
           component: () => import('@/views/SystemSettings.vue')
