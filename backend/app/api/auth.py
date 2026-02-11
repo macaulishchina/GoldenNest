@@ -5,14 +5,21 @@ import base64
 import hashlib
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.config import settings
-from app.core.security import verify_password, get_password_hash, create_access_token, decode_access_token
+from app.core.security import (
+    verify_password,
+    get_password_hash,
+    create_access_token,
+    decode_access_token,
+    get_current_user,
+    oauth2_scheme
+)
 from app.core.limiter import limiter
 from app.models.models import User, FamilyMember
 from app.schemas.auth import UserCreate, UserResponse, Token, UserLogin, UserProfileUpdate, PasswordChange
@@ -23,40 +30,6 @@ router = APIRouter()
 class AvatarUpdate(BaseModel):
     """头像更新请求"""
     avatar: str  # Base64 编码的图片
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
-
-
-async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db)
-) -> User:
-    """获取当前登录用户"""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="无法验证凭据",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    
-    payload = decode_access_token(token)
-    if payload is None:
-        raise credentials_exception
-    
-    user_id_str = payload.get("sub")
-    if user_id_str is None:
-        raise credentials_exception
-    
-    try:
-        user_id = int(user_id_str)
-    except (ValueError, TypeError):
-        raise credentials_exception
-    
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    
-    if user is None:
-        raise credentials_exception
-    
-    return user
 
 
 @router.post("/register", response_model=UserResponse)
