@@ -18,9 +18,10 @@ from app.schemas.accounting import (
     AccountingEntryCreate, AccountingEntryPhotoCreate, AccountingEntryVoiceCreate,
     AccountingEntryImport, AccountingEntryUpdate, AccountingEntryResponse,
     AccountingEntryListResponse, AccountingPhotoOCRResponse, AccountingVoiceTranscriptResponse,
-    AccountingBatchExpenseRequest, AccountingStatsResponse, AccountingCategoryStatsResponse
+    AccountingBatchExpenseRequest, AccountingStatsResponse, AccountingCategoryStatsResponse,
+    DuplicateCheckRequest, DuplicateCheckResponse, DuplicateCheckResult, DuplicateMatch, DuplicateMatchLevel
 )
-from app.services.ai_accounting import parse_receipt_image, transcribe_voice, categorize_entry
+from app.services.ai_accounting import parse_receipt_image, transcribe_voice, categorize_entry, check_duplicate_with_ai
 
 router = APIRouter()
 
@@ -790,4 +791,218 @@ async def get_accounting_stats(
         unaccounted_amount=unaccounted_amount,
         unaccounted_count=unaccounted_count,
         category_stats=category_stats
+    )
+
+
+@router.post("/check-duplicates", response_model=DuplicateCheckResponse)
+async def check_duplicates(
+    check_data: DuplicateCheckRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    检查待记账条目是否与已有记录重复
+
+    检测逻辑：
+    1. 完全匹配（exact）：时间相差<5分钟 且 金额完全相同 → 自动标记为重复
+    2. 很可能重复（likely）：时间相差<1小时 且 金额相同 且 AI相似度>0.8
+    3. 可能重复（possible）：时间相差<24小时 且 金额相同 → AI判断
+    4. 不重复（unique）：无匹配项
+    """
+    family, _ = await get_user_family(current_user, db)
+
+    results = []
+    exact_count = 0
+    likely_count = 0
+    possible_count = 0
+    unique_count = 0
+
+    for index, entry_data in enumerate(check_data.entries):
+        # 查询可能重复的记录（同一家庭，金额相同或接近，时间在24小时内）
+        from datetime import timedelta
+
+        time_window_start = entry_data.entry_date - timedelta(hours=24)
+        time_window_end = entry_data.entry_date + timedelta(hours=24)
+
+        # 金额允许0.1元的误差
+        amount_min = entry_data.amount - 0.1
+        amount_max = entry_data.amount + 0.1
+
+        query_result = await db.execute(
+            select(AccountingEntry)
+            .where(
+                and_(
+                    AccountingEntry.family_id == family.id,
+                    AccountingEntry.entry_date >= time_window_start,
+                    AccountingEntry.entry_date <= time_window_end,
+                    AccountingEntry.amount >= amount_min,
+                    AccountingEntry.amount <= amount_max
+                )
+            )
+            .order_by(AccountingEntry.entry_date.desc())
+            .limit(10)  # 最多检查10条可能重复的记录
+        )
+        existing_entries = query_result.scalars().all()
+
+        if not existing_entries:
+            # 没有找到可能重复的记录
+            results.append(DuplicateCheckResult(
+                index=index,
+                entry_data=entry_data,
+                is_duplicate=False,
+                match_level=DuplicateMatchLevel.UNIQUE,
+                duplicates=[]
+            ))
+            unique_count += 1
+            continue
+
+        # 检测重复级别
+        duplicates = []
+        max_match_level = DuplicateMatchLevel.UNIQUE
+
+        for existing_entry in existing_entries:
+            time_diff = abs((entry_data.entry_date - existing_entry.entry_date).total_seconds())
+            amount_diff = abs(entry_data.amount - existing_entry.amount)
+
+            match_reasons = []
+            similarity_score = 0.0
+            match_level = DuplicateMatchLevel.UNIQUE
+
+            # 1. 完全匹配检测（时间<5分钟 且 金额完全相同）
+            if time_diff < 300 and amount_diff < 0.01:
+                match_level = DuplicateMatchLevel.EXACT
+                similarity_score = 1.0
+                match_reasons.append("时间和金额完全匹配")
+
+                # 如果描述也相似，提高置信度
+                if entry_data.description.lower() == existing_entry.description.lower():
+                    match_reasons.append("描述完全相同")
+                elif entry_data.description.lower() in existing_entry.description.lower() or \
+                     existing_entry.description.lower() in entry_data.description.lower():
+                    match_reasons.append("描述包含关系")
+
+            # 2. 很可能重复（时间<1小时 且 金额相同）
+            elif time_diff < 3600 and amount_diff < 0.01:
+                # 使用AI判断
+                ai_similarity, ai_reason = await check_duplicate_with_ai(
+                    entry_data.description,
+                    entry_data.amount,
+                    entry_data.category,
+                    existing_entry.description,
+                    existing_entry.amount,
+                    existing_entry.category.value
+                )
+
+                similarity_score = ai_similarity
+
+                if ai_similarity >= 0.8:
+                    match_level = DuplicateMatchLevel.LIKELY
+                    match_reasons.append(f"时间相近（{int(time_diff/60)}分钟内）")
+                    match_reasons.append(f"金额相同（¥{entry_data.amount}）")
+                    match_reasons.append(f"AI判断：{ai_reason}")
+                elif ai_similarity >= 0.5:
+                    match_level = DuplicateMatchLevel.POSSIBLE
+                    match_reasons.append(f"时间较近（{int(time_diff/60)}分钟内）")
+                    match_reasons.append(f"金额相同")
+                    match_reasons.append(f"AI判断：{ai_reason}")
+
+            # 3. 可能重复（时间<24小时 且 金额相同）
+            elif time_diff < 86400 and amount_diff < 0.01:
+                # 使用AI判断，但相似度要求更高
+                ai_similarity, ai_reason = await check_duplicate_with_ai(
+                    entry_data.description,
+                    entry_data.amount,
+                    entry_data.category,
+                    existing_entry.description,
+                    existing_entry.amount,
+                    existing_entry.category.value
+                )
+
+                similarity_score = ai_similarity
+
+                if ai_similarity >= 0.7:
+                    match_level = DuplicateMatchLevel.POSSIBLE
+                    match_reasons.append(f"金额相同（¥{entry_data.amount}）")
+                    match_reasons.append(f"时间相差{int(time_diff/3600)}小时")
+                    match_reasons.append(f"AI判断：{ai_reason}")
+
+            # 如果匹配，添加到重复列表
+            if match_level != DuplicateMatchLevel.UNIQUE:
+                # 获取用户昵称
+                user_result = await db.execute(
+                    select(User).where(User.id == existing_entry.user_id)
+                )
+                user = user_result.scalar_one_or_none()
+
+                consumer_nickname = None
+                if existing_entry.consumer_id:
+                    consumer_result = await db.execute(
+                        select(User).where(User.id == existing_entry.consumer_id)
+                    )
+                    consumer = consumer_result.scalar_one_or_none()
+                    if consumer:
+                        consumer_nickname = consumer.nickname
+
+                entry_response = AccountingEntryResponse(
+                    id=existing_entry.id,
+                    family_id=existing_entry.family_id,
+                    user_id=existing_entry.user_id,
+                    consumer_id=existing_entry.consumer_id,
+                    amount=existing_entry.amount,
+                    category=existing_entry.category.value,
+                    description=existing_entry.description,
+                    entry_date=existing_entry.entry_date,
+                    source=existing_entry.source.value,
+                    image_data=existing_entry.image_data,
+                    is_accounted=existing_entry.is_accounted,
+                    expense_request_id=existing_entry.expense_request_id,
+                    created_at=existing_entry.created_at,
+                    user_nickname=user.nickname if user else None,
+                    consumer_nickname=consumer_nickname
+                )
+
+                duplicates.append(DuplicateMatch(
+                    existing_entry_id=existing_entry.id,
+                    existing_entry=entry_response,
+                    match_level=match_level,
+                    similarity_score=similarity_score,
+                    match_reasons=match_reasons
+                ))
+
+                # 更新最高匹配级别
+                level_priority = {
+                    DuplicateMatchLevel.EXACT: 4,
+                    DuplicateMatchLevel.LIKELY: 3,
+                    DuplicateMatchLevel.POSSIBLE: 2,
+                    DuplicateMatchLevel.UNIQUE: 1
+                }
+                if level_priority.get(match_level, 0) > level_priority.get(max_match_level, 0):
+                    max_match_level = match_level
+
+        # 添加检测结果
+        is_duplicate = len(duplicates) > 0
+        results.append(DuplicateCheckResult(
+            index=index,
+            entry_data=entry_data,
+            is_duplicate=is_duplicate,
+            match_level=max_match_level,
+            duplicates=duplicates
+        ))
+
+        # 统计计数
+        if max_match_level == DuplicateMatchLevel.EXACT:
+            exact_count += 1
+        elif max_match_level == DuplicateMatchLevel.LIKELY:
+            likely_count += 1
+        elif max_match_level == DuplicateMatchLevel.POSSIBLE:
+            possible_count += 1
+        else:
+            unique_count += 1
+
+    return DuplicateCheckResponse(
+        results=results,
+        exact_duplicates_count=exact_count,
+        likely_duplicates_count=likely_count,
+        possible_duplicates_count=possible_count,
+        unique_count=unique_count
     )
