@@ -773,6 +773,8 @@ const handleCurrencyChange = async () => {
 }
 
 // ==================== 图片识别功能 ====================
+// Note: imageInputRef is shared between deposit and expense forms
+// This is safe because only one form type is rendered at a time (v-if conditional)
 const imageInputRef = ref<HTMLInputElement | null>(null)
 const imageParsing = ref(false)
 const imagePreview = ref('')
@@ -787,6 +789,7 @@ const clearImage = () => {
   imagePreview.value = ''
   imageParseError.value = ''
   imageParseSuccess.value = ''
+  imageParsing.value = false  // Reset parsing state
   if (imageInputRef.value) {
     imageInputRef.value.value = ''
   }
@@ -833,8 +836,10 @@ const handleImageSelected = async (event: Event) => {
           if (createForm.value.type === 'deposit') {
             if (parsed.amount) createForm.value.amount = parsed.amount
             if (parsed.start_date) createForm.value.deposit_date = parsed.start_date
-            if (parsed.note) createForm.value.note = parsed.note
-            if (parsed.name && !createForm.value.note) {
+            // Prefer parsed.note, fallback to parsed.name if note is empty
+            if (parsed.note) {
+              createForm.value.note = parsed.note
+            } else if (parsed.name) {
               createForm.value.note = parsed.name
             }
           } else if (createForm.value.type === 'expense') {
