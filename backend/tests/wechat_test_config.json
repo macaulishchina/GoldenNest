@@ -1,0 +1,5 @@
+{
+  "wechat_work_webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=9fbd765c-c6f2-444f-aa41-c1fd8e91e9ae",
+  "notification_enabled": true,
+  "external_base_url": "http://47.109.34.254:8088"
+}
