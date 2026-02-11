@@ -1,7 +1,17 @@
 <template>
   <div class="page-container">
-    <h1 class="page-title"><span class="icon">📈</span> 理财配置</h1>
-    
+    <div class="page-header-row">
+      <h1 class="page-title"><span class="icon">📈</span> 理财配置</h1>
+      <n-button
+        type="primary"
+        :loading="aiAnalyzing"
+        @click="handleAIAnalysis"
+        style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none"
+      >
+        🤖 AI 投资分析
+      </n-button>
+    </div>
+
     <!-- 家庭自由资金卡片 -->
     <n-card class="card-hover" style="margin-bottom: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
       <n-statistic label="家庭自由资金" :value="currentBalance">
@@ -378,6 +388,71 @@
         <n-empty v-else description="暂无操作记录" />
       </n-spin>
     </n-modal>
+
+    <!-- AI 投资分析模态框 -->
+    <n-modal
+      v-model:show="showAiModal"
+      preset="card"
+      title="AI 投资组合分析"
+      style="width: 90%; max-width: 700px"
+      :segmented="{ content: true }"
+    >
+      <n-spin :show="aiAnalyzing">
+        <div v-if="aiAnalysisResult" class="ai-analysis-content">
+          <!-- Risk Assessment -->
+          <div class="analysis-section">
+            <h3>📊 风险评估</h3>
+            <n-progress
+              type="line"
+              :percentage="aiAnalysisResult.risk_score || 0"
+              :color="getRiskColor(aiAnalysisResult.risk_score)"
+              :show-indicator="true"
+            />
+            <p style="margin-top: 8px">{{ aiAnalysisResult.risk_level || '暂无数据' }}</p>
+          </div>
+
+          <!-- Diversification Score -->
+          <div class="analysis-section">
+            <h3>🎯 多元化评分</h3>
+            <div style="display: flex; justify-content: center">
+              <n-progress
+                type="circle"
+                :percentage="aiAnalysisResult.diversification_score || 0"
+              />
+            </div>
+            <p class="score-desc">{{ aiAnalysisResult.diversification_desc || '暂无描述' }}</p>
+          </div>
+
+          <!-- Asset Allocation -->
+          <div v-if="aiAnalysisResult.recommended_allocation && aiAnalysisResult.recommended_allocation.length > 0" class="analysis-section">
+            <h3>💼 资产配置建议</h3>
+            <n-space vertical>
+              <n-tag
+                v-for="(alloc, idx) in aiAnalysisResult.recommended_allocation"
+                :key="idx"
+                type="info"
+              >
+                {{ alloc.type }}: {{ alloc.percentage }}%
+              </n-tag>
+            </n-space>
+          </div>
+
+          <!-- Suggestions -->
+          <div v-if="aiAnalysisResult.suggestions && aiAnalysisResult.suggestions.length > 0" class="analysis-section">
+            <h3>💡 改进建议</h3>
+            <n-list>
+              <n-list-item v-for="(suggestion, idx) in aiAnalysisResult.suggestions" :key="idx">
+                <n-thing>
+                  <template #header>
+                    <n-text>{{ suggestion }}</n-text>
+                  </template>
+                </n-thing>
+              </n-list-item>
+            </n-list>
+          </div>
+        </div>
+      </n-spin>
+    </n-modal>
   </div>
 </template>
 
@@ -385,7 +460,7 @@
 import { ref, onMounted, h, computed } from 'vue'
 import { useMessage, useDialog, NButton, NTag, NSpace, NInput, NRadio, NRadioGroup } from 'naive-ui'
 import { storeToRefs } from 'pinia'
-import { investmentApi, approvalApi, transactionApi, assetApi } from '@/api'
+import { investmentApi, approvalApi, transactionApi, assetApi, investmentAiApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { useApprovalStore } from '@/stores/approval'
 import { usePrivacyStore } from '@/stores/privacy'
@@ -554,6 +629,37 @@ const decreaseForm = ref({
 
 // 当前余额（从transactions获取）
 const currentBalance = ref(0)
+
+// AI 分析相关
+const aiAnalyzing = ref(false)
+const showAiModal = ref(false)
+const aiAnalysisResult = ref<any>(null)
+
+// AI 分析函数
+async function handleAIAnalysis() {
+  if (investments.value.length === 0) {
+    message.warning('暂无投资数据可供分析')
+    return
+  }
+
+  aiAnalyzing.value = true
+  try {
+    const { data } = await investmentAiApi.analyze()
+    aiAnalysisResult.value = data
+    showAiModal.value = true
+  } catch (error: any) {
+    message.error(error.response?.data?.detail || 'AI 分析失败')
+  } finally {
+    aiAnalyzing.value = false
+  }
+}
+
+// 风险颜色
+function getRiskColor(score: number) {
+  if (score < 30) return '#18a058'
+  if (score < 60) return '#f0a020'
+  return '#d03050'
+}
 
 // 计算收益（实时预览）
 const calculatedIncome = computed(() => {
@@ -973,6 +1079,38 @@ onMounted(loadData)
 </script>
 
 <style scoped>
+/* 页面头部样式 */
+.page-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* AI 分析内容样式 */
+.ai-analysis-content {
+  padding: 16px 0;
+}
+
+.analysis-section {
+  margin-bottom: 24px;
+}
+
+.analysis-section h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--theme-text-primary);
+}
+
+.score-desc {
+  margin-top: 8px;
+  text-align: center;
+  color: var(--theme-text-secondary);
+}
+
 /* 家庭自由资金卡片样式 */
 :deep(.n-statistic) {
   color: white;
@@ -1003,7 +1141,17 @@ onMounted(loadData)
   .page-container {
     padding: 16px;
   }
-  
+
+  /* 页面头部移动端适配 */
+  .page-header-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-header-row .n-button {
+    width: 100%;
+  }
+
   /* 表单垂直布局 */
   :deep(.n-form--inline) {
     display: flex;

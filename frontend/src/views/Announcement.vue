@@ -15,10 +15,18 @@
           rows="3"
         ></textarea>
         <div class="publish-actions">
-          <label class="upload-btn">
-            🖼️ 添加图片
-            <input type="file" accept="image/*" multiple @change="handleImageUpload" hidden />
-          </label>
+          <div class="left-actions">
+            <label class="upload-btn">
+              🖼️ 添加图片
+              <input type="file" accept="image/*" multiple @change="handleImageUpload" hidden />
+            </label>
+            <button class="ai-btn" @click="showDraft" :disabled="aiDrafting">
+              🤖 AI 草稿
+            </button>
+            <button class="ai-btn" @click="improveContent" :disabled="aiImproving || !newContent.trim()">
+              ✨ {{ aiImproving ? '优化中...' : 'AI 优化' }}
+            </button>
+          </div>
           <button class="btn-publish" @click="publish" :disabled="publishing || !newContent.trim()">
             {{ publishing ? '发布中...' : '发布公告' }}
           </button>
@@ -135,6 +143,54 @@
       </div>
     </div>
 
+    <!-- AI 草稿对话框 -->
+    <div v-if="showAIDraftDialog" class="ai-modal-overlay" @click="showAIDraftDialog = false">
+      <div class="ai-modal-card" @click.stop>
+        <div class="ai-modal-header">
+          <h3>🤖 AI 生成公告草稿</h3>
+          <button class="close-btn" @click="showAIDraftDialog = false">✕</button>
+        </div>
+        <div class="ai-modal-body">
+          <div class="form-group">
+            <label>公告主题</label>
+            <input
+              v-model="draftTopic"
+              type="text"
+              placeholder="例如：周末家庭聚餐通知"
+              @keyup.enter="generateDraft"
+            />
+          </div>
+          <div class="form-group">
+            <label>写作风格</label>
+            <div class="style-options">
+              <label class="style-option">
+                <input type="radio" v-model="draftStyle" value="formal" />
+                <span>正式</span>
+              </label>
+              <label class="style-option">
+                <input type="radio" v-model="draftStyle" value="casual" />
+                <span>轻松</span>
+              </label>
+              <label class="style-option">
+                <input type="radio" v-model="draftStyle" value="humorous" />
+                <span>幽默</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="ai-modal-footer">
+          <button class="btn-cancel" @click="showAIDraftDialog = false">取消</button>
+          <button
+            class="btn-generate"
+            @click="generateDraft"
+            :disabled="aiDrafting || !draftTopic.trim()"
+          >
+            {{ aiDrafting ? '生成中...' : '生成草稿' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 图片查看器 -->
     <div v-if="viewingImage" class="image-viewer" @click="viewingImage = null">
       <img :src="viewingImage" alt="查看大图" />
@@ -145,7 +201,7 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
-import { api } from '@/api'
+import { api, announcementAiApi } from '@/api'
 import UserAvatar from '@/components/UserAvatar.vue'
 import TimeRangeSelector from '@/components/TimeRangeSelector.vue'
 
@@ -164,6 +220,13 @@ const activeMenu = ref(null)
 const expandedComments = ref([])
 const commentInput = reactive({})
 const viewingImage = ref(null)
+
+// AI 相关状态
+const aiDrafting = ref(false)
+const aiImproving = ref(false)
+const showAIDraftDialog = ref(false)
+const draftTopic = ref('')
+const draftStyle = ref('casual')
 
 // 加载公告列表
 const loadAnnouncements = async () => {
@@ -354,6 +417,57 @@ const viewImage = (img) => {
   viewingImage.value = img
 }
 
+// AI 草稿生成
+function showDraft() {
+  draftTopic.value = ''
+  draftStyle.value = 'casual'
+  showAIDraftDialog.value = true
+}
+
+async function generateDraft() {
+  if (!draftTopic.value.trim()) {
+    message.warning('请输入公告主题')
+    return
+  }
+
+  aiDrafting.value = true
+  try {
+    const { data } = await announcementAiApi.draft({
+      topic: draftTopic.value,
+      style: draftStyle.value
+    })
+    newContent.value = data.content
+    showAIDraftDialog.value = false
+    message.success('AI 草稿已生成！')
+  } catch (error) {
+    message.error(error.response?.data?.detail || '生成失败')
+  } finally {
+    aiDrafting.value = false
+  }
+}
+
+// AI 内容优化
+async function improveContent() {
+  if (!newContent.value.trim()) {
+    message.warning('请先输入内容')
+    return
+  }
+
+  aiImproving.value = true
+  try {
+    const { data } = await announcementAiApi.improve({
+      content: newContent.value,
+      improve_type: 'general'
+    })
+    newContent.value = data.improved_content
+    message.success('内容已优化！')
+  } catch (error) {
+    message.error(error.response?.data?.detail || '优化失败')
+  } finally {
+    aiImproving.value = false
+  }
+}
+
 // 格式化时间
 const formatTime = (dateStr) => {
   if (!dateStr) return ''
@@ -446,6 +560,14 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.left-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .upload-btn {
@@ -459,6 +581,27 @@ onUnmounted(() => {
 
 .upload-btn:hover {
   background: var(--theme-card-hover, rgba(0,0,0,0.04));
+}
+
+.ai-btn {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: opacity 0.2s;
+  white-space: nowrap;
+}
+
+.ai-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.ai-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .btn-publish {
@@ -816,5 +959,220 @@ onUnmounted(() => {
   max-width: 90%;
   max-height: 90%;
   object-fit: contain;
+}
+
+/* AI 草稿对话框 */
+.ai-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+}
+
+.ai-modal-card {
+  background: var(--theme-bg-card);
+  border-radius: 16px;
+  padding: 24px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.3);
+}
+
+.ai-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.ai-modal-header h3 {
+  margin: 0;
+  color: var(--theme-text-primary);
+  font-size: 18px;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: var(--theme-text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+
+.close-btn:hover {
+  background: var(--theme-bg-secondary);
+}
+
+.ai-modal-body {
+  margin-bottom: 20px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--theme-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.form-group input[type="text"] {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--theme-bg-card);
+  color: var(--theme-text-primary);
+  box-sizing: border-box;
+}
+
+.form-group input[type="text"]:focus {
+  outline: none;
+  border-color: var(--theme-primary);
+}
+
+.style-options {
+  display: flex;
+  gap: 12px;
+}
+
+.style-option {
+  flex: 1;
+  padding: 10px 16px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.style-option:hover {
+  border-color: var(--theme-primary);
+  background: var(--theme-bg-secondary);
+}
+
+.style-option input[type="radio"] {
+  display: none;
+}
+
+.style-option input[type="radio"]:checked + span {
+  color: var(--theme-primary);
+  font-weight: 500;
+}
+
+.style-option span {
+  color: var(--theme-text-primary);
+  font-size: 14px;
+}
+
+.ai-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.btn-cancel,
+.btn-generate {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: opacity 0.2s;
+}
+
+.btn-cancel {
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-primary);
+}
+
+.btn-cancel:hover {
+  opacity: 0.8;
+}
+
+.btn-generate {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.btn-generate:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn-generate:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 移动端适配 */
+@media (max-width: 767px) {
+  .announcement-page {
+    padding: 12px;
+  }
+
+  .page-header h1 {
+    font-size: 24px;
+  }
+
+  .publish-card {
+    padding: 16px;
+  }
+
+  .publish-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .left-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .ai-btn {
+    flex: 1;
+  }
+
+  .btn-publish {
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .ai-modal-card {
+    padding: 20px;
+  }
+
+  .style-options {
+    flex-direction: column;
+  }
+
+  .ai-modal-footer {
+    flex-direction: column;
+  }
+
+  .btn-cancel,
+  .btn-generate {
+    width: 100%;
+  }
+
+  .image-gallery {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 </style>
