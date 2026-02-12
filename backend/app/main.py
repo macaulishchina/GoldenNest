@@ -20,7 +20,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -74,8 +73,8 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# 外网地址检测中间件
-class ExternalUrlMiddleware(BaseHTTPMiddleware):
+# 外网地址检测中间件（纯 ASGI，避免 BaseHTTPMiddleware 打断 contextvars 传播）
+class ExternalUrlMiddleware:
     """
     自动检测外网地址并存储到请求上下文中
     
@@ -85,29 +84,44 @@ class ExternalUrlMiddleware(BaseHTTPMiddleware):
     - X-Forwarded-Proto: 反向代理转发的协议
     - Host: 直接访问时的主机名
     """
-    
-    async def dispatch(self, request: Request, call_next):
-        # 从请求头检测外网地址
-        external_url = detect_external_url_from_headers(
-            host=request.headers.get("host"),
-            forwarded_host=request.headers.get("x-forwarded-host"),
-            forwarded_proto=request.headers.get("x-forwarded-proto"),
-            x_original_host=request.headers.get("x-original-host"),
-            origin=request.headers.get("origin"),
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # 从 ASGI scope 中读取请求头
+        raw_headers = dict(
+            (k.decode("latin-1").lower(), v.decode("latin-1"))
+            for k, v in scope.get("headers", [])
         )
-        
+
+        external_url = detect_external_url_from_headers(
+            host=raw_headers.get("host"),
+            forwarded_host=raw_headers.get("x-forwarded-host"),
+            forwarded_proto=raw_headers.get("x-forwarded-proto"),
+            x_original_host=raw_headers.get("x-original-host"),
+            origin=raw_headers.get("origin"),
+        )
+
         if external_url:
             set_external_base_url(external_url)
-        
-        response = await call_next(request)
-        return response
+
+        await self.app(scope, receive, send)
 
 
 # AI 调用元数据中间件 —— 将 AI 模型/功能信息注入响应头
-class AIMetadataMiddleware(BaseHTTPMiddleware):
+# 注意：必须使用纯 ASGI 中间件，不能用 BaseHTTPMiddleware！
+# BaseHTTPMiddleware 的 call_next 在独立的 anyio task 中运行，
+# 导致路由处理器中设置的 contextvars 无法传回 dispatch 方法。
+class AIMetadataMiddleware:
     """
     将当前请求中 AI 调用的元数据写入响应头，
     前端可据此展示"由 xx 模型驱动"的优雅提示。
+
+    使用纯 ASGI 中间件实现，确保 contextvars 在同一协程上下文中正确传播。
 
     响应头：
     - X-AI-Function: 功能标识（如 receipt_ocr）
@@ -115,19 +129,44 @@ class AIMetadataMiddleware(BaseHTTPMiddleware):
     - X-AI-Model: 实际使用的模型名
     - X-AI-Source: 配置来源 function/global/env
     """
-    async def dispatch(self, request: Request, call_next):
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        from urllib.parse import quote
         from app.services.ai_service import ai_call_metadata
         # 每个请求开始时重置
         token = ai_call_metadata.set(None)
+
+        _logger = logging.getLogger("ai_metadata_mw")
+
+        async def send_with_ai_headers(message):
+            if message["type"] == "http.response.start":
+                meta = ai_call_metadata.get()
+                if meta:
+                    _logger.info(
+                        f"注入 X-AI 响应头: {meta.get('function_name')} / {meta.get('model')} (来源: {meta.get('source')})"
+                    )
+                    headers = list(message.get("headers", []))
+                    for hdr_name, hdr_value in [
+                        (b"x-ai-function", meta.get("function_key", "")),
+                        (b"x-ai-function-name", meta.get("function_name", "")),
+                        (b"x-ai-model", meta.get("model", "")),
+                        (b"x-ai-source", meta.get("source", "")),
+                    ]:
+                        if hdr_value:
+                            # URL-encode 中文，HTTP 头只支持 ASCII
+                            encoded = quote(hdr_value, safe="-_.~")
+                            headers.append((hdr_name, encoded.encode("ascii")))
+                    message = {**message, "headers": headers}
+            await send(message)
+
         try:
-            response = await call_next(request)
-            meta = ai_call_metadata.get()
-            if meta:
-                response.headers["X-AI-Function"] = meta.get("function_key", "")
-                response.headers["X-AI-Function-Name"] = meta.get("function_name", "")
-                response.headers["X-AI-Model"] = meta.get("model", "")
-                response.headers["X-AI-Source"] = meta.get("source", "")
-            return response
+            await self.app(scope, receive, send_with_ai_headers)
         finally:
             ai_call_metadata.reset(token)
 

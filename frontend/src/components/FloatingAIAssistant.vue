@@ -517,14 +517,16 @@ function executeQuickAction() {
 }
 
 function handleSelectStart(e: Event) {
-  const target = e.target as HTMLElement
+  const target = e.target
+  if (!(target instanceof HTMLElement)) return
   if (target.closest('.floating-assistant') || isDragging.value) {
     e.preventDefault()
   }
 }
 
 function handleContextMenu(e: MouseEvent) {
-  const target = e.target as HTMLElement
+  const target = e.target
+  if (!(target instanceof HTMLElement)) return
   if (target.closest('.floating-assistant')) {
     e.preventDefault()
     showMenu.value = true
@@ -533,7 +535,8 @@ function handleContextMenu(e: MouseEvent) {
 }
 
 function handleClickOutside(e: MouseEvent) {
-  const target = e.target as HTMLElement
+  const target = e.target
+  if (!(target instanceof HTMLElement)) return
   if (!target.closest('.character-menu') && !target.closest('.assistant-character')) {
     showMenu.value = false
   }
