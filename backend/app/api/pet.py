@@ -2271,6 +2271,7 @@ async def chat_with_pet(
             user_prompt=f"用户的问题是：{request.message}",
             system_prompt=tool_prompt,
             history=recent_history if recent_history else None,
+            function_key="pet_tool_call",
             temperature=0.1,
         )
         logger.info(f"Pet chat tool decision: {tool_decision}")
@@ -2332,6 +2333,7 @@ async def chat_with_pet(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             history=history,
+            function_key="pet_chat",
             temperature=0.9
         )
         

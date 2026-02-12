@@ -326,7 +326,16 @@ export const aiConfigApi = {
   // 获取服务商可用模型列表
   fetchModels: (id: number) => api.get(`/ai-config/providers/${id}/models`),
   // 获取 AI 服务状态
-  getStatus: () => api.get('/ai-config/status')
+  getStatus: () => api.get('/ai-config/status'),
+  // 获取功能注册表
+  getFunctionRegistry: () => api.get('/ai-config/functions/registry'),
+  // 获取所有功能配置状态
+  getFunctionConfigs: () => api.get('/ai-config/functions/configs'),
+  // 更新功能模型配置
+  updateFunctionConfig: (functionKey: string, data: { provider_id?: number | null; model_name: string; is_enabled?: boolean }) =>
+    api.put(`/ai-config/functions/${functionKey}/config`, data),
+  // 重置功能配置（使用全局默认）
+  resetFunctionConfig: (functionKey: string) => api.delete(`/ai-config/functions/${functionKey}/config`)
 }
 
 // AI Chat API - 通用 AI 对话助手

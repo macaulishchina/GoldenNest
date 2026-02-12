@@ -48,6 +48,9 @@ async def lifespan(app: FastAPI):
         from app.core.database import async_session_maker
         async with async_session_maker() as db:
             await ai_config.sync_active_provider_to_config(db)
+        # 加载功能模型配置缓存
+        from app.services.ai_service import load_function_model_configs
+        await load_function_model_configs()
     except Exception as e:
         print(f"⚠️ 加载 AI 服务商配置失败（可能是首次启动）: {e}")
     

@@ -628,6 +628,7 @@ async def ai_generate_draft(
         result_json = await ai_service.chat_json(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
+            function_key="announcement_draft",
             temperature=0.8
         )
         
@@ -693,6 +694,7 @@ async def ai_improve_content(
         result_json = await ai_service.chat_json(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
+            function_key="announcement_improve",
             temperature=0.6
         )
         

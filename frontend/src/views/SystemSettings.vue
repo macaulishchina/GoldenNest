@@ -167,6 +167,127 @@
         </div>
       </n-spin>
     </n-modal>
+
+    <!-- ==================== 功能级模型配置 ==================== -->
+    <n-card title="🎯 功能级模型配置" :bordered="false" style="margin-top: 16px">
+      <template #header-extra>
+        <n-button size="small" quaternary @click="loadFunctionConfigs" :loading="fnLoading">
+          刷新
+        </n-button>
+      </template>
+
+      <n-alert type="info" :bordered="false" style="margin-bottom: 16px">
+        可为每个 AI 功能单独指定服务商和模型。未配置的功能将使用上方全局活跃服务商的默认模型。
+      </n-alert>
+
+      <n-spin :show="fnLoading">
+        <div v-if="fnGroups.length === 0 && !fnLoading" style="text-align: center; padding: 30px; color: var(--theme-text-tertiary)">
+          暂无功能注册信息
+        </div>
+
+        <div v-for="group in fnGroups" :key="group.key" class="fn-group">
+          <div class="fn-group-title">{{ group.icon }} {{ group.name }}</div>
+          <div class="fn-list">
+            <div v-for="fn in group.functions" :key="fn.key" class="fn-item">
+              <div class="fn-item-left">
+                <div class="fn-name">
+                  {{ fn.name }}
+                  <n-tag v-if="!fn.is_enabled" size="tiny" type="error" :bordered="false" style="margin-left: 6px">已禁用</n-tag>
+                  <n-tag v-else-if="fn.source === 'function'" size="tiny" type="success" :bordered="false" style="margin-left: 6px">自定义</n-tag>
+                </div>
+                <div class="fn-desc">{{ fn.description }}</div>
+                <div class="fn-model-info">
+                  <n-tag size="tiny" :bordered="false" :type="fn.is_enabled ? 'info' : 'default'">
+                    {{ fn.resolved_model || '未配置' }}
+                  </n-tag>
+                  <span class="fn-capability">{{ capabilityLabel(fn.capability) }}</span>
+                </div>
+              </div>
+              <div class="fn-item-right">
+                <n-button size="small" text type="primary" @click="openFnConfigModal(fn)">
+                  配置
+                </n-button>
+                <n-button v-if="fn.source === 'function'" size="small" text type="warning" @click="handleResetFnConfig(fn)">
+                  重置
+                </n-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </n-spin>
+    </n-card>
+
+    <!-- 功能模型配置 Modal -->
+    <n-modal v-model:show="showFnConfigModal" :title="`配置: ${fnConfigTarget?.name || ''}`" preset="dialog" style="width: 500px">
+      <n-form label-placement="left" label-width="90px">
+        <n-form-item label="服务商">
+          <n-select
+            v-model:value="fnConfigForm.provider_id"
+            :options="providerOptionsForFn"
+            placeholder="使用全局默认"
+            clearable
+          />
+        </n-form-item>
+
+        <n-form-item label="模型名称">
+          <n-input-group>
+            <n-input v-model:value="fnConfigForm.model_name" placeholder="填写模型名称" style="flex: 1" />
+            <n-button @click="openFnModelPicker" :loading="fnModelPickerLoading" :disabled="!fnConfigForm.provider_id && providers.length === 0">
+              选择
+            </n-button>
+          </n-input-group>
+        </n-form-item>
+
+        <n-form-item label="启用状态">
+          <n-switch v-model:value="fnConfigForm.is_enabled" />
+          <span style="margin-left: 8px; font-size: 12px; color: var(--theme-text-tertiary)">
+            禁用后该功能将不可用
+          </span>
+        </n-form-item>
+
+        <div v-if="fnConfigTarget" style="margin-top: 8px; font-size: 12px; color: var(--theme-text-tertiary)">
+          <div>默认模型：{{ fnConfigTarget.default_model || '跟随全局' }}</div>
+          <div v-if="fnConfigTarget.alternative_models?.length">
+            推荐模型：{{ fnConfigTarget.alternative_models.join('、') }}
+          </div>
+        </div>
+      </n-form>
+
+      <template #action>
+        <n-space>
+          <n-button @click="showFnConfigModal = false">取消</n-button>
+          <n-button type="primary" :loading="fnConfigSaving" @click="handleSaveFnConfig">保存</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- 功能模型选择 Modal -->
+    <n-modal v-model:show="showFnModelPicker" title="选择模型" preset="dialog" style="width: 600px">
+      <n-spin :show="fnModelPickerLoading">
+        <n-input
+          v-if="fnPickerModels.length > 0"
+          v-model:value="fnModelSearchText"
+          placeholder="搜索模型..."
+          clearable
+          style="margin-bottom: 12px"
+        />
+        <div v-if="fnPickerModels.length === 0 && !fnModelPickerLoading" style="text-align: center; padding: 20px; color: var(--theme-text-tertiary)">
+          无法获取模型列表
+        </div>
+        <div class="model-list" v-if="fnPickerModels.length > 0">
+          <div
+            v-for="m in fnFilteredPickerModels"
+            :key="m.id"
+            class="model-item"
+            :class="{ active: m.id === fnConfigForm.model_name }"
+            @click="fnConfigForm.model_name = m.id; showFnModelPicker = false"
+          >
+            <div class="model-name">{{ m.id }}</div>
+            <div class="model-owner" v-if="m.owned_by">{{ m.owned_by }}</div>
+          </div>
+        </div>
+      </n-spin>
+    </n-modal>
   </div>
 </template>
 
@@ -400,7 +521,149 @@ watch(showAddModal, (val) => {
 onMounted(() => {
   loadData()
   loadTemplates()
+  loadFunctionConfigs()
 })
+
+// ==================== 功能级模型配置 ====================
+const fnLoading = ref(false)
+const fnConfigs = ref<any[]>([])
+const fnGroups = ref<any[]>([])
+const showFnConfigModal = ref(false)
+const fnConfigTarget = ref<any>(null)
+const fnConfigSaving = ref(false)
+const fnConfigForm = ref({
+  provider_id: null as number | null,
+  model_name: '',
+  is_enabled: true
+})
+
+// 功能模型选择器
+const showFnModelPicker = ref(false)
+const fnModelPickerLoading = ref(false)
+const fnPickerModels = ref<any[]>([])
+const fnModelSearchText = ref('')
+
+const fnFilteredPickerModels = computed(() => {
+  if (!fnModelSearchText.value) return fnPickerModels.value
+  const q = fnModelSearchText.value.toLowerCase()
+  return fnPickerModels.value.filter((m: any) => m.id.toLowerCase().includes(q))
+})
+
+const providerOptionsForFn = computed(() =>
+  providers.value
+    .filter((p: any) => p.is_enabled)
+    .map((p: any) => ({ label: `${p.name} (${p.provider_type})`, value: p.id }))
+)
+
+function capabilityLabel(cap: string) {
+  const map: Record<string, string> = {
+    text_chat: '💬 文本',
+    text_to_json: '📋 JSON',
+    vision: '👁 视觉',
+    audio_transcription: '🎤 语音',
+    model_listing: '📡 列表'
+  }
+  return map[cap] || cap
+}
+
+async function loadFunctionConfigs() {
+  fnLoading.value = true
+  try {
+    const res = await aiConfigApi.getFunctionConfigs()
+    fnConfigs.value = res.data.functions || []
+
+    // 按组分类
+    const groupMap: Record<string, any> = {}
+    for (const fn of fnConfigs.value) {
+      const gKey = fn.group || 'other'
+      if (!groupMap[gKey]) {
+        groupMap[gKey] = {
+          key: gKey,
+          name: fn.group_name || gKey,
+          icon: fn.group_icon || '📦',
+          order: fn.group_order ?? 99,
+          functions: []
+        }
+      }
+      groupMap[gKey].functions.push(fn)
+    }
+
+    fnGroups.value = Object.values(groupMap).sort((a: any, b: any) => a.order - b.order)
+  } catch (e: any) {
+    if (e.response?.status !== 403) {
+      console.error('加载功能配置失败', e)
+    }
+  } finally {
+    fnLoading.value = false
+  }
+}
+
+function openFnConfigModal(fn: any) {
+  fnConfigTarget.value = fn
+  fnConfigForm.value = {
+    provider_id: fn.config_provider_id || null,
+    model_name: fn.config_model_name || fn.default_model || '',
+    is_enabled: fn.is_enabled !== false
+  }
+  showFnConfigModal.value = true
+}
+
+async function handleSaveFnConfig() {
+  if (!fnConfigTarget.value) return
+  fnConfigSaving.value = true
+  try {
+    await aiConfigApi.updateFunctionConfig(fnConfigTarget.value.key, {
+      provider_id: fnConfigForm.value.provider_id,
+      model_name: fnConfigForm.value.model_name,
+      is_enabled: fnConfigForm.value.is_enabled
+    })
+    message.success('已保存功能配置')
+    showFnConfigModal.value = false
+    await loadFunctionConfigs()
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    fnConfigSaving.value = false
+  }
+}
+
+async function handleResetFnConfig(fn: any) {
+  try {
+    await aiConfigApi.resetFunctionConfig(fn.key)
+    message.success(`已重置「${fn.name}」为全局默认`)
+    await loadFunctionConfigs()
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '重置失败')
+  }
+}
+
+async function openFnModelPicker() {
+  fnModelSearchText.value = ''
+  fnPickerModels.value = []
+  fnModelPickerLoading.value = true
+  showFnModelPicker.value = true
+
+  // 确定使用哪个 provider 的模型列表
+  const pid = fnConfigForm.value.provider_id
+  const targetProvider = pid
+    ? providers.value.find((p: any) => p.id === pid)
+    : providers.value.find((p: any) => p.is_active)
+
+  if (!targetProvider) {
+    fnModelPickerLoading.value = false
+    message.warning('请先选择服务商或确保有活跃的全局服务商')
+    return
+  }
+
+  try {
+    const res = await aiConfigApi.fetchModels(targetProvider.id)
+    fnPickerModels.value = res.data
+  } catch (e: any) {
+    message.error('获取模型列表失败')
+  } finally {
+    fnModelPickerLoading.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -507,5 +770,86 @@ onMounted(() => {
     align-items: flex-start;
     gap: 2px;
   }
+
+  .fn-item {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+
+  .fn-item-right {
+    margin-top: 6px;
+    align-self: flex-end;
+  }
+}
+
+/* ========== 功能级模型配置 ========== */
+.fn-group {
+  margin-bottom: 20px;
+}
+
+.fn-group-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--theme-border, #e8e8e8);
+  color: var(--theme-text-primary, #333);
+}
+
+.fn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fn-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--theme-card-bg, rgba(0, 0, 0, 0.02));
+  transition: background 0.2s;
+}
+
+.fn-item:hover {
+  background: var(--theme-hover-bg, rgba(24, 160, 88, 0.06));
+}
+
+.fn-item-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.fn-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--theme-text-primary, #333);
+  display: flex;
+  align-items: center;
+}
+
+.fn-desc {
+  font-size: 12px;
+  color: var(--theme-text-tertiary, #999);
+  margin-top: 2px;
+}
+
+.fn-model-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.fn-capability {
+  font-size: 11px;
+  color: var(--theme-text-tertiary, #aaa);
+}
+
+.fn-item-right {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
 }
 </style>

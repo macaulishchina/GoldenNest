@@ -956,3 +956,20 @@ class AIProvider(Base):
     created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AIFunctionModelConfig(Base):
+    """AI 功能模型配置表 — 为每个 AI 功能单独指定服务商+模型
+
+    未配置的功能自动使用全局活跃服务商（AIProvider.is_active=True）的默认模型。
+    管理员可以为不同功能指定不同的模型，实现精细化成本/效果控制。
+    """
+    __tablename__ = "ai_function_model_configs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    function_key: Mapped[str] = mapped_column(String(50), unique=True, index=True)  # 功能标识，对应 ai_functions.py 的 key
+    provider_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ai_providers.id"), nullable=True)  # 指定服务商，null 表示跟随全局
+    model_name: Mapped[str] = mapped_column(String(100), default="")  # 指定模型名称，空字符串表示跟随服务商默认模型
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)  # 该功能的 AI 能力是否启用
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

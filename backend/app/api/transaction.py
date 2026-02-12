@@ -287,6 +287,7 @@ async def analyze_transactions_with_ai(
         result_json = await ai_service.chat_json(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
+            function_key="transaction_analyze",
             temperature=0.5
         )
         
@@ -344,6 +345,7 @@ async def categorize_transaction_with_ai(
         result_json = await ai_service.chat_json(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
+            function_key="transaction_categorize",
             temperature=0.3
         )
         

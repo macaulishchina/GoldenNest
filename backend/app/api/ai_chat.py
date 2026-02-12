@@ -82,6 +82,7 @@ async def chat_with_ai(
                 user_prompt=f"用户的问题是：{request.message}",
                 system_prompt=tool_prompt,
                 history=recent_history,
+                function_key="chat_tool_call",
                 temperature=0.1,
             )
 
@@ -131,6 +132,7 @@ async def chat_with_ai(
             user_prompt=request.message,
             system_prompt=system_prompt,
             history=history,
+            function_key="chat_reply",
             temperature=0.7,
         )
 

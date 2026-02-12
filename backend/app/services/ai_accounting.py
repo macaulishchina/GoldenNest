@@ -85,6 +85,7 @@ async def parse_receipt_images(image_data_list: List[str]) -> List[PhotoRecogniz
 
         response_text = await ai_service._call_chat(
             messages=messages,
+            function_key="receipt_ocr",
             max_tokens=4000,
             temperature=0.1,
         )
@@ -369,6 +370,7 @@ async def parse_voice_text(text: str) -> List[PhotoRecognizeItem]:
         result = await ai_service.chat_json(
             user_prompt=prompt,
             system_prompt="你是记账助手，从语音内容中提取消费记录。只返回JSON。",
+            function_key="voice_parse",
             temperature=0.1,
         )
 
@@ -524,7 +526,8 @@ async def categorize_entry(description: str, amount: Optional[float] = None) -> 
     try:
         category = await ai_service.chat(
             user_prompt=prompt,
-            system_prompt="你是一个消费分类助手，根据用户提供的消费信息返回最合适的分类代码。"
+            system_prompt="你是一个消费分类助手，根据用户提供的消费信息返回最合适的分类代码。",
+            function_key="auto_category",
         )
 
         # 清理返回值（去除可能的空格、换行）
@@ -600,7 +603,8 @@ async def check_duplicate_with_ai(
     try:
         response_text = await ai_service.chat(
             user_prompt=prompt,
-            system_prompt="你是一个重复检测专家，能够准确判断两条记账记录是否为重复。"
+            system_prompt="你是一个重复检测专家，能够准确判断两条记账记录是否为重复。",
+            function_key="duplicate_detection",
         )
 
         # 解析JSON响应
@@ -813,6 +817,7 @@ async def _parse_pdf_as_images(file_bytes: bytes) -> List[PhotoRecognizeItem]:
 
     response_text = await ai_service._call_chat(
         messages=messages,
+        function_key="import_vision",
         max_tokens=8000,
         temperature=0.1,
     )
@@ -1109,6 +1114,7 @@ async def _parse_text_with_ai(text: str, source_type: str) -> List[PhotoRecogniz
         response_text = await ai_service.chat(
             user_prompt=prompt,
             system_prompt="你是消费记录解析助手，从文本中提取消费信息并返回JSON数组。只返回JSON，不要解释。",
+            function_key="import_parse",
             temperature=0.1,
             max_tokens=4000,
         )

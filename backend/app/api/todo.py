@@ -836,6 +836,7 @@ async def ai_suggest_tasks(
         result_json = await ai_service.chat_json(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
+            function_key="todo_suggest",
             temperature=0.7
         )
         
@@ -967,6 +968,7 @@ urgency_score: 0-100，数字越大越紧急
         result_json = await ai_service.chat_json(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
+            function_key="todo_prioritize",
             temperature=0.3
         )
         

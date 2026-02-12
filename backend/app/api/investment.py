@@ -679,6 +679,7 @@ async def ai_analyze_portfolio(
         result_json = await ai_service.chat_json(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
+            function_key="investment_analyze",
             temperature=0.4
         )
         

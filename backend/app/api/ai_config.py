@@ -13,7 +13,7 @@ import httpx
 
 from app.core.database import get_db
 from app.core.config import set_active_ai_provider, settings
-from app.models.models import AIProvider, FamilyMember, User
+from app.models.models import AIProvider, AIFunctionModelConfig, FamilyMember, User
 from app.api.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -493,3 +493,160 @@ async def get_ai_status(
             "model": None,
             "source": None
         }
+
+
+# ==================== 功能模型配置 API ====================
+
+class FunctionModelConfigUpdate(BaseModel):
+    """更新功能模型配置"""
+    provider_id: Optional[int] = Field(None, description="服务商ID，null表示跟随全局")
+    model_name: str = Field("", description="模型名称，空表示跟随服务商默认")
+    is_enabled: bool = Field(True, description="是否启用该功能的AI能力")
+
+
+@router.get("/functions/registry")
+async def get_function_registry(
+    _: User = Depends(get_current_user),
+):
+    """获取所有 AI 功能注册表（所有登录用户可查看）"""
+    from app.core.ai_functions import get_function_registry_for_api
+    return get_function_registry_for_api()
+
+
+@router.get("/functions/configs")
+async def list_function_configs(
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取所有功能的当前模型配置"""
+    from app.core.ai_functions import AI_FUNCTION_REGISTRY, AI_FUNCTION_GROUPS
+    from app.services.ai_service import ai_service
+
+    # 从数据库加载所有已配置的功能
+    result = await db.execute(select(AIFunctionModelConfig))
+    configs = {c.function_key: c for c in result.scalars().all()}
+
+    # 预加载所有服务商名称
+    prov_result = await db.execute(select(AIProvider))
+    providers_map = {p.id: p.name for p in prov_result.scalars().all()}
+
+    items = []
+    for key, func_def in AI_FUNCTION_REGISTRY.items():
+        cfg = configs.get(key)
+        resolved = ai_service.get_function_config_info(key)
+
+        # 获取分组信息
+        group_info = AI_FUNCTION_GROUPS.get(func_def.group, {})
+
+        item = {
+            "key": key,
+            "name": func_def.name,
+            "description": func_def.description,
+            "capability": func_def.capability,
+            "group": func_def.group,
+            "group_name": group_info.get("name", func_def.group),
+            "group_icon": group_info.get("icon", "📦"),
+            "group_order": group_info.get("order", 99),
+            "default_model": func_def.default_model,
+            "alternative_models": func_def.alternative_models,
+            # 当前配置
+            "config_provider_id": cfg.provider_id if cfg else None,
+            "config_provider_name": providers_map.get(cfg.provider_id, None) if cfg and cfg.provider_id else None,
+            "config_model_name": cfg.model_name if cfg else "",
+            "is_enabled": cfg.is_enabled if cfg else True,
+            # 解析后的实际使用
+            "resolved_model": resolved.get("model"),
+            "source": resolved.get("source"),
+            "resolved_configured": resolved.get("configured"),
+            "resolved_error": resolved.get("error"),
+        }
+        items.append(item)
+
+    # 按注册表顺序排列
+    group_order = {k: v["order"] for k, v in AI_FUNCTION_GROUPS.items()}
+    items.sort(key=lambda x: (group_order.get(x["group"], 99), x["key"]))
+
+    return {"functions": items}
+
+
+@router.put("/functions/{function_key}/config")
+async def update_function_config(
+    function_key: str,
+    data: FunctionModelConfigUpdate,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """设置某个功能的专属模型配置（管理员）"""
+    from app.core.ai_functions import AI_FUNCTION_REGISTRY
+    from app.services.ai_service import refresh_function_model_cache
+
+    if function_key not in AI_FUNCTION_REGISTRY:
+        raise HTTPException(status_code=404, detail=f"未知的功能标识: {function_key}")
+
+    # 验证 provider_id
+    if data.provider_id is not None:
+        prov_result = await db.execute(
+            select(AIProvider).where(AIProvider.id == data.provider_id)
+        )
+        if not prov_result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="指定的服务商不存在")
+
+    # 查找或创建配置
+    result = await db.execute(
+        select(AIFunctionModelConfig).where(AIFunctionModelConfig.function_key == function_key)
+    )
+    cfg = result.scalar_one_or_none()
+
+    if cfg:
+        cfg.provider_id = data.provider_id
+        cfg.model_name = data.model_name
+        cfg.is_enabled = data.is_enabled
+    else:
+        cfg = AIFunctionModelConfig(
+            function_key=function_key,
+            provider_id=data.provider_id,
+            model_name=data.model_name,
+            is_enabled=data.is_enabled,
+        )
+        db.add(cfg)
+
+    await db.commit()
+
+    # 刷新内存缓存
+    await refresh_function_model_cache()
+
+    func_def = AI_FUNCTION_REGISTRY[function_key]
+    return {
+        "message": f"已更新「{func_def.name}」的模型配置",
+        "function_key": function_key,
+        "provider_id": data.provider_id,
+        "model_name": data.model_name,
+        "is_enabled": data.is_enabled,
+    }
+
+
+@router.delete("/functions/{function_key}/config")
+async def reset_function_config(
+    function_key: str,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """重置功能配置为跟随全局（管理员）"""
+    from app.core.ai_functions import AI_FUNCTION_REGISTRY
+    from app.services.ai_service import refresh_function_model_cache
+
+    if function_key not in AI_FUNCTION_REGISTRY:
+        raise HTTPException(status_code=404, detail=f"未知的功能标识: {function_key}")
+
+    result = await db.execute(
+        select(AIFunctionModelConfig).where(AIFunctionModelConfig.function_key == function_key)
+    )
+    cfg = result.scalar_one_or_none()
+    if cfg:
+        await db.delete(cfg)
+        await db.commit()
+
+    await refresh_function_model_cache()
+
+    func_def = AI_FUNCTION_REGISTRY[function_key]
+    return {"message": f"已重置「{func_def.name}」为跟随全局配置"}
