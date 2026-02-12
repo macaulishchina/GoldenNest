@@ -142,7 +142,8 @@ const typeMap: Record<string, { color: string, label: string }> = {
   freeze: { color: 'var(--theme-border)', label: '冻结' },
   unfreeze: { color: 'var(--theme-border)', label: '解冻' },
   bet_win: { color: 'var(--theme-success)', label: '赌注获胜' },
-  bet_lose: { color: 'var(--theme-error)', label: '赌注失败' }
+  bet_lose: { color: 'var(--theme-error)', label: '赌注失败' },
+  daily_expense: { color: 'var(--theme-warning)', label: '日常消费' }
 }
 
 const columns = computed(() => [
@@ -151,7 +152,7 @@ const columns = computed(() => [
   { title: '金额', key: 'amount', render: (row: any) => {
     // 投资买入使用中性色，其他根据正负判断
     let color = 'var(--theme-text-primary)'
-    if (row.transaction_type === 'investment_buy') {
+    if (row.transaction_type === 'investment_buy' || row.transaction_type === 'daily_expense') {
       color = 'var(--theme-warning)'
     } else {
       color = row.amount > 0 ? 'var(--theme-success)' : 'var(--theme-error)'
@@ -172,7 +173,8 @@ function getCardClass(type: string) {
     investment_buy: 'investment-card',
     investment_redeem: 'deposit-card',
     bet_win: 'deposit-card',
-    bet_lose: 'withdraw-card'
+    bet_lose: 'withdraw-card',
+    daily_expense: 'withdraw-card'
   }
   return classMap[type] || ''
 }
@@ -180,7 +182,7 @@ function getCardClass(type: string) {
 // 获取金额样式类
 function getAmountClass(item: any) {
   // 投资买入使用中性色，不算作支出
-  if (item.transaction_type === 'investment_buy') {
+  if (item.transaction_type === 'investment_buy' || item.transaction_type === 'daily_expense') {
     return 'neutral'
   }
   return item.amount > 0 ? 'positive' : 'negative'
@@ -198,7 +200,8 @@ function getTagType(type: string) {
     freeze: 'default',
     unfreeze: 'default',
     bet_win: 'success',
-    bet_lose: 'error'
+    bet_lose: 'error',
+    daily_expense: 'warning'
   }
   return tagMap[type] || 'default'
 }

@@ -1,76 +1,85 @@
 <template>
   <div class="accounting-container">
-    <n-space vertical size="large">
+    <n-space vertical :size="8">
       <!-- 页面头部 -->
-      <n-card title="📒 家庭记账" :bordered="false">
-        <template #header-extra>
-          <n-button type="primary" @click="showCreateModal = true">
-            + 新建记账
-          </n-button>
-        </template>
-
-        <!-- 统计卡片 -->
-        <n-grid :cols="isMobile ? 2 : 4" :x-gap="12" :y-gap="12">
-          <n-grid-item>
-            <n-statistic label="总支出" :value="stats.total_amount">
-              <template #suffix>元</template>
-            </n-statistic>
-          </n-grid-item>
-          <n-grid-item>
-            <n-statistic label="已入账" :value="stats.accounted_amount">
-              <template #suffix>元</template>
-            </n-statistic>
-          </n-grid-item>
-          <n-grid-item>
-            <n-statistic label="未入账" :value="stats.unaccounted_amount">
-              <template #suffix>元</template>
-            </n-statistic>
-          </n-grid-item>
-          <n-grid-item>
-            <n-statistic label="记录数" :value="stats.total_count" />
-          </n-grid-item>
-        </n-grid>
-      </n-card>
+      <div class="page-header">
+        <div class="header-top">
+          <h3 class="page-title">📒 家庭记账</h3>
+          <n-button type="primary" size="small" @click="showCreateModal = true">+ 新建记账</n-button>
+        </div>
+        <div class="stats-box">
+          <div class="stats-box-top">
+            <span class="stats-box-title">概览</span>
+            <n-select
+              v-model:value="statsRange"
+              :options="statsRangeOptions"
+              size="tiny"
+              style="width: 100px"
+              @update:value="handleStatsRangeChange"
+            />
+          </div>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <span class="stat-label">总支出</span>
+              <span class="stat-value">¥{{ stats.total_amount.toFixed(2) }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">已入账</span>
+              <span class="stat-value accent">¥{{ stats.accounted_amount.toFixed(2) }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">未入账</span>
+              <span class="stat-value warn">¥{{ stats.unaccounted_amount.toFixed(2) }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">记录数</span>
+              <span class="stat-value">{{ stats.total_count }} 笔</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- 筛选条件 -->
-      <n-card :bordered="false">
-        <n-space :vertical="isMobile" size="medium">
-          <n-select
-            v-model:value="filterCategory"
-            :options="categoryOptions"
-            placeholder="全部分类"
-            clearable
-            style="min-width: 150px"
-            @update:value="fetchEntries"
-          />
-          <n-select
-            v-model:value="filterAccounted"
-            :options="accountedOptions"
-            placeholder="入账状态"
-            clearable
-            style="min-width: 150px"
-            @update:value="fetchEntries"
-          />
-          <n-select
-            v-model:value="filterConsumer"
-            :options="consumerOptions"
-            placeholder="消费人"
-            clearable
-            style="min-width: 150px"
-            @update:value="fetchEntries"
-          />
-          <n-date-picker
-            v-model:value="filterDateRange"
-            type="daterange"
-            clearable
-            :style="{ width: isMobile ? '100%' : '300px' }"
-            @update:value="fetchEntries"
-          />
-        </n-space>
-      </n-card>
+      <div class="filter-bar">
+        <n-select
+          v-model:value="filterCategory"
+          :options="categoryOptions"
+          placeholder="全部分类"
+          clearable
+          size="small"
+          style="min-width: 110px; flex: 1"
+          @update:value="fetchEntries"
+        />
+        <n-select
+          v-model:value="filterAccounted"
+          :options="accountedOptions"
+          placeholder="入账状态"
+          clearable
+          size="small"
+          style="min-width: 110px; flex: 1"
+          @update:value="fetchEntries"
+        />
+        <n-select
+          v-model:value="filterConsumer"
+          :options="consumerOptions"
+          placeholder="消费人"
+          clearable
+          size="small"
+          style="min-width: 110px; flex: 1"
+          @update:value="fetchEntries"
+        />
+        <n-date-picker
+          v-model:value="filterDateRange"
+          type="daterange"
+          clearable
+          size="small"
+          style="flex: 2; min-width: 180px"
+          @update:value="fetchEntries"
+        />
+      </div>
 
       <!-- 记账列表 -->
-      <n-card title="记账记录" :bordered="false">
+      <n-card title="记账记录" :bordered="false" class="entry-list-card">
         <template #header-extra>
           <n-space>
             <n-button
@@ -86,88 +95,42 @@
         <n-spin :show="loading">
           <n-space vertical size="medium">
             <n-checkbox-group v-model:value="selectedIds">
-              <n-list>
-                <n-list-item v-for="entry in entries" :key="entry.id">
-                  <template #prefix>
-                    <n-checkbox
-                      :value="entry.id"
-                      :disabled="entry.is_accounted"
-                    />
-                  </template>
-                  <n-thing>
-                    <template #header>
-                      <n-space align="center">
-                        <span class="category-icon">{{ getCategoryIcon(entry.category) }}</span>
-                        <span>{{ entry.description }}</span>
-                        <n-tag
-                          v-if="entry.is_accounted"
-                          type="success"
-                          size="small"
-                        >
-                          已入账
-                        </n-tag>
-                        <n-tag
-                          v-else
-                          type="warning"
-                          size="small"
-                        >
-                          未入账
-                        </n-tag>
-                      </n-space>
-                    </template>
-                    <template #description>
-                      <n-space size="small">
-                        <n-text depth="3">
-                          {{ formatDate(entry.entry_date) }}
-                        </n-text>
-                        <n-divider vertical />
-                        <n-text depth="3">
-                          {{ entry.user_nickname }}
-                        </n-text>
-                        <n-divider vertical />
-                        <n-text depth="3">
-                          {{ entry.consumer_nickname || '家庭共同' }}
-                        </n-text>
-                        <n-divider vertical />
-                        <n-tag size="small">
-                          {{ getSourceLabel(entry.source) }}
-                        </n-tag>
-                      </n-space>
-                    </template>
-                    <template #footer>
-                      <n-space justify="space-between" align="center">
-                        <n-text strong style="font-size: 18px; color: var(--n-color-error)">
-                          ¥{{ entry.amount.toFixed(2) }}
-                        </n-text>
-                        <n-space size="small">
-                          <n-button
-                            v-if="!entry.is_accounted"
-                            size="small"
-                            @click="handleEdit(entry)"
-                          >
-                            编辑
-                          </n-button>
-                          <n-button
-                            v-if="!entry.is_accounted"
-                            size="small"
-                            type="error"
-                            @click="handleDelete(entry.id)"
-                          >
-                            删除
-                          </n-button>
-                          <n-button
-                            v-if="entry.image_data"
-                            size="small"
-                            @click="handleViewImage(entry.image_data)"
-                          >
-                            查看小票
-                          </n-button>
-                        </n-space>
-                      </n-space>
-                    </template>
-                  </n-thing>
-                </n-list-item>
-              </n-list>
+              <div class="entry-list">
+                <div class="entry-card" v-for="entry in entries" :key="entry.id" @click="handleEdit(entry)">
+                  <div class="entry-check" :class="{ 'hidden-checkbox': entry.is_accounted }" @click.stop>
+                    <n-checkbox :value="entry.id" :disabled="entry.is_accounted" />
+                  </div>
+                  <div class="entry-body">
+                    <!-- 第一行：图标 + 描述 + 标签 … 金额 -->
+                    <div class="entry-row1">
+                      <span class="category-icon">{{ getCategoryIcon(entry.category) }}</span>
+                      <span class="entry-desc">{{ entry.description }}</span>
+                      <n-tag :type="entry.is_accounted ? 'success' : 'warning'" size="small">
+                        {{ entry.is_accounted ? '已入账' : '未入账' }}
+                      </n-tag>
+                      <span class="entry-amount">¥{{ entry.amount.toFixed(2) }}</span>
+                    </div>
+                    <!-- 第二行：分类 · 消费人 · 记账人 · 记账方式 -->
+                    <div class="entry-row2">
+                      {{ getCategoryLabel(entry.category) }}
+                      <span class="dot">·</span>
+                      {{ entry.consumer_nickname || '家庭共同' }}
+                      <span class="dot">·</span>
+                      {{ entry.user_nickname }}
+                      <span class="dot">·</span>
+                      {{ getSourceLabel(entry.source) }}
+                    </div>
+                    <!-- 第三行：时间左下 + 操作按钮右下 -->
+                    <div class="entry-row3">
+                      <span class="entry-date">{{ formatDate(entry.entry_date) }}</span>
+                      <span class="entry-actions">
+                        <n-button v-if="!entry.is_accounted" size="tiny" quaternary type="error" @click.stop="handleDelete(entry.id)">删除</n-button>
+                        <n-button v-if="entry.has_image || entry.image_data" size="tiny" quaternary @click.stop="handleViewImage(entry)">查看小票</n-button>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </n-checkbox-group>
 
             <!-- 分页 -->
@@ -296,52 +259,12 @@
         </n-tab-pane>
 
         <n-tab-pane name="voice" tab="语音输入">
-          <n-space vertical size="large" align="center" style="padding: 20px 0">
-            <n-text depth="3">点击麦克风按钮开始录音，说出消费内容</n-text>
+          <n-space vertical size="large" align="center">
+            <n-text depth="3">语音识别功能开发中...</n-text>
             <n-text depth="3">示例："中午吃饭花了38块5"</n-text>
-
-            <!-- 录音按钮 -->
-            <n-button
-              size="large"
-              circle
-              :type="voiceRecording ? 'error' : 'primary'"
-              :loading="voiceProcessing"
-              @click="toggleVoiceRecording"
-              style="width: 80px; height: 80px; font-size: 32px"
-            >
-              {{ voiceRecording ? '⏹' : '🎤' }}
+            <n-button size="large" circle type="primary" disabled>
+              🎤
             </n-button>
-
-            <n-text v-if="voiceRecording" type="error">
-              🔴 录音中... {{ voiceSeconds }}s（点击停止）
-            </n-text>
-            <n-text v-if="voiceProcessing" depth="3">
-              正在识别语音...
-            </n-text>
-
-            <!-- 识别结果 -->
-            <template v-if="voiceResult">
-              <n-divider />
-              <n-alert type="success" title="语音识别结果">
-                <n-space vertical size="small">
-                  <n-text v-if="voiceResult.transcript">原文: {{ voiceResult.transcript }}</n-text>
-                  <n-text>金额: ¥{{ voiceResult.amount?.toFixed(2) || '未识别' }}</n-text>
-                  <n-text>描述: {{ voiceResult.description || '未识别' }}</n-text>
-                  <n-text>分类: {{ getCategoryLabel(voiceResult.category || 'other') }}</n-text>
-                </n-space>
-              </n-alert>
-              <n-space justify="end" style="width: 100%">
-                <n-button @click="voiceResult = null">清除</n-button>
-                <n-button type="primary" :loading="creating" @click="handleVoiceCreate">
-                  确认记账
-                </n-button>
-              </n-space>
-            </template>
-
-            <!-- 不支持提示 -->
-            <n-alert v-if="!voiceSupported" type="warning" title="浏览器不支持">
-              您的浏览器不支持语音录制功能，请使用 Chrome、Edge 等现代浏览器。
-            </n-alert>
           </n-space>
         </n-tab-pane>
 
@@ -379,7 +302,7 @@
     <n-modal
       v-model:show="showEditModal"
       preset="card"
-      title="编辑记账"
+      :title="editForm.is_accounted ? '查看记账（已入账）' : '编辑记账'"
       :style="{ width: isMobile ? '95%' : '600px' }"
     >
       <n-form ref="editFormRef" :model="editForm">
@@ -390,6 +313,7 @@
             :precision="2"
             placeholder="请输入金额"
             style="width: 100%"
+            :disabled="editForm.is_accounted"
           >
             <template #prefix>¥</template>
           </n-input-number>
@@ -400,6 +324,7 @@
             v-model:value="editForm.category"
             :options="categoryOptions"
             placeholder="请选择分类"
+            :disabled="editForm.is_accounted"
           />
         </n-form-item>
 
@@ -409,6 +334,7 @@
             type="textarea"
             placeholder="请输入消费描述"
             :autosize="{ minRows: 2, maxRows: 4 }"
+            :disabled="editForm.is_accounted"
           />
         </n-form-item>
 
@@ -417,6 +343,7 @@
             v-model:value="editForm.entry_date"
             type="datetime"
             style="width: 100%"
+            :disabled="editForm.is_accounted"
           />
         </n-form-item>
 
@@ -426,14 +353,15 @@
             :options="consumerOptionsWithFamily"
             placeholder="请选择消费人"
             clearable
+            :disabled="editForm.is_accounted"
           />
         </n-form-item>
       </n-form>
 
       <template #footer>
         <n-space justify="end">
-          <n-button @click="showEditModal = false">取消</n-button>
-          <n-button type="primary" :loading="updating" @click="handleUpdate">
+          <n-button @click="showEditModal = false">{{ editForm.is_accounted ? '关闭' : '取消' }}</n-button>
+          <n-button v-if="!editForm.is_accounted" type="primary" :loading="updating" @click="handleUpdate">
             保存
           </n-button>
         </n-space>
@@ -477,7 +405,7 @@
             :loading="batchExpenseLoading"
             @click="handleBatchExpenseSubmit"
           >
-            提交申请
+            确认入账
           </n-button>
         </n-space>
       </template>
@@ -628,11 +556,12 @@
     <!-- 查看小票图片弹窗 -->
     <n-modal
       v-model:show="showImageModal"
-      preset="card"
-      title="小票照片"
-      :style="{ width: isMobile ? '95%' : '600px' }"
+      :style="{ width: isMobile ? '95vw' : '80vw', maxWidth: '800px' }"
     >
-      <n-image :src="currentImage" />
+      <div class="receipt-viewer" @click="showImageModal = false">
+        <img :src="currentImage" class="receipt-img" @click.stop />
+        <n-button class="receipt-close" circle size="small" @click="showImageModal = false">✕</n-button>
+      </div>
     </n-modal>
   </div>
 </template>
@@ -675,9 +604,19 @@ const totalPages = ref(0)
 
 // 筛选条件
 const filterCategory = ref<string | null>(null)
-const filterAccounted = ref<boolean | null>(null)
+const filterAccounted = ref<string | null>('false')
 const filterConsumer = ref<number | null>(null)
 const filterDateRange = ref<[number, number] | null>(null)
+
+// 统计时间范围
+const statsRange = ref('month')
+const statsRangeOptions = [
+  { label: '今天', value: 'today' },
+  { label: '近一周', value: 'week' },
+  { label: '近一月', value: 'month' },
+  { label: '近一年', value: 'year' },
+  { label: '全部', value: 'all' }
+]
 
 // 选中的记账ID
 const selectedIds = ref<number[]>([])
@@ -745,7 +684,8 @@ const editForm = ref({
   category: '',
   description: '',
   entry_date: Date.now(),
-  consumer_id: null
+  consumer_id: null,
+  is_accounted: false
 })
 
 // 批量入账表单
@@ -757,16 +697,6 @@ const batchExpenseLoading = ref(false)
 
 // 查看图片
 const currentImage = ref('')
-
-// 语音录入
-const voiceRecording = ref(false)
-const voiceProcessing = ref(false)
-const voiceSeconds = ref(0)
-const voiceResult = ref<any>(null)
-const voiceSupported = ref(!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia))
-let mediaRecorder: MediaRecorder | null = null
-let audioChunks: Blob[] = []
-let voiceTimer: ReturnType<typeof setInterval> | null = null
 
 // 分类选项
 const categoryOptions = [
@@ -782,8 +712,8 @@ const categoryOptions = [
 ]
 
 const accountedOptions = [
-  { label: '未入账', value: false },
-  { label: '已入账', value: true }
+  { label: '未入账', value: 'false' },
+  { label: '已入账', value: 'true' }
 ]
 
 const consumerOptions = computed(() => {
@@ -852,7 +782,7 @@ async function fetchEntries() {
     }
 
     if (filterCategory.value) params.category = filterCategory.value
-    if (filterAccounted.value !== null) params.is_accounted = filterAccounted.value
+    if (filterAccounted.value !== null) params.is_accounted = filterAccounted.value === 'true'
     if (filterConsumer.value !== null) params.consumer_id = filterConsumer.value
     if (filterDateRange.value) {
       params.start_date = dayjs(filterDateRange.value[0]).toISOString()
@@ -872,15 +802,26 @@ async function fetchEntries() {
 async function fetchStats() {
   try {
     const params: any = {}
-    if (filterDateRange.value) {
-      params.start_date = dayjs(filterDateRange.value[0]).toISOString()
-      params.end_date = dayjs(filterDateRange.value[1]).toISOString()
+    // 根据统计时间范围计算日期
+    if (statsRange.value !== 'all') {
+      const now = dayjs()
+      const rangeMap: Record<string, number> = {
+        year: 365, month: 30, week: 7, today: 0
+      }
+      const days = rangeMap[statsRange.value] ?? 30
+      params.start_date = now.subtract(days, 'day').startOf('day').toISOString()
+      params.end_date = now.endOf('day').toISOString()
     }
     const { data } = await api.get('/accounting/stats/summary', { params })
     stats.value = data
   } catch (error: any) {
     message.error(error.response?.data?.detail || '获取统计数据失败')
   }
+}
+
+function handleStatsRangeChange(val: string) {
+  statsRange.value = val
+  fetchStats()
 }
 
 async function fetchFamilyMembers() {
@@ -891,123 +832,6 @@ async function fetchFamilyMembers() {
     console.error('获取家庭成员失败:', error)
   }
 }
-
-// ==================== 语音录入功能 ====================
-
-async function toggleVoiceRecording() {
-  if (voiceRecording.value) {
-    stopVoiceRecording()
-  } else {
-    await startVoiceRecording()
-  }
-}
-
-async function startVoiceRecording() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    mediaRecorder = new MediaRecorder(stream)
-    audioChunks = []
-    voiceSeconds.value = 0
-    voiceResult.value = null
-
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunks.push(event.data)
-      }
-    }
-
-    mediaRecorder.onstop = async () => {
-      // 停止所有音轨
-      stream.getTracks().forEach(track => track.stop())
-
-      // 合并音频数据
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
-
-      // 转换为 base64
-      const reader = new FileReader()
-      reader.onloadend = async () => {
-        const base64Audio = reader.result as string
-        await sendVoiceToBackend(base64Audio)
-      }
-      reader.readAsDataURL(audioBlob)
-    }
-
-    mediaRecorder.start()
-    voiceRecording.value = true
-
-    // 计时器
-    voiceTimer = setInterval(() => {
-      voiceSeconds.value++
-      // 最长录制60秒
-      if (voiceSeconds.value >= 60) {
-        stopVoiceRecording()
-      }
-    }, 1000)
-
-  } catch (error: any) {
-    if (error.name === 'NotAllowedError') {
-      message.error('请允许麦克风权限以使用语音输入')
-    } else {
-      message.error('无法启动录音: ' + error.message)
-    }
-  }
-}
-
-function stopVoiceRecording() {
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop()
-  }
-  voiceRecording.value = false
-  if (voiceTimer) {
-    clearInterval(voiceTimer)
-    voiceTimer = null
-  }
-}
-
-async function sendVoiceToBackend(base64Audio: string) {
-  voiceProcessing.value = true
-  try {
-    const { data } = await api.post('/accounting/voice', {
-      audio_data: base64Audio
-    })
-    voiceResult.value = data
-    message.success('语音识别成功')
-  } catch (error: any) {
-    message.error(error.response?.data?.detail || '语音识别失败')
-  } finally {
-    voiceProcessing.value = false
-  }
-}
-
-async function handleVoiceCreate() {
-  if (!voiceResult.value || !voiceResult.value.amount) {
-    message.warning('未识别到有效金额')
-    return
-  }
-
-  creating.value = true
-  try {
-    await api.post('/accounting/entry', {
-      amount: voiceResult.value.amount,
-      category: voiceResult.value.category || 'other',
-      description: voiceResult.value.description || voiceResult.value.transcript || '语音记账',
-      entry_date: dayjs().toISOString(),
-      consumer_id: null
-    })
-
-    message.success('语音记账成功')
-    voiceResult.value = null
-    showCreateModal.value = false
-    await fetchEntries()
-    await fetchStats()
-  } catch (error: any) {
-    message.error(error.response?.data?.detail || '记账失败')
-  } finally {
-    creating.value = false
-  }
-}
-
-// ==================== 手动记账功能 ====================
 
 async function handleManualCreate() {
   if (!manualForm.value.amount || !manualForm.value.description) {
@@ -1052,39 +876,26 @@ async function handlePhotoCreate() {
 
   creating.value = true
   try {
-    const file = photoFileList.value[0].file
-    const reader = new FileReader()
-
-    reader.onload = async (e) => {
-      const imageData = e.target?.result as string
-
-      const payload: any = {
-        image_data: imageData
-      }
-
-      if (photoForm.value.entry_date) {
-        payload.entry_date = dayjs(photoForm.value.entry_date).toISOString()
-      }
-
-      try {
-        const { data } = await api.post('/accounting/photo', payload)
-        message.success('小票识别成功')
-        ocrResult.value = data
-        showCreateModal.value = false
-        photoFileList.value = []
-        photoForm.value.entry_date = null
-        await fetchEntries()
-        await fetchStats()
-      } catch (error: any) {
-        message.error(error.response?.data?.detail || 'OCR识别失败')
-      } finally {
-        creating.value = false
-      }
+    const file = photoFileList.value[0].file!
+    const formData = new FormData()
+    formData.append('file', file)
+    if (photoForm.value.entry_date) {
+      formData.append('entry_date', dayjs(photoForm.value.entry_date).toISOString())
     }
 
-    reader.readAsDataURL(file)
+    const { data } = await api.post('/accounting/photo', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    message.success('小票识别成功')
+    ocrResult.value = data
+    showCreateModal.value = false
+    photoFileList.value = []
+    photoForm.value.entry_date = null
+    await fetchEntries()
+    await fetchStats()
   } catch (error: any) {
-    message.error('读取图片失败')
+    message.error(error.response?.data?.detail || 'OCR识别失败')
+  } finally {
     creating.value = false
   }
 }
@@ -1124,7 +935,8 @@ function handleEdit(entry: any) {
     category: entry.category,
     description: entry.description,
     entry_date: new Date(entry.entry_date).getTime(),
-    consumer_id: entry.consumer_id || 0
+    consumer_id: entry.consumer_id || 0,
+    is_accounted: entry.is_accounted || false
   }
   showEditModal.value = true
 }
@@ -1197,7 +1009,7 @@ async function handleBatchExpenseSubmit() {
       description: batchExpenseForm.value.description || null
     })
 
-    message.success('已提交支出申请')
+    message.success('入账成功，已记录到资金流水')
     showBatchExpenseModal.value = false
     selectedIds.value = []
     await fetchEntries()
@@ -1209,9 +1021,19 @@ async function handleBatchExpenseSubmit() {
   }
 }
 
-function handleViewImage(imageData: string) {
-  currentImage.value = imageData
-  showImageModal.value = true
+async function handleViewImage(entry: any) {
+  if (entry.image_data) {
+    currentImage.value = entry.image_data
+    showImageModal.value = true
+    return
+  }
+  try {
+    const { data } = await api.get(`/accounting/${entry.id}`)
+    currentImage.value = data.image_data || ''
+    showImageModal.value = true
+  } catch {
+    message.error('加载小票图片失败')
+  }
 }
 
 function handlePageSizeChange(newPageSize: number) {
@@ -1473,13 +1295,258 @@ onMounted(() => {
   padding: 20px;
 }
 
-.category-icon {
+/* ===== 记账列表卡片 ===== */
+.entry-list-card :deep(.n-card__content) {
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+
+/* ===== 页面头部 ===== */
+.page-header {
+  background: var(--theme-bg-card, #ffffff);
+  border-radius: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--theme-border, #e5e7eb);
+}
+
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--theme-text-primary, #1f2937);
+}
+
+.stats-box {
+  padding-top: 2px;
+}
+
+.stats-box-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--theme-border, #e5e7eb);
+}
+
+.stats-box-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--theme-text-primary, #1f2937);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 24px;
+  flex: 1;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: var(--theme-text-secondary, #6b7280);
+  line-height: 1.3;
+}
+
+.stat-value {
   font-size: 20px;
+  font-weight: 700;
+  color: var(--theme-text-primary, #1f2937);
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stat-value.accent {
+  color: var(--theme-success, #18a058);
+}
+
+.stat-value.warn {
+  color: var(--theme-warning, #f0a020);
+}
+
+/* ===== 筛选栏 ===== */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.receipt-viewer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.6);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.receipt-img {
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.receipt-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  opacity: 0.8;
+}
+
+/* ===== 记账列表卡片 ===== */
+.entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.entry-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 4px 10px 0;
+  margin: 0 -8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.entry-card:hover {
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.entry-check {
+  padding-top: 6px;
+  padding-left: 8px;
+  flex-shrink: 0;
+}
+
+.entry-check.hidden-checkbox {
+  visibility: hidden;
+}
+
+.entry-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 第一行：图标 描述 标签 ... 金额 */
+.entry-row1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.category-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.entry-desc {
+  font-weight: 500;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entry-amount {
+  margin-left: auto;
+  font-weight: 600;
+  font-size: 17px;
+  color: #e88080;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 第二行：分类 · 消费人 · 记账人 · 记账方式 */
+.entry-row2 {
+  font-size: 12px;
+  color: var(--n-text-color-3, #999);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.entry-row2 .dot {
+  margin: 0 4px;
+  opacity: 0.45;
+}
+
+/* 第三行：时间(左) + 操作按钮(右) */
+.entry-row3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.entry-date {
+  font-size: 12px;
+  color: var(--n-text-color-3, #999);
+}
+
+.entry-actions {
+  display: flex;
+  gap: 0;
 }
 
 @media (max-width: 767px) {
   .accounting-container {
     padding: 12px;
+  }
+
+  .stats-section {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .stats-grid {
+    gap: 10px 16px;
+  }
+
+  .stat-value {
+    font-size: 18px;
+  }
+
+  .page-header {
+    padding: 14px 16px;
+    border-radius: 12px;
+  }
+
+  .entry-card {
+    padding: 8px 10px;
+  }
+
+  .entry-desc {
+    font-size: 14px;
+  }
+
+  .entry-amount {
+    font-size: 15px;
+  }
+
+  .entry-row2 {
+    white-space: normal;
   }
 }
 </style>

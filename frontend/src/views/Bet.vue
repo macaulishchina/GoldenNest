@@ -58,24 +58,23 @@
         <p class="bet-desc">{{ bet.description }}</p>
 
         <div class="bet-meta">
-          <span class="meta-item">
-            👤 {{ bet.participants.length }} 参与者
-          </span>
-          <span class="meta-item">
-            🎯 {{ bet.options.length }} 选项
-          </span>
-          <span class="meta-item" v-if="bet.status === 'active'">
+          👤 {{ bet.participants.length }}参与
+          <span class="meta-sep">·</span>
+          🎯 {{ bet.options.length }}选项
+          <template v-if="bet.status === 'active'">
+            <span class="meta-sep">·</span>
             ⏰ {{ getTimeRemaining(bet.end_date) }}
-          </span>
-          <span class="meta-item" v-if="bet.status === 'active'">
-            🗳️ {{ bet.voted_count || 0 }}/{{ bet.participants.length }} 已投票
-          </span>
-          <span class="meta-item" v-if="bet.status === 'awaiting_result'">
+            <span class="meta-sep">·</span>
+            🗳️ {{ bet.voted_count || 0 }}/{{ bet.participants.length }}已投票
+          </template>
+          <template v-if="bet.status === 'awaiting_result'">
+            <span class="meta-sep">·</span>
             📝 等待结果登记
-          </span>
-          <span class="meta-item" v-if="bet.status === 'result_pending'">
+          </template>
+          <template v-if="bet.status === 'result_pending'">
+            <span class="meta-sep">·</span>
             📋 结果待确认
-          </span>
+          </template>
         </div>
 
         <!-- 参与者投票状态 -->
@@ -123,6 +122,7 @@
           </span>
           </div>
         </div>
+
       </div>
     </div>
 
@@ -1289,17 +1289,15 @@ onMounted(() => {
 }
 
 .bet-meta {
-  display: flex;
-  gap: 16px;
   margin-bottom: 12px;
   font-size: 13px;
+  line-height: 1.8;
   color: var(--theme-text-secondary);
 }
 
-.meta-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.bet-meta .meta-sep {
+  margin: 0 4px;
+  opacity: 0.35;
 }
 
 .participants-status {

@@ -19,15 +19,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.core.config import settings
+from app.core.config import settings, UPLOAD_DIR, BASE_DIR
 from app.core.database import init_db
 from app.core.limiter import limiter
 from app.api import auth, family, deposit, equity, investment, transaction, achievement, gift, vote, pet, announcement, report, approval, todo, calendar, asset, ai_config, ai_chat, bet, accounting
 from app.services.notification import set_external_base_url, detect_external_url_from_headers
+import os
 
 
 @asynccontextmanager
@@ -36,6 +38,10 @@ async def lifespan(app: FastAPI):
     # 启动时初始化数据库
     await init_db()
     print("🏠 小金库数据库初始化完成！")
+    
+    # 确保上传目录存在
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    print(f"📁 上传目录: {UPLOAD_DIR}")
     
     # 加载活跃 AI 服务商配置到内存
     try:
@@ -128,6 +134,11 @@ app.include_router(bet.router, prefix="/api/bet", tags=["家庭赌注"])  # 家�
 app.include_router(accounting.router, prefix="/api/accounting", tags=["记账系统"])  # 家庭记账系统
 app.include_router(ai_config.router, prefix="/api/ai-config", tags=["AI 配置"])  # AI 服务商管理
 app.include_router(ai_chat.router, prefix="/api", tags=["AI 助手"])  # AI 通用对话助手
+
+# 挂载静态文件服务（小票图片等）
+uploads_root = os.path.join(BASE_DIR, "uploads")
+os.makedirs(uploads_root, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_root), name="uploads")
 
 
 @app.get("/api/health")

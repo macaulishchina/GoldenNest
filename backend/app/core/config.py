@@ -9,6 +9,10 @@
 from pydantic_settings import BaseSettings
 from typing import Optional, Dict, Any
 import secrets
+import os
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads", "receipts")
 
 
 # 活跃 AI 服务商配置缓存（由数据库加载，运行时可切换）

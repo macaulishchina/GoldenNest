@@ -53,6 +53,7 @@ class AccountingEntryResponse(AccountingEntryBase):
     user_id: int
     source: str
     image_data: Optional[str] = None
+    has_image: bool = False
     is_accounted: bool
     expense_request_id: Optional[int] = None
     created_at: datetime

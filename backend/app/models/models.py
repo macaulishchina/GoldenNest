@@ -25,6 +25,7 @@ class TransactionType(str, enum.Enum):
     INVESTMENT_REDEEM = "investment_redeem" # 投资赎回（理财赎回到自由资金）
     BET_WIN = "bet_win"                    # 赌注获胜（股权增加）
     BET_LOSE = "bet_lose"                  # 赌注失败（股权减少）
+    DAILY_EXPENSE = "daily_expense"        # 日常消费（不影响家庭自由资金）
 
 
 class ExpenseStatus(str, enum.Enum):

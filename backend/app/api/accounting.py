@@ -3,16 +3,20 @@
 """
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+import base64
+import os
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy import select, func, and_, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.config import UPLOAD_DIR
 from app.models.models import (
     User, Family, FamilyMember, AccountingEntry, AccountingCategory,
-    AccountingEntrySource, ExpenseRequest, ExpenseStatus
+    AccountingEntrySource, Transaction, TransactionType
 )
 from app.schemas.accounting import (
     AccountingEntryCreate, AccountingEntryPhotoCreate, AccountingEntryVoiceCreate,
@@ -138,20 +142,42 @@ async def create_entry(
 
 @router.post("/photo", response_model=AccountingEntryResponse)
 async def create_entry_from_photo(
-    photo_data: AccountingEntryPhotoCreate,
+    file: UploadFile = File(..., description="小票图片文件"),
+    entry_date: Optional[str] = Form(None, description="消费日期"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """拍照识别创建记账条目"""
+    """拍照识别创建记账条目（直接上传图片文件）"""
     family, _ = await get_user_family(current_user, db)
+
+    # 读取图片文件
+    img_bytes = await file.read()
+
+    # 保存图片到文件
+    filename = f"{uuid.uuid4().hex}.jpg"
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    with open(filepath, "wb") as f:
+        f.write(img_bytes)
+    image_path = f"/uploads/receipts/{filename}"
+
+    # 转为base64供AI识别使用
+    img_b64 = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
 
     # AI识别小票信息
     try:
-        ocr_result = await parse_receipt_image(photo_data.image_data)
+        ocr_result = await parse_receipt_image(img_b64)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"OCR识别失败: {str(e)}"
+        )
+
+    # 验证金额
+    if not ocr_result.amount or ocr_result.amount <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="未能从图片中识别出有效金额，请手动输入"
         )
 
     # 验证分类
@@ -160,17 +186,25 @@ async def create_entry_from_photo(
     except ValueError:
         category_enum = AccountingCategory.OTHER
 
+    # 解析日期
+    parsed_date = datetime.now()
+    if entry_date:
+        try:
+            parsed_date = datetime.fromisoformat(entry_date.replace('Z', '+00:00'))
+        except ValueError:
+            pass
+
     # 创建记账条目
     new_entry = AccountingEntry(
         family_id=family.id,
         user_id=current_user.id,
-        consumer_id=None,  # 拍照识别默认为空（家庭共同消费）
+        consumer_id=None,
         amount=ocr_result.amount,
         category=category_enum,
         description=ocr_result.description,
-        entry_date=photo_data.entry_date or datetime.now(),
+        entry_date=parsed_date,
         source=AccountingEntrySource.PHOTO,
-        image_data=photo_data.image_data
+        image_data=image_path
     )
 
     db.add(new_entry)
@@ -188,6 +222,7 @@ async def create_entry_from_photo(
         entry_date=new_entry.entry_date,
         source=new_entry.source.value,
         image_data=new_entry.image_data,
+        has_image=bool(new_entry.image_data),
         is_accounted=new_entry.is_accounted,
         expense_request_id=new_entry.expense_request_id,
         created_at=new_entry.created_at,
@@ -211,6 +246,13 @@ async def create_entry_from_voice(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"语音识别失败: {str(e)}"
+        )
+
+    # 验证金额
+    if not voice_result.amount or voice_result.amount <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="未能从语音中识别出有效金额，请手动输入"
         )
 
     # 验证分类
@@ -417,7 +459,8 @@ async def list_entries(
             description=entry.description,
             entry_date=entry.entry_date,
             source=entry.source.value,
-            image_data=entry.image_data,
+            image_data=None,  # 列表不返回图片数据，减少传输
+            has_image=bool(entry.image_data),
             is_accounted=entry.is_accounted,
             expense_request_id=entry.expense_request_id,
             created_at=entry.created_at,
@@ -485,6 +528,7 @@ async def get_entry(
         entry_date=entry.entry_date,
         source=entry.source.value,
         image_data=entry.image_data,
+        has_image=bool(entry.image_data),
         is_accounted=entry.is_accounted,
         expense_request_id=entry.expense_request_id,
         created_at=entry.created_at,
@@ -596,6 +640,7 @@ async def update_entry(
         entry_date=entry.entry_date,
         source=entry.source.value,
         image_data=entry.image_data,
+        has_image=bool(entry.image_data),
         is_accounted=entry.is_accounted,
         expense_request_id=entry.expense_request_id,
         created_at=entry.created_at,
@@ -656,7 +701,7 @@ async def batch_create_expense(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """批量将记账条目转为支出申请"""
+    """批量将记账条目直接转为消费记录（资金流水）"""
     family, membership = await get_user_family(current_user, db)
 
     # 查询所有待转换的条目
@@ -680,29 +725,43 @@ async def batch_create_expense(
     # 计算总金额
     total_amount = sum(entry.amount for entry in entries)
 
-    # 创建支出申请
+    # 获取当前余额（仅用于记录，不扣减）
+    last_txn_result = await db.execute(
+        select(Transaction)
+        .where(Transaction.family_id == family.id)
+        .order_by(Transaction.created_at.desc())
+        .limit(1)
+    )
+    last_transaction = last_txn_result.scalar_one_or_none()
+    current_balance = last_transaction.balance_after if last_transaction else 0
+
+    # 构建描述
     description = batch_data.description or "批量记账入账"
-    expense_request = ExpenseRequest(
+    entry_descs = [f"{e.description}(¥{e.amount})" for e in entries]
+    full_description = f"{description}: {', '.join(entry_descs)}"
+
+    # 创建日常消费流水记录（不影响家庭自由资金余额）
+    transaction = Transaction(
         family_id=family.id,
-        requester_id=current_user.id,
-        title=batch_data.title,
-        description=description,
-        amount=total_amount,
-        status=ExpenseStatus.PENDING
+        user_id=current_user.id,
+        transaction_type=TransactionType.DAILY_EXPENSE,
+        amount=-total_amount,
+        balance_after=current_balance,  # 余额不变
+        description=full_description,
+        reference_type="accounting_batch"
     )
 
-    db.add(expense_request)
+    db.add(transaction)
     await db.flush()
-    await db.refresh(expense_request)
+    await db.refresh(transaction)
 
     # 更新记账条目状态
     for entry in entries:
         entry.is_accounted = True
-        entry.expense_request_id = expense_request.id
 
     return {
-        "message": "批量入账成功",
-        "expense_request_id": expense_request.id,
+        "message": "批量入账成功，已记录到资金流水",
+        "transaction_id": transaction.id,
         "total_amount": total_amount,
         "entry_count": len(entries)
     }

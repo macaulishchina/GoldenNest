@@ -118,11 +118,14 @@ const showOnMobile = ref(true)
 const selectedCharacter = ref<string>('pet')
 const position = ref<Position>({ x: 20, y: window.innerHeight - 120 })
 const isDragging = ref(false)
+const wasDragged = ref(false)
+const dragStartPos = ref<Position>({ x: 0, y: 0 })
 const dragOffset = ref<Position>({ x: 0, y: 0 })
 const showChat = ref(false)
 const showMenu = ref(false)
 const isMinimized = ref(false)
 const longPressTimer = ref<number | null>(null)
+let lastTouchToggle = 0  // timestamp guard to prevent double toggle
 
 // Whether current character mode uses pet chat API
 const isPetMode = computed(() => selectedCharacter.value === 'pet')
@@ -251,39 +254,46 @@ function startDrag(e: MouseEvent | TouchEvent) {
   // Prevent drag if clicking menu
   if (showMenu.value) return
 
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+
+  isDragging.value = true
+  wasDragged.value = false
+  dragStartPos.value = { x: clientX, y: clientY }
+  dragOffset.value = {
+    x: clientX - position.value.x,
+    y: clientY - position.value.y
+  }
+
   // Start long-press timer for touch devices
   if (e.type === 'touchstart') {
     longPressTimer.value = window.setTimeout(() => {
       showMenu.value = true
-      stopDrag()
+      isDragging.value = false
+      wasDragged.value = true  // prevent tap action
     }, 500)
-  }
-
-  e.preventDefault()
-  isDragging.value = true
-
-  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
-
-  dragOffset.value = {
-    x: clientX - position.value.x,
-    y: clientY - position.value.y
   }
 }
 
 function handleDragMove(e: MouseEvent | TouchEvent) {
   if (!isDragging.value) return
 
-  // Clear long-press timer if dragging
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+
+  // Only treat as drag if moved > 5px from start
+  const dx = Math.abs(clientX - dragStartPos.value.x)
+  const dy = Math.abs(clientY - dragStartPos.value.y)
+  if (dx < 5 && dy < 5) return
+
+  wasDragged.value = true
+  e.preventDefault()  // prevent scrolling during actual drag
+
+  // Clear long-press timer once dragging
   if (longPressTimer.value) {
     clearTimeout(longPressTimer.value)
     longPressTimer.value = null
   }
-
-  e.preventDefault()
-
-  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
 
   let x = clientX - dragOffset.value.x
   let y = clientY - dragOffset.value.y
@@ -295,20 +305,31 @@ function handleDragMove(e: MouseEvent | TouchEvent) {
   position.value = { x, y }
 }
 
-function stopDrag() {
-  if (isDragging.value) {
-    isDragging.value = false
+function stopDrag(e: Event) {
+  const wasNotDragged = isDragging.value && !wasDragged.value
+
+  if (isDragging.value && wasDragged.value) {
     savePreferences()
   }
+  isDragging.value = false
 
   if (longPressTimer.value) {
     clearTimeout(longPressTimer.value)
     longPressTimer.value = null
   }
+
+  // On touch devices, handle tap via touchend.
+  // Record timestamp so the synthetic click (300ms later) is ignored.
+  if (e.type === 'touchend' && wasNotDragged && !showMenu.value) {
+    lastTouchToggle = Date.now()
+    toggleChat()
+  }
 }
 
 function toggleChat() {
-  if (isDragging.value) return
+  if (wasDragged.value) return
+  // Guard against synthetic click after touchend (browser fires click ~300ms later)
+  if (Date.now() - lastTouchToggle < 400) return
   if (isMinimized.value) {
     isMinimized.value = false
     savePreferences()
@@ -400,6 +421,7 @@ async function handlePetChat(userMessage: string, history: any[] = []): Promise<
   z-index: 1000;
   cursor: move;
   user-select: none;
+  touch-action: none;
   transition: transform 0.2s ease;
 }
 
