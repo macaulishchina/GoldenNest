@@ -18,6 +18,19 @@
   box-sizing: border-box;
 }
 
+/* 移动端禁止长按复制/弹出菜单（input/textarea 除外） */
+*:not(input):not(textarea) {
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: auto;
+  -webkit-touch-callout: default;
+  user-select: auto;
+}
+
 html {
   min-height: 100vh;
 }
