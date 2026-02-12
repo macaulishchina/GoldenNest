@@ -586,6 +586,7 @@ class NotificationService:
         2. 环境变量（全局默认配置）
         """
         import os
+        from app.core.encryption import decrypt_sensitive_data
         
         # 默认配置（从环境变量读取）
         config = {
@@ -601,9 +602,9 @@ class NotificationService:
             family = result.scalar_one_or_none()
             
             if family:
-                # 家庭配置覆盖默认配置
+                # 家庭配置覆盖默认配置（webhook URL 需要解密）
                 if family.wechat_webhook_url:
-                    config["wechat_work_webhook_url"] = family.wechat_webhook_url
+                    config["wechat_work_webhook_url"] = decrypt_sensitive_data(family.wechat_webhook_url)
                 config["notification_enabled"] = family.notification_enabled
                 # 外网访问地址配置
                 if family.external_base_url:
@@ -997,7 +998,8 @@ class NotificationService:
             
             config = await self.get_family_notification_config(context.family_id)
             
-            logging.debug(f"Notification config loaded: notification_enabled={config.get('notification_enabled')}, has_webhook={bool(config.get('wechat_work_webhook_url'))}")
+            webhook_url = config.get('wechat_work_webhook_url', '')
+            logging.info(f"Notification config: enabled={config.get('notification_enabled')}, webhook={'✅ ' + webhook_url[:60] + '...' if webhook_url else '❌ 未配置'}")
             
             # 检查是否启用通知
             if not config.get("notification_enabled", True):
@@ -1203,8 +1205,8 @@ async def send_bet_notification(
     notification_type: NotificationType,
     bet,  # Bet对象
     creator_name: str = "",
-    participants_names: List[str] = None,
-    voter: User = None,
+    participants_names: Optional[List[str]] = None,
+    voter: Optional[User] = None,
     option_text: str = "",
     content: str = ""
 ) -> None:
@@ -1214,11 +1216,15 @@ async def send_bet_notification(
     适用于：赌注创建、投票、截止、结果登记、结算、取消
     """
     try:
+        logging.info(f"[BET_NOTIFY] send_bet_notification called: type={notification_type}, bet_id={bet.id}, family_id={bet.family_id}")
+
+        # 获取家庭信息
         result = await db.execute(
             select(Family).where(Family.id == bet.family_id)
         )
         family = result.scalar_one_or_none()
         if not family:
+            logging.warning(f"[BET_NOTIFY] Family not found for bet {bet.id}, family_id={bet.family_id}")
             return
 
         service = NotificationService(db)
@@ -1229,17 +1235,27 @@ async def send_bet_notification(
                 select(User).where(User.id == bet.creator_id)
             )
             creator = creator_result.scalar_one_or_none()
-            if creator:
-                await service.notify_bet_created(
-                    bet, creator, family, participants_names or []
-                )
-        elif notification_type == NotificationType.BET_VOTED and voter:
+            if not creator:
+                logging.warning(f"[BET_NOTIFY] Creator not found for bet {bet.id}, creator_id={bet.creator_id}")
+                return
+            logging.info(f"[BET_NOTIFY] Calling notify_bet_created for bet {bet.id}")
+            await service.notify_bet_created(
+                bet, creator, family, participants_names or []
+            )
+        elif notification_type == NotificationType.BET_VOTED:
+            if not voter:
+                logging.warning(f"[BET_NOTIFY] BET_VOTED called without voter for bet {bet.id}")
+                return
+            logging.info(f"[BET_NOTIFY] Calling notify_bet_voted for bet {bet.id}")
             await service.notify_bet_voted(bet, voter, option_text, family)
         else:
             # 通用状态变更通知
+            logging.info(f"[BET_NOTIFY] Calling notify_bet_status_change for bet {bet.id}, type={notification_type}")
             await service.notify_bet_status_change(
                 bet, notification_type, family, creator_name, content
             )
 
+        logging.info(f"[BET_NOTIFY] send_bet_notification completed for bet {bet.id}")
+
     except Exception as e:
-        logging.error(f"Failed to send bet notification: {e}")
+        logging.error(f"[BET_NOTIFY] Failed to send bet notification: {e}", exc_info=True)

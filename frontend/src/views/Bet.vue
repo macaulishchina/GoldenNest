@@ -372,6 +372,7 @@
                 <span v-if="equityInfo?.total_savings">(≈¥{{ formatNumber(p.stake_amount / 100 * equityInfo.total_savings) }})</span>
               </span>
               <span class="participant-stake-desc" v-if="p.stake_description">
+                    <span class="participant-stake">附加：</span>
                 🎯 {{ p.stake_description }}
               </span>
               <span class="participant-vote">

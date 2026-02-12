@@ -1,6 +1,20 @@
 """
 小金库 (Golden Nest) - FastAPI 主入口
 """
+import logging
+
+# 配置应用日志（必须在其他模块导入前配置，否则 logging.info 等调用无输出）
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+# 降低第三方库日志噪音
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("watchfiles").setLevel(logging.WARNING)
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -130,7 +144,6 @@ async def health_check():
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """捕获所有未处理的异常"""
-    import logging
     import traceback
     
     logging.error(f"Unhandled exception: {exc}")
