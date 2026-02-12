@@ -8,7 +8,7 @@
 """
 import logging
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -20,6 +20,7 @@ from app.services.ai_service import ai_service
 from app.services.ai_tools import (
     build_tool_selection_prompt, execute_tools, TOOL_LIST_TEXT,
 )
+from app.services.ai_accounting import transcribe_audio_file
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai/chat", tags=["AI Chat"])
@@ -36,6 +37,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="用户消息", min_length=1, max_length=2000)
     context_type: Optional[str] = Field(None, description="上下文类型: dashboard/transaction/investment/family")
     history: List[ChatMessage] = Field(default_factory=list, description="对话历史")
+    persona: Optional[str] = Field(None, description="角色人设描述，用于定制AI性格")
 
 
 class ChatResponse(BaseModel):
@@ -104,7 +106,11 @@ async def chat_with_ai(
 {tool_data}
 """
 
-        system_prompt = f"""你是小金库（Golden Nest）的智能财务助手，专门帮助用户管理家庭财务。
+        persona_prefix = ""
+        if request.persona:
+            persona_prefix = f"【角色扮演】{request.persona}\n请在保持这个角色特色的同时，作为家庭财务助手帮助用户。\n\n"
+
+        system_prompt = f"""{persona_prefix}你是小金库（Golden Nest）的智能财务助手，专门帮助用户管理家庭财务。
 用户昵称：{current_user.nickname}
 
 你的能力：
@@ -148,3 +154,30 @@ def _get_suggestions(context_type: Optional[str]) -> List[str]:
         "investment": ["我有哪些投资", "我的资产配置合理吗", "投资收益怎么样"],
     }
     return mapping.get(context_type, [])
+
+
+@router.post("/voice-to-text")
+async def voice_to_text(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    语音转文字：上传音频文件，返回转录文本。
+    用于 AI 对话的语音输入功能。
+    """
+    audio_bytes = await file.read()
+    if len(audio_bytes) == 0:
+        raise HTTPException(status_code=400, detail="音频文件为空")
+    if len(audio_bytes) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="音频文件过大，请控制在25MB以内")
+
+    filename = file.filename or "audio.webm"
+
+    try:
+        transcript = await transcribe_audio_file(audio_bytes, filename)
+        return {"text": transcript.strip()}
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error(f"Voice-to-text error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"语音转文字失败: {str(e)[:200]}")

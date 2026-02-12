@@ -316,13 +316,19 @@
             <!-- 录音区 -->
             <div class="voice-record-area">
               <div class="voice-hint">
-                {{ voiceRecording ? '正在录音...' : (voiceTranscript ? '识别完成' : '点击麦克风开始录音') }}
+                {{ voiceRecording ? '松开结束录音' : (voiceTranscript ? '识别完成' : '长按麦克风开始录音') }}
               </div>
               <div class="voice-btn-wrap">
                 <button
                   class="voice-mic-btn"
                   :class="{ recording: voiceRecording }"
-                  @click="toggleVoiceRecording"
+                  @mousedown.prevent="onVoiceBtnDown"
+                  @mouseup="onVoiceBtnUp"
+                  @mouseleave="onVoiceBtnUp"
+                  @touchstart.prevent="onVoiceBtnDown"
+                  @touchend.prevent="onVoiceBtnUp"
+                  @touchcancel="onVoiceBtnUp"
+                  @contextmenu.prevent
                   :disabled="voiceRecognizing"
                 >
                   <span class="mic-icon">🎤</span>
@@ -373,6 +379,9 @@
                   <n-form-item label="描述" :show-feedback="false" size="small">
                     <n-input v-model:value="item.description" type="textarea" size="small" :autosize="{ minRows: 1, maxRows: 3 }" />
                   </n-form-item>
+                  <n-form-item label="消费人" :show-feedback="false" size="small">
+                    <n-select v-model:value="item.consumer_id" :options="consumerOptionsWithFamily" size="small" placeholder="默认家庭共同" />
+                  </n-form-item>
                 </div>
               </div>
             </template>
@@ -398,22 +407,130 @@
 
         <n-tab-pane name="import" tab="批量导入">
           <n-space vertical size="large">
-            <n-alert type="info" title="导入格式说明">
-              请使用以下JSON格式批量导入记账记录：
-              <n-code language="json" :code="importTemplate" />
-            </n-alert>
+            <!-- 导入方式切换 -->
+            <n-radio-group v-model:value="importMode" size="small">
+              <n-radio-button value="file">📄 文件导入</n-radio-button>
+              <n-radio-button value="json">📋 JSON导入</n-radio-button>
+            </n-radio-group>
 
-            <n-input
-              v-model:value="importJson"
-              type="textarea"
-              placeholder="粘贴JSON数据..."
-              :autosize="{ minRows: 8, maxRows: 12 }"
-            />
+            <!-- 文件导入模式 -->
+            <template v-if="importMode === 'file'">
+              <n-upload
+                :default-upload="false"
+                v-model:file-list="importFileList"
+                accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png"
+                :max="1"
+                @change="handleImportFileChange"
+              >
+                <n-upload-dragger>
+                  <div style="padding: 16px 0">
+                    <div style="font-size: 36px; margin-bottom: 8px">📄</div>
+                    <n-text style="font-size: 14px">点击或拖拽文件到此区域</n-text>
+                    <br />
+                    <n-text :depth="3" style="font-size: 12px">
+                      支持 Excel(.xlsx/.xls)、CSV、PDF、图片(.jpg/.png)
+                    </n-text>
+                  </div>
+                </n-upload-dragger>
+              </n-upload>
+
+              <n-button
+                type="info"
+                :loading="importParsing"
+                :disabled="importFileList.length === 0 || importParsing"
+                @click="handleImportFileParse"
+                block
+              >
+                <template v-if="importStage === 'uploading'">
+                  📤 上传中 {{ importProgress }}%
+                </template>
+                <template v-else-if="importStage === 'parsing'">
+                  🤖 AI 解析中...
+                </template>
+                <template v-else>
+                  🔍 解析文件
+                </template>
+              </n-button>
+              <n-progress
+                v-if="importParsing"
+                type="line"
+                :percentage="importStage === 'uploading' ? importProgress : 100"
+                :status="importStage === 'parsing' ? 'info' : 'default'"
+                :show-indicator="false"
+                :height="6"
+                style="margin-top: -4px; overflow: hidden"
+                :processing="importStage === 'parsing'"
+              />
+
+              <!-- 解析结果 -->
+              <template v-if="importParseResults.length > 0">
+                <n-divider style="margin: 8px 0" />
+                <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px">
+                  解析结果（{{ importParseResults.length }} 条）
+                </div>
+                <div class="recognize-list" style="max-height: 40vh; overflow-y: auto">
+                  <div v-for="(item, idx) in importParseResults" :key="idx" class="recognize-item">
+                    <div class="recognize-item-header">
+                      <span class="recognize-item-idx">#{{ idx + 1 }}</span>
+                      <n-tag :type="item.confidence >= 0.8 ? 'success' : item.confidence >= 0.5 ? 'warning' : 'error'" size="small">
+                        {{ (item.confidence * 100).toFixed(0) }}%
+                      </n-tag>
+                      <n-button size="tiny" quaternary type="error" @click="importParseResults.splice(idx, 1)" style="margin-left: auto">
+                        移除
+                      </n-button>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: flex-end">
+                      <n-form-item label="金额" :show-feedback="false" size="small" style="flex: 1; min-width: 0">
+                        <n-input-number v-model:value="item.amount" :min="0.01" :precision="2" size="small" style="width: 100%">
+                          <template #prefix>¥</template>
+                        </n-input-number>
+                      </n-form-item>
+                      <n-form-item label="分类" :show-feedback="false" size="small" style="flex: 0 0 100px">
+                        <n-select v-model:value="item.category" :options="categoryOptions" size="small" />
+                      </n-form-item>
+                    </div>
+                    <n-form-item label="消费日期" :show-feedback="false" size="small">
+                      <n-date-picker v-model:value="item.entry_date_ts" type="datetime" size="small" style="width: 100%" format="yyyy-MM-dd HH:mm" />
+                    </n-form-item>
+                    <n-form-item label="描述" :show-feedback="false" size="small">
+                      <n-input v-model:value="item.description" type="textarea" size="small" :autosize="{ minRows: 1, maxRows: 3 }" />
+                    </n-form-item>
+                    <n-form-item label="消费人" :show-feedback="false" size="small">
+                      <n-select v-model:value="item.consumer_id" :options="consumerOptionsWithFamily" size="small" placeholder="默认家庭共同" />
+                    </n-form-item>
+                  </div>
+                </div>
+              </template>
+            </template>
+
+            <!-- JSON导入模式 -->
+            <template v-else>
+              <n-alert type="info" title="导入格式说明">
+                请使用以下JSON格式批量导入记账记录：
+                <n-code language="json" :code="importTemplate" />
+              </n-alert>
+
+              <n-input
+                v-model:value="importJson"
+                type="textarea"
+                placeholder="粘贴JSON数据..."
+                :autosize="{ minRows: 8, maxRows: 12 }"
+              />
+            </template>
           </n-space>
 
           <n-space justify="end" style="margin-top: 16px">
             <n-button @click="showCreateModal = false">取消</n-button>
             <n-button
+              v-if="importMode === 'file' && importParseResults.length > 0"
+              type="primary"
+              :loading="creating"
+              @click="handleImportFileCreateConfirm"
+            >
+              ✅ 确认导入 ({{ importParseResults.length }})
+            </n-button>
+            <n-button
+              v-if="importMode === 'json'"
               type="primary"
               :loading="creating"
               :disabled="!importJson.trim()"
@@ -612,13 +729,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api'
+import { useUserStore } from '@/stores/user'
 import dayjs from 'dayjs'
 
 const message = useMessage()
 const dialog = useDialog()
+const route = useRoute()
+const accountingRouter = useRouter()
+const userStore = useUserStore()
 
 // 响应式状态
 const isMobile = ref(window.innerWidth < 768)
@@ -684,7 +806,7 @@ const duplicateCheckResults = ref({
   unique_count: 0
 })
 const pendingEntries = ref<any[]>([])  // 待创建的记账条目
-const pendingSource = ref<'manual' | 'photo' | 'import'>('manual')  // 待创建条目来源
+const pendingSource = ref<'manual' | 'photo' | 'import' | 'voice'>('manual')  // 待创建条目来源
 const duplicateActions = ref<Map<number, string>>(new Map())  // 每条记录的处理决定
 const duplicateCheckedItems = ref<Set<number>>(new Set())  // 勾选要记录的条目索引
 const duplicateChecking = ref(false)  // 查重中加载状态
@@ -740,6 +862,12 @@ const importTemplate = `[
     "consumer_id": null
   }
 ]`
+const importFileList = ref<any[]>([])
+const importParsing = ref(false)
+const importParseResults = ref<any[]>([])
+const importMode = ref<'file' | 'json'>('file')
+const importStage = ref<'idle' | 'uploading' | 'parsing' | 'done'>('idle')
+const importProgress = ref(0)  // 上传百分比 0-100
 
 // 编辑表单
 const editForm = ref({
@@ -992,11 +1120,16 @@ function resetVoiceState() {
   voiceRecognizing.value = false
 }
 
-async function toggleVoiceRecording() {
+// 长按录音：按下开始，松开停止
+function onVoiceBtnDown() {
+  // 阻止移动端文字选择
+  if (voiceRecognizing.value) return
+  startVoiceRecording()
+}
+
+function onVoiceBtnUp() {
   if (voiceRecording.value) {
     stopVoiceRecording()
-  } else {
-    await startVoiceRecording()
   }
 }
 
@@ -1081,6 +1214,7 @@ async function sendVoiceToServer(blob: Blob) {
       voiceRecognizeResults.value = data.items.map((item: any) => ({
         ...item,
         entry_date_ts: item.entry_date ? new Date(item.entry_date).getTime() : Date.now(),
+        consumer_id: item.consumer_type === 'personal' ? (userStore.user?.id ?? 0) : 0,
       }))
       message.success(`识别到 ${data.items.length} 条记录`)
     } else if (voiceTranscript.value) {
@@ -1111,7 +1245,8 @@ async function handleVoiceCreateConfirm() {
     description: r.description,
     category: r.category,
     entry_date: r.entry_date_ts ? dayjs(r.entry_date_ts).toISOString() : dayjs().toISOString(),
-    consumer_id: null,
+    consumer_id: r.consumer_id === 0 ? null : (r.consumer_id || null),
+    source: 'voice',
   }))
 
   // 先检查重复
@@ -1126,7 +1261,7 @@ async function handleVoiceCreateConfirm() {
       checkResult.possible_duplicates_count > 0) {
     // 设置 pending 数据供 dedup 弹窗使用
     pendingEntries.value = entries
-    pendingSource.value = 'manual' // voice 走 manual 逐条创建路径
+    pendingSource.value = 'voice' // voice 走逐条创建路径
     duplicateCheckResults.value = checkResult
     duplicateActions.value.clear()
     duplicateCheckedItems.value = new Set()
@@ -1146,7 +1281,7 @@ async function voiceCreateDirect() {
         category: r.category,
         description: r.description,
         entry_date: r.entry_date_ts ? dayjs(r.entry_date_ts).toISOString() : dayjs().toISOString(),
-        consumer_id: null,
+        consumer_id: r.consumer_id === 0 ? null : (r.consumer_id || null),
         source: 'voice',
       })
     }
@@ -1314,6 +1449,133 @@ async function handleImportCreate() {
     } else {
       message.error(error.response?.data?.detail || '导入失败')
     }
+  } finally {
+    creating.value = false
+  }
+}
+
+// ========== 文件批量导入 ==========
+
+function handleImportFileChange(options: { fileList: any[] }) {
+  importFileList.value = options.fileList.slice(-1)  // 只保留最后一个文件
+  importParseResults.value = []  // 切换文件时清空结果
+}
+
+async function handleImportFileParse() {
+  if (importFileList.value.length === 0) {
+    message.warning('请先选择文件')
+    return
+  }
+
+  const fileItem = importFileList.value[0]
+  if (!fileItem.file) {
+    message.warning('文件无效，请重新选择')
+    return
+  }
+
+  importParsing.value = true
+  importStage.value = 'uploading'
+  importProgress.value = 0
+  try {
+    const formData = new FormData()
+    formData.append('file', fileItem.file)
+
+    const { data } = await api.post('/accounting/import/file', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+      onUploadProgress: (progressEvent: any) => {
+        if (progressEvent.total) {
+          importProgress.value = Math.min(100, Math.round((progressEvent.loaded / progressEvent.total) * 100))
+          // 上传完成后切换到解析阶段
+          if (importProgress.value >= 100) {
+            importStage.value = 'parsing'
+          }
+        }
+      },
+    })
+
+    importStage.value = 'done'
+
+    if (data.items && data.items.length > 0) {
+      importParseResults.value = data.items.map((item: any) => ({
+        ...item,
+        entry_date_ts: item.entry_date ? new Date(item.entry_date).getTime() : Date.now(),
+        consumer_id: item.consumer_type === 'personal' ? (userStore.user?.id ?? 0) : 0,
+      }))
+      message.success(`成功解析 ${data.items.length} 条消费记录`)
+    } else {
+      message.warning('未能从文件中解析出消费记录')
+    }
+  } catch (error: any) {
+    message.error(error.response?.data?.detail || '文件解析失败')
+  } finally {
+    importParsing.value = false
+    importStage.value = 'idle'
+    importProgress.value = 0
+  }
+}
+
+async function handleImportFileCreateConfirm() {
+  if (importParseResults.value.length === 0) return
+
+  const invalidItems = importParseResults.value.filter((r: any) => !r.amount || r.amount <= 0)
+  if (invalidItems.length > 0) {
+    message.warning('存在金额为0的记录，请修正后再导入')
+    return
+  }
+
+  // 构建 entries 用于重复检测
+  const entries = importParseResults.value.map((r: any) => ({
+    amount: r.amount,
+    description: r.description,
+    category: r.category,
+    entry_date: r.entry_date_ts ? dayjs(r.entry_date_ts).toISOString() : dayjs().toISOString(),
+    consumer_id: r.consumer_id === 0 ? null : (r.consumer_id || null),
+    source: 'import',
+  }))
+
+  // 先检查重复
+  const checkResult = await checkDuplicates(entries)
+  if (!checkResult) {
+    await importFileCreateDirect()
+    return
+  }
+
+  if (checkResult.exact_duplicates_count > 0 ||
+      checkResult.likely_duplicates_count > 0 ||
+      checkResult.possible_duplicates_count > 0) {
+    pendingEntries.value = entries
+    pendingSource.value = 'import'
+    duplicateCheckResults.value = checkResult
+    duplicateActions.value.clear()
+    duplicateCheckedItems.value = new Set()
+    showDuplicateModal.value = true
+  } else {
+    await importFileCreateDirect()
+  }
+}
+
+async function importFileCreateDirect() {
+  creating.value = true
+  try {
+    const entries = importParseResults.value.map((r: any) => ({
+      amount: r.amount,
+      category: r.category,
+      description: r.description,
+      entry_date: r.entry_date_ts ? dayjs(r.entry_date_ts).toISOString() : dayjs().toISOString(),
+      consumer_id: r.consumer_id === 0 ? null : (r.consumer_id || null),
+    }))
+
+    await api.post('/accounting/import', { entries })
+
+    message.success(`成功导入 ${entries.length} 条记账记录`)
+    showCreateModal.value = false
+    importFileList.value = []
+    importParseResults.value = []
+    await fetchEntries()
+    await fetchStats()
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || '导入失败')
   } finally {
     creating.value = false
   }
@@ -1668,10 +1930,31 @@ async function importEntriesDirect(entries: any[]) {
 // ==================== 原有函数（保留向后兼容） ====================
 
 // 初始化
+// 监听路由 query 参数，支持从浮动按钮双击快捷进入语音/拍照记账
+function checkAutoOpenMode() {
+  const mode = route.query.mode as string | undefined
+  if (mode === 'voice' || mode === 'photo') {
+    // 清除 query 参数避免刷新重复触发
+    accountingRouter.replace({ path: route.path, query: {} })
+    // 延迟打开以确保页面数据加载
+    setTimeout(() => {
+      resetPhotoState()
+      resetVoiceState()
+      createMethod.value = mode
+      showCreateModal.value = true
+    }, 200)
+  }
+}
+
+watch(() => route.query.mode, (newMode) => {
+  if (newMode) checkAutoOpenMode()
+})
+
 onMounted(() => {
   fetchFamilyMembers()
   fetchEntries()
   fetchStats()
+  checkAutoOpenMode()
 })
 </script>
 
@@ -1836,6 +2119,10 @@ onMounted(() => {
   transition: all 0.2s;
   outline: none;
   -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
 }
 
 .voice-mic-btn:active:not(:disabled) {

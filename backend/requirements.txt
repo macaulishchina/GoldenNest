@@ -32,3 +32,8 @@ slowapi>=0.1.9  # API 频率限制
 
 # Image Processing
 Pillow>=10.0.0  # 图片压缩处理
+
+# Document Parsing
+openpyxl>=3.1.0  # Excel 文件解析
+pdfplumber>=0.10.0  # PDF 文件解析（文本提取，降级方案）
+PyMuPDF>=1.23.0  # PDF 页面渲染为图片（推荐，视觉模型解析）

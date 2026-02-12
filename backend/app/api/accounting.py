@@ -26,7 +26,7 @@ from app.schemas.accounting import (
     DuplicateCheckRequest, DuplicateCheckResponse, DuplicateCheckResult, DuplicateMatch, DuplicateMatchLevel,
     PhotoRecognizeResponse, PhotoRecognizeItem, PhotoCreateRequest,
 )
-from app.services.ai_accounting import parse_receipt_images, transcribe_voice, categorize_entry, check_duplicate_with_ai, transcribe_audio_file, parse_voice_text
+from app.services.ai_accounting import parse_receipt_images, transcribe_voice, categorize_entry, check_duplicate_with_ai, transcribe_audio_file, parse_voice_text, parse_import_file
 
 router = APIRouter()
 
@@ -96,16 +96,24 @@ async def create_entry(
                 detail="指定的消费人不是家庭成员"
             )
 
+    # 确定来源
+    entry_source = AccountingEntrySource.MANUAL
+    if hasattr(entry_data, 'source') and entry_data.source:
+        try:
+            entry_source = AccountingEntrySource(entry_data.source)
+        except ValueError:
+            pass  # 无效来源，使用默认 MANUAL
+
     # 创建记账条目
     new_entry = AccountingEntry(
         family_id=family.id,
         user_id=current_user.id,
-        consumer_id=entry_data.consumer_id,
+        consumer_id=entry_data.consumer_id if entry_data.consumer_id != 0 else None,
         amount=entry_data.amount,
         category=category_enum,
         description=entry_data.description,
         entry_date=entry_data.entry_date,
-        source=AccountingEntrySource.MANUAL
+        source=entry_source
     )
 
     db.add(new_entry)
@@ -467,6 +475,49 @@ async def import_entries(
         page_size=len(response_entries),
         entries=response_entries
     )
+
+
+@router.post("/import/file")
+async def import_file_parse(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    上传文件（Excel/CSV/PDF/图片）并解析为记账条目。
+    返回解析结果供用户确认后再创建。
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="文件名不能为空")
+
+    # 检查文件大小（最大 20MB）
+    file_bytes = await file.read()
+    if len(file_bytes) == 0:
+        raise HTTPException(status_code=400, detail="文件为空")
+    if len(file_bytes) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="文件过大，请控制在20MB以内")
+
+    # 检查文件类型
+    allowed_exts = {"xlsx", "xls", "csv", "pdf", "jpg", "jpeg", "png", "gif", "bmp", "webp"}
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in allowed_exts:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件格式 .{ext}，支持：Excel(.xlsx/.xls)、CSV、PDF、图片(.jpg/.png)"
+        )
+
+    try:
+        items = await parse_import_file(file_bytes, file.filename)
+        return {
+            "items": [item.dict() for item in items],
+            "count": len(items),
+            "filename": file.filename,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"文件解析失败: {str(e)[:200]}")
 
 
 @router.get("/list", response_model=AccountingEntryListResponse)

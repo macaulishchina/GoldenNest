@@ -17,7 +17,7 @@ class AccountingEntryBase(BaseModel):
 
 class AccountingEntryCreate(AccountingEntryBase):
     """创建记账条目请求"""
-    pass
+    source: Optional[str] = Field(None, description="来源: manual/voice/photo/import，不传则为manual")
 
 
 class AccountingEntryPhotoCreate(BaseModel):
@@ -84,12 +84,13 @@ class AccountingPhotoOCRResponse(BaseModel):
 
 
 class PhotoRecognizeItem(BaseModel):
-    """单条图片识别结果"""
+    """单条图片/语音识别结果"""
     amount: float = Field(0, description="金额")
     description: str = Field("消费", description="消费描述")
     category: str = Field("other", description="消费分类")
     entry_date: Optional[str] = Field(None, description="消费日期 ISO格式，null表示无法识别")
     confidence: float = Field(0.8, ge=0, le=1, description="识别置信度 0-1")
+    consumer_type: str = Field("family", description="消费类型: personal=个人消费, family=家庭消费")
 
 
 class PhotoRecognizeResponse(BaseModel):

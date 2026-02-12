@@ -332,8 +332,14 @@ export const aiConfigApi = {
 // AI Chat API - 通用 AI 对话助手
 export const aiChatApi = {
   // 与 AI 助手对话
-  chat: (data: { message: string; context_type?: string; history?: Array<{role: string; content: string}> }) => 
-    api.post('/ai/chat', data)
+  chat: (data: { message: string; context_type?: string; history?: Array<{role: string; content: string}>; persona?: string }) => 
+    api.post('/ai/chat', data),
+  // 语音转文字
+  voiceToText: (formData: FormData) =>
+    api.post('/ai/chat/voice-to-text', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    }),
 }
 
 // Transaction AI API - 交易智能分析
