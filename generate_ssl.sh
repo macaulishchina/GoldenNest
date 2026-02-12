@@ -1,19 +1,25 @@
 #!/bin/bash
 # ============================================================
 # 生成自签名 SSL 证书（用于局域网 HTTPS 部署）
-# 使用方法: bash generate_ssl.sh [你的局域网IP]
-# 示例:     bash generate_ssl.sh 192.168.1.100
+# 使用方法: bash generate_ssl.sh <IP1> [IP2] [IP3] ...
+# 示例:     bash generate_ssl.sh 192.168.1.100 1.2.3.4
 # ============================================================
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SSL_DIR="$SCRIPT_DIR/ssl"
-IP="${1:-$(hostname -I 2>/dev/null | awk '{print $1}' || echo '192.168.1.100')}"
+
+# 收集所有 IP 参数
+if [ $# -eq 0 ]; then
+  IP_LIST=("$(hostname -I 2>/dev/null | awk '{print $1}' || echo '192.168.1.100')")
+else
+  IP_LIST=("$@")
+fi
 
 echo "========================================"
 echo "  生成 SSL 自签名证书"
-echo "  IP: $IP"
+echo "  IP 列表: ${IP_LIST[*]}"
 echo "  输出目录: $SSL_DIR"
 echo "========================================"
 
@@ -33,9 +39,9 @@ openssl genrsa -out "$SSL_DIR/key.pem" 2048
 # 生成服务器证书签名请求
 openssl req -new -key "$SSL_DIR/key.pem" \
   -out "$SSL_DIR/server.csr" \
-  -subj "/C=CN/ST=Local/L=Local/O=GoldenNest/CN=$IP"
+  -subj "/C=CN/ST=Local/L=Local/O=GoldenNest/CN=${IP_LIST[0]}"
 
-# 创建扩展配置（支持 IP SAN）
+# 创建扩展配置（支持多个 IP SAN）
 cat > "$SSL_DIR/ext.cnf" << EOF
 authorityKeyIdentifier=keyid,issuer
 basicConstraints=CA:FALSE
@@ -44,9 +50,15 @@ subjectAltName = @alt_names
 
 [alt_names]
 DNS.1 = localhost
-IP.1 = $IP
-IP.2 = 127.0.0.1
+IP.1 = 127.0.0.1
 EOF
+
+# 动态添加所有 IP
+IP_INDEX=2
+for ip in "${IP_LIST[@]}"; do
+  echo "IP.$IP_INDEX = $ip" >> "$SSL_DIR/ext.cnf"
+  IP_INDEX=$((IP_INDEX + 1))
+done
 
 # 用 CA 签发服务器证书
 openssl x509 -req -in "$SSL_DIR/server.csr" \
@@ -66,19 +78,8 @@ echo "   $SSL_DIR/key.pem    — 服务器私钥"
 echo "   $SSL_DIR/ca.pem     — CA 根证书"
 echo "   $SSL_DIR/ca.key     — CA 私钥"
 echo ""
-echo "📱 手机导入步骤（消除安全警告）："
-echo "   1. 将 $SSL_DIR/ca.pem 传到手机"
-echo "      - 可以通过 USB、AirDrop、微信传文件、邮件等"
-echo "      - 或者启动一个临时 HTTP 服务:"
-echo "        cd $SSL_DIR && python3 -m http.server 9999"
-echo "        手机浏览器访问 http://$IP:9999/ca.pem 下载"
-echo ""
-echo "   2. 安装证书："
-echo "      【iPhone】"
-echo "        设置 → 已下载描述文件 → 安装"
-echo "        设置 → 通用 → 关于本机 → 证书信任设置 → 开启信任"
-echo "      【Android】"
-echo "        设置 → 安全 → 加密与凭据 → 安装证书 → CA证书"
-echo ""
-echo "   3. 安装后访问 https://$IP 不再弹安全警告！"
+echo "📱 手机导入 $SSL_DIR/ca.pem 后，以下地址均受信任："
+for ip in "${IP_LIST[@]}"; do
+  echo "   https://$ip"
+done
 echo ""

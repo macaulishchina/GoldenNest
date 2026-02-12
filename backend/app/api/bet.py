@@ -697,7 +697,7 @@ async def approve_bet_result(
             try:
                 winner_names = [users_dict.get(w.user_id, "Unknown") for w in winners]
                 loser_names = [users_dict.get(l.user_id, "Unknown") for l in losers]
-                content = f"获胜者：{'\u3001'.join(winner_names)}\n失败者：{'\u3001'.join(loser_names)}"
+                content = f"获胜者：{'、'.join(winner_names)}\n失败者：{'、'.join(loser_names)}"
                 if total_pool > 0:
                     content += f"\n涉及股权变动：¥{total_pool:,.2f}"
                 creator_name = users_dict.get(bet.creator_id, "Unknown")
