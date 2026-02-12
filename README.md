@@ -321,12 +321,16 @@ golden-nest/
 
 ## 📚 文档
 
-- � [启动脚本使用指南](docs/RUN_SCRIPTS_GUIDE.md) - 脚本功能、端口管理和常见问题
+- 🤖 [AI 功能指南](docs/AI_GUIDE.md) - AI 功能清单、模型配置、开发指南
+- 📋 [DashScope 模型目录](docs/DASHSCOPE_MODELS.md) - 185 个可用模型分类和推荐选型
+- 🚀 [启动脚本使用指南](docs/RUN_SCRIPTS_GUIDE.md) - 脚本功能、端口管理和常见问题
 - 🗄️ [数据库迁移指南](docs/DATABASE_MIGRATION_GUIDE.md) - 模型修改和数据库同步
-- 🔐 [Webhook 加密配置指南](docs/WEBHOOK_ENCRYPTION_GUIDE.md) - 微信通知加密配置
+- 📱 [移动端语音部署](docs/MOBILE_VOICE_DEPLOY.md) - HTTPS/SSL 配置和移动端语音功能
+- 🔐 [Webhook 加密配置](docs/WEBHOOK_ENCRYPTION_GUIDE.md) - 微信通知加密配置
 - 🚦 [API 速率限制配置](docs/RATE_LIMITING_GUIDE.md) - 防暴力破解和滥用配置
 - 🎨 [主题系统开发指南](docs/THEME_GUIDE.md) - 主题定制和扩展
-- ✅ [代码质量优化报告](docs/CODE_QUALITY_REPORT.md) - 代码质量改进记录
+- ✅ [代码质量报告](docs/CODE_QUALITY_REPORT.md) - 代码质量改进记录
+- 📜 [开发历史](docs/DEVELOPMENT_HISTORY.md) - 功能迭代时间线和架构决策
 
 ## 📄 开源协议
 

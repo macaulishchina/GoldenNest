@@ -183,7 +183,7 @@
   2. RATE_LIMITING_GUIDE.md
   3. DATABASE_MIGRATION_GUIDE.md
   4. RUN_SCRIPTS_GUIDE.md
-  5. QUICKSTART.md
+  5. THEME_GUIDE.md
 
 ---
 
@@ -253,7 +253,7 @@
 - [API 速率限制配置](RATE_LIMITING_GUIDE.md)
 - [数据库迁移指南](DATABASE_MIGRATION_GUIDE.md)
 - [启动脚本使用指南](RUN_SCRIPTS_GUIDE.md)
-- [快速开始指南](QUICKSTART.md)
+- [主题系统开发指南](THEME_GUIDE.md)
 
 ---
 
