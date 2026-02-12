@@ -80,7 +80,7 @@
       <div class="mobile-only">
         <n-spin :show="loading">
           <div class="record-cards" v-if="transactions.length > 0">
-            <div v-for="item in transactions" :key="item.id" class="record-card" :class="getCardClass(item.transaction_type)">
+            <div v-for="item in transactions" :key="item.id" class="record-card" :class="getCardClass(item.transaction_type)" @click="showDetail(item)">
               <div class="record-card-header">
                 <n-tag :type="getTagType(item.transaction_type)" size="small" :bordered="false">
                   {{ typeMap[item.transaction_type]?.label || item.transaction_type }}
@@ -102,6 +102,40 @@
         </n-spin>
       </div>
     </n-card>
+    <!-- 流水详情弹窗 -->
+    <n-modal
+      v-model:show="showDetailModal"
+      preset="card"
+      :title="detailItem ? (typeMap[detailItem.transaction_type]?.label || detailItem.transaction_type) + ' 详情' : '流水详情'"
+      :style="{ width: '92%', maxWidth: '500px' }"
+      :segmented="{ content: true }"
+    >
+      <template v-if="detailItem">
+        <n-descriptions :column="1" label-placement="left" bordered size="small">
+          <n-descriptions-item label="类型">
+            <n-tag :type="getTagType(detailItem.transaction_type)" size="small" :bordered="false">
+              {{ typeMap[detailItem.transaction_type]?.label || detailItem.transaction_type }}
+            </n-tag>
+          </n-descriptions-item>
+          <n-descriptions-item label="金额">
+            <span :style="{ color: getAmountColor(detailItem), fontWeight: 600, fontSize: '16px' }">
+              {{ formatAmount(detailItem.amount) }}
+            </span>
+          </n-descriptions-item>
+          <n-descriptions-item label="操作人">
+            {{ detailItem.user_nickname || '-' }}
+          </n-descriptions-item>
+          <n-descriptions-item label="时间">
+            {{ formatShortDateTime(detailItem.created_at) }}
+          </n-descriptions-item>
+          <n-descriptions-item label="说明">
+            <div style="white-space: pre-wrap; word-break: break-all; line-height: 1.6">
+              {{ detailItem.description || '无描述' }}
+            </div>
+          </n-descriptions-item>
+        </n-descriptions>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -123,6 +157,20 @@ const transactions = ref<any[]>([])
 const timeRange = ref('month')
 const aiLoading = ref(false)
 const aiInsights = ref<any>(null)
+const showDetailModal = ref(false)
+const detailItem = ref<any>(null)
+
+function showDetail(item: any) {
+  detailItem.value = item
+  showDetailModal.value = true
+}
+
+function getAmountColor(item: any): string {
+  if (item.transaction_type === 'investment_buy' || item.transaction_type === 'daily_expense') {
+    return 'var(--theme-warning)'
+  }
+  return item.amount > 0 ? 'var(--theme-success)' : 'var(--theme-error)'
+}
 
 // 格式化金额，支持隐私模式
 const formatAmount = (amount: number) => {
@@ -147,9 +195,9 @@ const typeMap: Record<string, { color: string, label: string }> = {
 }
 
 const columns = computed(() => [
-  { title: '日期', key: 'created_at', render: (row: any) => formatShortDateTime(row.created_at) },
-  { title: '类型', key: 'transaction_type', render: (row: any) => h(NTag, { size: 'small', bordered: false, style: { backgroundColor: typeMap[row.transaction_type]?.color + '20', color: typeMap[row.transaction_type]?.color } }, { default: () => typeMap[row.transaction_type]?.label || row.transaction_type }) },
-  { title: '金额', key: 'amount', render: (row: any) => {
+  { title: '日期', key: 'created_at', width: 140, render: (row: any) => formatShortDateTime(row.created_at) },
+  { title: '类型', key: 'transaction_type', width: 100, render: (row: any) => h(NTag, { size: 'small', bordered: false, style: { backgroundColor: typeMap[row.transaction_type]?.color + '20', color: typeMap[row.transaction_type]?.color } }, { default: () => typeMap[row.transaction_type]?.label || row.transaction_type }) },
+  { title: '金额', key: 'amount', width: 130, render: (row: any) => {
     // 投资买入使用中性色，其他根据正负判断
     let color = 'var(--theme-text-primary)'
     if (row.transaction_type === 'investment_buy' || row.transaction_type === 'daily_expense') {
@@ -159,8 +207,14 @@ const columns = computed(() => [
     }
     return h('span', { style: { color: color, fontWeight: 600 } }, formatAmount(row.amount))
   }},
-  { title: '操作人', key: 'user_nickname' },
-  { title: '说明', key: 'description', render: (row: any) => row.description || '-' }
+  { title: '操作人', key: 'user_nickname', width: 80 },
+  { title: '说明', key: 'description', ellipsis: { tooltip: true }, render: (row: any) => {
+    const desc = row.description || '-'
+    return h('span', {
+      style: { cursor: 'pointer', color: 'var(--theme-text-secondary)' },
+      onClick: () => showDetail(row)
+    }, desc)
+  }}
 ])
 
 // 获取卡片类名
@@ -306,6 +360,12 @@ onMounted(loadData)
   padding: 12px 14px;
   box-shadow: 0 2px 8px var(--theme-shadow-sm);
   border: 1px solid var(--theme-border-light);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.record-card:active {
+  transform: scale(0.98);
 }
 
 /* 各类型卡片颜色 */

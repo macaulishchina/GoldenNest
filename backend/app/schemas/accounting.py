@@ -75,12 +75,33 @@ class AccountingEntryListResponse(BaseModel):
 
 
 class AccountingPhotoOCRResponse(BaseModel):
-    """拍照识别OCR响应"""
+    """拍照识别OCR响应（旧版，保留兼容）"""
     amount: float
     category: str
     description: str
     confidence: float = Field(..., description="识别置信度 0-1")
     raw_text: str = Field(..., description="OCR原始文本")
+
+
+class PhotoRecognizeItem(BaseModel):
+    """单条图片识别结果"""
+    amount: float = Field(0, description="金额")
+    description: str = Field("消费", description="消费描述")
+    category: str = Field("other", description="消费分类")
+    entry_date: Optional[str] = Field(None, description="消费日期 ISO格式，null表示无法识别")
+    confidence: float = Field(0.8, ge=0, le=1, description="识别置信度 0-1")
+
+
+class PhotoRecognizeResponse(BaseModel):
+    """图片识别响应"""
+    items: List[PhotoRecognizeItem] = Field(..., description="识别出的消费条目列表")
+    image_paths: List[str] = Field(default_factory=list, description="已保存的图片路径列表")
+
+
+class PhotoCreateRequest(BaseModel):
+    """确认创建记账条目请求（基于识别结果）"""
+    items: List[PhotoRecognizeItem] = Field(..., min_length=1, description="确认的消费条目列表")
+    image_paths: List[str] = Field(default_factory=list, description="关联的图片路径列表")
 
 
 class AccountingVoiceTranscriptResponse(BaseModel):

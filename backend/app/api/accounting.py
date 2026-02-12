@@ -2,12 +2,12 @@
 小金库 (Golden Nest) - 记账系统 API
 """
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 import base64
 import os
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from sqlalchemy import select, func, and_, or_, desc
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from sqlalchemy import select, func, and_, or_, desc, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -23,9 +23,10 @@ from app.schemas.accounting import (
     AccountingEntryImport, AccountingEntryUpdate, AccountingEntryResponse,
     AccountingEntryListResponse, AccountingPhotoOCRResponse, AccountingVoiceTranscriptResponse,
     AccountingBatchExpenseRequest, AccountingStatsResponse, AccountingCategoryStatsResponse,
-    DuplicateCheckRequest, DuplicateCheckResponse, DuplicateCheckResult, DuplicateMatch, DuplicateMatchLevel
+    DuplicateCheckRequest, DuplicateCheckResponse, DuplicateCheckResult, DuplicateMatch, DuplicateMatchLevel,
+    PhotoRecognizeResponse, PhotoRecognizeItem, PhotoCreateRequest,
 )
-from app.services.ai_accounting import parse_receipt_image, transcribe_voice, categorize_entry, check_duplicate_with_ai
+from app.services.ai_accounting import parse_receipt_images, transcribe_voice, categorize_entry, check_duplicate_with_ai
 
 router = APIRouter()
 
@@ -140,93 +141,128 @@ async def create_entry(
     return response
 
 
-@router.post("/photo", response_model=AccountingEntryResponse)
-async def create_entry_from_photo(
-    file: UploadFile = File(..., description="小票图片文件"),
-    entry_date: Optional[str] = Form(None, description="消费日期"),
+@router.post("/photo/recognize", response_model=PhotoRecognizeResponse)
+async def recognize_photos(
+    files: List[UploadFile] = File(..., description="消费凭证图片（支持多张）"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """拍照识别创建记账条目（直接上传图片文件）"""
+    """上传图片并AI识别消费信息（仅识别，不创建记录）"""
     family, _ = await get_user_family(current_user, db)
 
-    # 读取图片文件
-    img_bytes = await file.read()
+    if not files:
+        raise HTTPException(status_code=400, detail="请至少上传一张图片")
 
-    # 保存图片到文件
-    filename = f"{uuid.uuid4().hex}.jpg"
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    filepath = os.path.join(UPLOAD_DIR, filename)
-    with open(filepath, "wb") as f:
-        f.write(img_bytes)
-    image_path = f"/uploads/receipts/{filename}"
+    image_b64_list = []
+    image_paths = []
 
-    # 转为base64供AI识别使用
-    img_b64 = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
+    for file in files:
+        img_bytes = await file.read()
 
-    # AI识别小票信息
+        # 保存图片到文件
+        ext = (file.filename or "").rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg"
+        filename = f"{uuid.uuid4().hex}.{ext}"
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        with open(filepath, "wb") as f:
+            f.write(img_bytes)
+        image_paths.append(f"/uploads/receipts/{filename}")
+
+        # 转为base64供AI识别
+        img_b64 = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
+        image_b64_list.append(img_b64)
+
+    # AI识别
     try:
-        ocr_result = await parse_receipt_image(img_b64)
+        items = await parse_receipt_images(image_b64_list)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"OCR识别失败: {str(e)}"
+            detail=f"AI识别失败: {str(e)}"
         )
 
-    # 验证金额
-    if not ocr_result.amount or ocr_result.amount <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="未能从图片中识别出有效金额，请手动输入"
-        )
+    return PhotoRecognizeResponse(items=items, image_paths=image_paths)
 
-    # 验证分类
-    try:
-        category_enum = AccountingCategory(ocr_result.category)
-    except ValueError:
-        category_enum = AccountingCategory.OTHER
 
-    # 解析日期
-    parsed_date = datetime.now()
-    if entry_date:
+@router.post("/photo/create", response_model=AccountingEntryListResponse)
+async def create_entries_from_photos(
+    request: PhotoCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """根据确认后的识别结果批量创建记账条目"""
+    family, _ = await get_user_family(current_user, db)
+
+    created_entries = []
+    # 将图片路径关联到第一条记录（如果有）
+    first_image = request.image_paths[0] if request.image_paths else None
+
+    for idx, item in enumerate(request.items):
+        if item.amount <= 0:
+            continue
+
+        # 验证分类
         try:
-            parsed_date = datetime.fromisoformat(entry_date.replace('Z', '+00:00'))
+            category_enum = AccountingCategory(item.category)
         except ValueError:
-            pass
+            category_enum = AccountingCategory.OTHER
 
-    # 创建记账条目
-    new_entry = AccountingEntry(
-        family_id=family.id,
-        user_id=current_user.id,
-        consumer_id=None,
-        amount=ocr_result.amount,
-        category=category_enum,
-        description=ocr_result.description,
-        entry_date=parsed_date,
-        source=AccountingEntrySource.PHOTO,
-        image_data=image_path
-    )
+        # 解析日期
+        parsed_date = datetime.now()
+        if item.entry_date:
+            try:
+                parsed_date = datetime.fromisoformat(item.entry_date.replace('Z', '+00:00'))
+            except ValueError:
+                pass
 
-    db.add(new_entry)
+        # 第一条关联图片，其余条不重复关联
+        image_data = first_image if idx == 0 and first_image else None
+
+        new_entry = AccountingEntry(
+            family_id=family.id,
+            user_id=current_user.id,
+            consumer_id=current_user.id,
+            amount=item.amount,
+            category=category_enum,
+            description=item.description,
+            entry_date=parsed_date,
+            source=AccountingEntrySource.PHOTO,
+            image_data=image_data,
+        )
+        db.add(new_entry)
+        created_entries.append(new_entry)
+
+    if not created_entries:
+        raise HTTPException(status_code=400, detail="没有有效的消费记录可创建")
+
     await db.flush()
-    await db.refresh(new_entry)
 
-    return AccountingEntryResponse(
-        id=new_entry.id,
-        family_id=new_entry.family_id,
-        user_id=new_entry.user_id,
-        consumer_id=new_entry.consumer_id,
-        amount=new_entry.amount,
-        category=new_entry.category.value,
-        description=new_entry.description,
-        entry_date=new_entry.entry_date,
-        source=new_entry.source.value,
-        image_data=new_entry.image_data,
-        has_image=bool(new_entry.image_data),
-        is_accounted=new_entry.is_accounted,
-        expense_request_id=new_entry.expense_request_id,
-        created_at=new_entry.created_at,
-        user_nickname=current_user.nickname
+    response_entries = []
+    for entry in created_entries:
+        await db.refresh(entry)
+        response_entries.append(AccountingEntryResponse(
+            id=entry.id,
+            family_id=entry.family_id,
+            user_id=entry.user_id,
+            consumer_id=entry.consumer_id,
+            amount=entry.amount,
+            category=entry.category.value,
+            description=entry.description,
+            entry_date=entry.entry_date,
+            source=entry.source.value,
+            image_data=entry.image_data,
+            has_image=bool(entry.image_data),
+            is_accounted=entry.is_accounted,
+            expense_request_id=entry.expense_request_id,
+            created_at=entry.created_at,
+            user_nickname=current_user.nickname,
+        ))
+
+    return AccountingEntryListResponse(
+        total=len(response_entries),
+        page=1,
+        page_size=len(response_entries),
+        entries=response_entries,
     )
 
 
@@ -391,10 +427,11 @@ async def list_entries(
     consumer_id: Optional[int] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
+    search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """获取记账条目列表（支持筛选）"""
+    """获取记账条目列表（支持筛选和模糊搜索）"""
     family, _ = await get_user_family(current_user, db)
 
     # 构建查询条件
@@ -422,6 +459,15 @@ async def list_entries(
 
     if end_date:
         conditions.append(AccountingEntry.entry_date <= end_date)
+
+    if search:
+        search_pattern = f"%{search}%"
+        conditions.append(
+            or_(
+                AccountingEntry.description.ilike(search_pattern),
+                cast(AccountingEntry.amount, String).like(search_pattern)
+            )
+        )
 
     # 查询总数
     count_result = await db.execute(
@@ -735,10 +781,20 @@ async def batch_create_expense(
     last_transaction = last_txn_result.scalar_one_or_none()
     current_balance = last_transaction.balance_after if last_transaction else 0
 
-    # 构建描述
+    # 构建描述（含时间范围）
     description = batch_data.description or "批量记账入账"
     entry_descs = [f"{e.description}(¥{e.amount})" for e in entries]
-    full_description = f"{description}: {', '.join(entry_descs)}"
+
+    # 计算入账记录覆盖的时间范围
+    entry_dates = [e.entry_date for e in entries if e.entry_date]
+    if entry_dates:
+        min_date = min(entry_dates)
+        max_date = max(entry_dates)
+        date_range_str = f"【{min_date.strftime('%Y-%m-%d %H:%M')} ~ {max_date.strftime('%Y-%m-%d %H:%M')}】"
+    else:
+        date_range_str = ""
+
+    full_description = f"{description}{date_range_str}: {', '.join(entry_descs)}"
 
     # 创建日常消费流水记录（不影响家庭自由资金余额）
     transaction = Transaction(
@@ -880,8 +936,11 @@ async def check_duplicates(
         # 查询可能重复的记录（同一家庭，金额相同或接近，时间在24小时内）
         from datetime import timedelta
 
-        time_window_start = entry_data.entry_date - timedelta(hours=24)
-        time_window_end = entry_data.entry_date + timedelta(hours=24)
+        # 确保 entry_date 为 naive datetime（数据库存储的是 naive datetime）
+        check_date = entry_data.entry_date.replace(tzinfo=None) if entry_data.entry_date.tzinfo else entry_data.entry_date
+
+        time_window_start = check_date - timedelta(hours=24)
+        time_window_end = check_date + timedelta(hours=24)
 
         # 金额允许0.1元的误差
         amount_min = entry_data.amount - 0.1
@@ -920,7 +979,7 @@ async def check_duplicates(
         max_match_level = DuplicateMatchLevel.UNIQUE
 
         for existing_entry in existing_entries:
-            time_diff = abs((entry_data.entry_date - existing_entry.entry_date).total_seconds())
+            time_diff = abs((check_date - existing_entry.entry_date).total_seconds())
             amount_diff = abs(entry_data.amount - existing_entry.amount)
 
             match_reasons = []

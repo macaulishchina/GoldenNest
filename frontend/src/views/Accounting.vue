@@ -1,11 +1,18 @@
 <template>
   <div class="accounting-container">
+    <!-- 查重中居中加载遮罩 -->
+    <div v-if="duplicateChecking" class="dedup-loading-overlay">
+      <div class="dedup-loading-content">
+        <n-spin size="large" />
+        <div style="margin-top: 12px; font-size: 14px; color: var(--theme-text-secondary)">正在查重中...</div>
+      </div>
+    </div>
     <n-space vertical :size="8">
       <!-- 页面头部 -->
       <div class="page-header">
         <div class="header-top">
           <h3 class="page-title">📒 家庭记账</h3>
-          <n-button type="primary" size="small" @click="showCreateModal = true">+ 新建记账</n-button>
+          <n-button type="primary" size="small" @click="openCreateModal">+ 新建记账</n-button>
         </div>
         <div class="stats-box">
           <div class="stats-box-top">
@@ -41,6 +48,16 @@
 
       <!-- 筛选条件 -->
       <div class="filter-bar">
+        <n-input
+          v-model:value="filterSearch"
+          placeholder="搜索描述..."
+          clearable
+          size="small"
+          style="min-width: 120px; flex: 2"
+          @update:value="handleSearchInput"
+        >
+          <template #prefix>🔍</template>
+        </n-input>
         <n-select
           v-model:value="filterCategory"
           :options="categoryOptions"
@@ -79,17 +96,29 @@
       </div>
 
       <!-- 记账列表 -->
-      <n-card title="记账记录" :bordered="false" class="entry-list-card">
-        <template #header-extra>
-          <n-space>
+      <n-card :bordered="false" class="entry-list-card">
+        <template #header>
+          <div class="entry-list-header">
+            <span class="page-title" style="font-size: 16px">记账记录</span>
+            <n-checkbox
+              :checked="isAllSelectableChecked"
+              :indeterminate="isSelectIndeterminate"
+              :disabled="selectableEntryIds.length === 0"
+              @update:checked="handleToggleSelectAll"
+              style="margin-left: 12px"
+            >
+              <span class="select-all-label">全选</span>
+            </n-checkbox>
+            <span style="flex: 1" />
             <n-button
               type="primary"
+              size="small"
               :disabled="selectedIds.length === 0"
               @click="handleBatchExpense"
             >
               批量入账 ({{ selectedIds.length }})
             </n-button>
-          </n-space>
+          </div>
         </template>
 
         <n-spin :show="loading">
@@ -124,8 +153,8 @@
                     <div class="entry-row3">
                       <span class="entry-date">{{ formatDate(entry.entry_date) }}</span>
                       <span class="entry-actions">
+                        <n-button v-if="entry.has_image || entry.image_data" size="tiny" quaternary @click.stop="handleViewImage(entry)">查看凭证</n-button>
                         <n-button v-if="!entry.is_accounted" size="tiny" quaternary type="error" @click.stop="handleDelete(entry.id)">删除</n-button>
-                        <n-button v-if="entry.has_image || entry.image_data" size="tiny" quaternary @click.stop="handleViewImage(entry)">查看小票</n-button>
                       </span>
                     </div>
                   </div>
@@ -218,43 +247,67 @@
           <n-space vertical size="large">
             <n-upload
               v-model:file-list="photoFileList"
-              :max="1"
+              :max="10"
               accept="image/*"
               list-type="image-card"
+              :multiple="true"
               @change="handlePhotoChange"
             >
-              <n-button>📷 选择小票照片</n-button>
+              <n-button>📷 上传</n-button>
             </n-upload>
 
-            <n-form-item label="消费日期（可选）">
-              <n-date-picker
-                v-model:value="photoForm.entry_date"
-                type="datetime"
-                clearable
-                style="width: 100%"
-              />
-            </n-form-item>
+            <!-- 识别结果预览 -->
+            <template v-if="photoRecognizeResults.length > 0">
+              <n-divider style="margin: 8px 0" />
+              <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px">识别结果（{{ photoRecognizeResults.length }} 条）</div>
+              <div class="recognize-list">
+                <div v-for="(item, idx) in photoRecognizeResults" :key="idx" class="recognize-item">
+                  <div class="recognize-item-header">
+                    <span class="recognize-item-idx">#{{ idx + 1 }}</span>
+                    <n-tag :type="item.confidence >= 0.8 ? 'success' : item.confidence >= 0.5 ? 'warning' : 'error'" size="small">
+                      {{ (item.confidence * 100).toFixed(0) }}%
+                    </n-tag>
+                    <n-button size="tiny" quaternary type="error" @click="photoRecognizeResults.splice(idx, 1)" style="margin-left: auto">
+                      移除
+                    </n-button>
+                  </div>
+                  <div style="display: flex; gap: 8px; align-items: flex-end">
+                    <n-form-item label="金额" :show-feedback="false" size="small" style="flex: 1; min-width: 0">
+                      <n-input-number v-model:value="item.amount" :min="0.01" :precision="2" size="small" style="width: 100%">
+                        <template #prefix>¥</template>
+                      </n-input-number>
+                    </n-form-item>
+                    <n-form-item label="分类" :show-feedback="false" size="small" style="flex: 0 0 100px">
+                      <n-select v-model:value="item.category" :options="categoryOptions" size="small" />
+                    </n-form-item>
+                  </div>
+                  <n-form-item label="消费日期" :show-feedback="false" size="small">
+                    <n-date-picker v-model:value="item.entry_date_ts" type="datetime" size="small" style="width: 100%" format="yyyy-MM-dd HH:mm" />
+                  </n-form-item>
+                  <n-form-item label="描述" :show-feedback="false" size="small">
+                    <n-input v-model:value="item.description" type="textarea" size="small" :autosize="{ minRows: 1, maxRows: 3 }" />
+                  </n-form-item>
+                </div>
+              </div>
+            </template>
 
-            <n-alert v-if="ocrResult" type="info" title="识别结果">
-              <n-space vertical size="small">
-                <n-text>金额: ¥{{ ocrResult.amount }}</n-text>
-                <n-text>描述: {{ ocrResult.description }}</n-text>
-                <n-text>分类: {{ getCategoryLabel(ocrResult.category) }}</n-text>
-                <n-text>置信度: {{ (ocrResult.confidence * 100).toFixed(1) }}%</n-text>
-              </n-space>
-            </n-alert>
-          </n-space>
-
-          <n-space justify="end" style="margin-top: 16px">
-            <n-button @click="showCreateModal = false">取消</n-button>
-            <n-button
-              type="primary"
-              :loading="creating"
-              :disabled="!photoFileList.length"
-              @click="handlePhotoCreate"
-            >
-              识别并创建
-            </n-button>
+            <n-space justify="end" style="margin-top: 16px">
+              <n-button
+                :loading="recognizing"
+                :disabled="!photoFileList.length"
+                @click="handlePhotoRecognize"
+              >
+                🔍 识别
+              </n-button>
+              <n-button
+                type="primary"
+                :loading="creating"
+                :disabled="photoRecognizeResults.length === 0"
+                @click="handlePhotoCreateConfirm"
+              >
+                ✅ 确认创建 ({{ photoRecognizeResults.length }})
+              </n-button>
+            </n-space>
           </n-space>
         </n-tab-pane>
 
@@ -415,145 +468,62 @@
     <n-modal
       v-model:show="showDuplicateModal"
       preset="card"
-      title="⚠️ 检测到可能重复的记账"
-      :style="{ width: isMobile ? '95%' : '700px' }"
+      title="⚠️ 检测到可能重复"
+      :style="{ width: isMobile ? '95%' : '500px' }"
       :segmented="{ content: true }"
     >
-      <n-space vertical size="large">
-        <n-alert type="warning">
-          检测到 {{ duplicateCheckResults.exact_duplicates_count }} 条完全重复，
-          {{ duplicateCheckResults.likely_duplicates_count }} 条很可能重复，
-          {{ duplicateCheckResults.possible_duplicates_count }} 条可能重复。
-          请确认如何处理这些记录。
-        </n-alert>
-
-        <n-space vertical size="medium">
+      <div style="max-height: 60vh; overflow-y: auto">
+        <div class="dup-list">
           <div v-for="result in duplicateCheckResults.results" :key="result.index">
-            <n-card
-              v-if="result.is_duplicate"
-              :title="`记账 #${result.index + 1}`"
-              size="small"
-              :bordered="true"
-            >
-              <!-- 新记账信息 -->
-              <n-descriptions :column="isMobile ? 1 : 2" size="small">
-                <n-descriptions-item label="金额">
-                  ¥{{ result.entry_data.amount.toFixed(2) }}
-                </n-descriptions-item>
-                <n-descriptions-item label="描述">
-                  {{ result.entry_data.description }}
-                </n-descriptions-item>
-                <n-descriptions-item label="分类">
-                  {{ getCategoryLabel(result.entry_data.category) }}
-                </n-descriptions-item>
-                <n-descriptions-item label="日期">
-                  {{ formatDate(result.entry_data.entry_date) }}
-                </n-descriptions-item>
-              </n-descriptions>
-
-              <!-- 重复匹配信息 -->
-              <n-divider style="margin: 12px 0" />
-              <n-text strong>匹配到 {{ result.duplicates.length }} 条已有记录：</n-text>
-
-              <n-space vertical size="small" style="margin-top: 8px">
-                <n-card
-                  v-for="(dup, dupIndex) in result.duplicates"
-                  :key="dupIndex"
-                  size="small"
-                  embedded
-                >
-                  <template #header>
-                    <n-space align="center">
-                      <n-tag
-                        v-if="dup.match_level === 'exact'"
-                        type="error"
-                        size="small"
-                      >
-                        完全重复
-                      </n-tag>
-                      <n-tag
-                        v-else-if="dup.match_level === 'likely'"
-                        type="warning"
-                        size="small"
-                      >
-                        很可能重复
-                      </n-tag>
-                      <n-tag
-                        v-else
-                        type="info"
-                        size="small"
-                      >
-                        可能重复
-                      </n-tag>
-                      <n-text>相似度: {{ (dup.similarity_score * 100).toFixed(0) }}%</n-text>
-                    </n-space>
-                  </template>
-
-                  <n-space vertical size="small">
-                    <n-text>¥{{ dup.existing_entry.amount.toFixed(2) }} - {{ dup.existing_entry.description }}</n-text>
-                    <n-text depth="3" style="font-size: 12px">
-                      {{ formatDate(dup.existing_entry.entry_date) }} · {{ dup.existing_entry.user_nickname }}
-                    </n-text>
-                    <n-divider style="margin: 4px 0" />
-                    <n-text depth="3" style="font-size: 12px">
-                      匹配原因：{{ dup.match_reasons.join('；') }}
-                    </n-text>
-                  </n-space>
-                </n-card>
-              </n-space>
-
-              <!-- 操作按钮 -->
-              <template #footer>
-                <n-space justify="end">
-                  <n-button
-                    size="small"
-                    @click="handleDuplicateAction(result.index, 'ignore')"
+            <div v-if="result.is_duplicate" class="dup-item">
+              <!-- 表头：checkbox + 新记录摘要 -->
+              <div class="dup-item-header">
+                <n-checkbox
+                  :checked="duplicateCheckedItems.has(result.index)"
+                  @update:checked="(val: boolean) => toggleDuplicateCheck(result.index, val)"
+                />
+                <span class="dup-item-title">
+                  #{{ result.index + 1 }}　¥{{ result.entry_data.amount.toFixed(2) }}　{{ result.entry_data.description }}
+                </span>
+              </div>
+              <!-- 匹配到的已有记录 -->
+              <div v-for="(dup, dupIndex) in result.duplicates" :key="dupIndex" class="dup-match">
+                <div class="dup-match-header">
+                  <n-tag
+                    :type="dup.match_level === 'exact' ? 'error' : dup.match_level === 'likely' ? 'warning' : 'info'"
+                    size="tiny"
                   >
-                    忽略重复，仍然记账
-                  </n-button>
-                  <n-button
-                    size="small"
-                    type="error"
-                    @click="handleDuplicateAction(result.index, 'skip')"
-                  >
-                    跳过此条
-                  </n-button>
-                  <n-button
-                    v-if="result.match_level === 'possible'"
-                    size="small"
-                    type="primary"
-                    @click="handleDuplicateAction(result.index, 'ai')"
-                  >
-                    让AI再次判断
-                  </n-button>
-                </n-space>
-              </template>
-            </n-card>
+                    {{ dup.match_level === 'exact' ? '完全重复' : dup.match_level === 'likely' ? '很可能重复' : '可能重复' }}
+                  </n-tag>
+                  <span class="dup-similarity">{{ (dup.similarity_score * 100).toFixed(0) }}%</span>
+                </div>
+                <div class="dup-match-info">
+                  ¥{{ dup.existing_entry.amount.toFixed(2) }} - {{ dup.existing_entry.description }}
+                  <span class="dup-match-meta">{{ formatDate(dup.existing_entry.entry_date) }} · {{ dup.existing_entry.user_nickname }}</span>
+                </div>
+              </div>
+            </div>
           </div>
-        </n-space>
-      </n-space>
+        </div>
+      </div>
 
       <template #footer>
-        <n-space justify="space-between">
-          <n-button @click="handleBatchDuplicateAction('skip-all')">
-            全部跳过重复
+        <div style="display: flex; justify-content: flex-end; gap: 8px">
+          <n-button @click="autoCheckDuplicateItems">
+            🤖 替我勾选
           </n-button>
-          <n-space>
-            <n-button @click="handleBatchDuplicateAction('ignore-all')">
-              全部忽略，继续记账
-            </n-button>
-            <n-button
-              type="primary"
-              @click="handleBatchDuplicateAction('smart')"
-            >
-              智能处理（跳过完全重复，保留其他）
-            </n-button>
-          </n-space>
-        </n-space>
+          <n-button
+            type="primary"
+            :loading="creating"
+            @click="handleBatchDuplicateAction"
+          >
+            ✅ 确认 ({{ duplicateCheckedItems.size }})
+          </n-button>
+        </div>
       </template>
     </n-modal>
 
-    <!-- 查看小票图片弹窗 -->
+    <!-- 查看图片弹窗 -->
     <n-modal
       v-model:show="showImageModal"
       :style="{ width: isMobile ? '95vw' : '80vw', maxWidth: '800px' }"
@@ -607,6 +577,8 @@ const filterCategory = ref<string | null>(null)
 const filterAccounted = ref<string | null>('false')
 const filterConsumer = ref<number | null>(null)
 const filterDateRange = ref<[number, number] | null>(null)
+const filterSearch = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 // 统计时间范围
 const statsRange = ref('month')
@@ -637,7 +609,10 @@ const duplicateCheckResults = ref({
   unique_count: 0
 })
 const pendingEntries = ref<any[]>([])  // 待创建的记账条目
+const pendingSource = ref<'manual' | 'photo' | 'import'>('manual')  // 待创建条目来源
 const duplicateActions = ref<Map<number, string>>(new Map())  // 每条记录的处理决定
+const duplicateCheckedItems = ref<Set<number>>(new Set())  // 勾选要记录的条目索引
+const duplicateChecking = ref(false)  // 查重中加载状态
 
 // 创建方式
 const createMethod = ref('manual')
@@ -660,10 +635,9 @@ const manualRules = {
 
 // 拍照识别
 const photoFileList = ref<any[]>([])
-const photoForm = ref({
-  entry_date: null
-})
-const ocrResult = ref<any>(null)
+const photoRecognizeResults = ref<any[]>([])
+const photoImagePaths = ref<string[]>([])
+const recognizing = ref(false)
 
 // 批量导入
 const importJson = ref('')
@@ -736,6 +710,35 @@ const selectedTotalAmount = computed(() => {
     .reduce((sum, e) => sum + e.amount, 0)
 })
 
+// 可选条目（未入账）
+const selectableEntryIds = computed(() => {
+  return entries.value.filter(e => !e.is_accounted).map(e => e.id)
+})
+
+// 是否全选
+const isAllSelectableChecked = computed(() => {
+  return selectableEntryIds.value.length > 0 && selectableEntryIds.value.every(id => selectedIds.value.includes(id))
+})
+
+// 是否半选
+const isSelectIndeterminate = computed(() => {
+  if (selectableEntryIds.value.length === 0) return false
+  const checkedCount = selectableEntryIds.value.filter(id => selectedIds.value.includes(id)).length
+  return checkedCount > 0 && checkedCount < selectableEntryIds.value.length
+})
+
+function handleToggleSelectAll(checked: boolean) {
+  if (checked) {
+    // 合并当前已选 + 所有可选
+    const newSet = new Set([...selectedIds.value, ...selectableEntryIds.value])
+    selectedIds.value = Array.from(newSet)
+  } else {
+    // 取消所有可选的，保留其他（理论上不会有已入账被选中）
+    const removeSet = new Set(selectableEntryIds.value)
+    selectedIds.value = selectedIds.value.filter(id => !removeSet.has(id))
+  }
+}
+
 // 辅助函数
 function getCategoryIcon(category: string): string {
   const icons: Record<string, string> = {
@@ -773,6 +776,14 @@ function formatDate(dateStr: string): string {
 }
 
 // API调用
+function handleSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    currentPage.value = 1
+    fetchEntries()
+  }, 400)
+}
+
 async function fetchEntries() {
   loading.value = true
   try {
@@ -788,6 +799,7 @@ async function fetchEntries() {
       params.start_date = dayjs(filterDateRange.value[0]).toISOString()
       params.end_date = dayjs(filterDateRange.value[1]).toISOString()
     }
+    if (filterSearch.value.trim()) params.search = filterSearch.value.trim()
 
     const { data } = await api.get('/accounting/list', { params })
     entries.value = data.entries
@@ -861,40 +873,146 @@ async function handleManualCreate() {
   }
 }
 
-async function handlePhotoChange() {
-  // 自动开始识别
-  if (photoFileList.value.length > 0) {
-    ocrResult.value = null
-  }
+function openCreateModal() {
+  // 清空拍照识别状态
+  resetPhotoState()
+  createMethod.value = 'manual'
+  showCreateModal.value = true
 }
 
-async function handlePhotoCreate() {
+function handlePhotoChange() {
+  // 上传新图片时不清空已有识别结果，用户可以追加图片后重新识别
+}
+
+function resetPhotoState() {
+  photoFileList.value = []
+  photoRecognizeResults.value = []
+  photoImagePaths.value = []
+  recognizing.value = false
+}
+
+async function handlePhotoRecognize() {
   if (photoFileList.value.length === 0) {
-    message.warning('请选择小票照片')
+    message.warning('请先上传图片')
     return
   }
 
-  creating.value = true
+  recognizing.value = true
   try {
-    const file = photoFileList.value[0].file!
     const formData = new FormData()
-    formData.append('file', file)
-    if (photoForm.value.entry_date) {
-      formData.append('entry_date', dayjs(photoForm.value.entry_date).toISOString())
+    for (const f of photoFileList.value) {
+      if (f.file) formData.append('files', f.file)
     }
 
-    const { data } = await api.post('/accounting/photo', formData, {
+    const { data } = await api.post('/accounting/photo/recognize', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
-    message.success('小票识别成功')
-    ocrResult.value = data
+
+    photoImagePaths.value = data.image_paths || []
+    // 将识别结果转换为可编辑格式，添加 entry_date_ts 用于日期选择器
+    photoRecognizeResults.value = (data.items || []).map((item: any) => ({
+      ...item,
+      entry_date_ts: item.entry_date ? new Date(item.entry_date).getTime() : Date.now(),
+    }))
+
+    if (photoRecognizeResults.value.length === 0) {
+      message.warning('未能识别出消费记录，请检查图片')
+    } else {
+      message.success(`识别出 ${photoRecognizeResults.value.length} 条消费记录`)
+    }
+  } catch (error: any) {
+    message.error(error.response?.data?.detail || 'AI识别失败')
+  } finally {
+    recognizing.value = false
+  }
+}
+
+async function handlePhotoCreateConfirm() {
+  if (photoRecognizeResults.value.length === 0) {
+    message.warning('没有可创建的识别结果')
+    return
+  }
+
+  // 验证金额
+  const invalidItems = photoRecognizeResults.value.filter((r: any) => !r.amount || r.amount <= 0)
+  if (invalidItems.length > 0) {
+    message.warning('存在金额为0的记录，请修正后再创建')
+    return
+  }
+
+  // 构建 entries 用于重复检测（需要 entry_date 为 ISO string）
+  const entries = photoRecognizeResults.value.map((r: any) => ({
+    amount: r.amount,
+    description: r.description,
+    category: r.category,
+    entry_date: r.entry_date_ts ? dayjs(r.entry_date_ts).toISOString() : dayjs().toISOString(),
+    consumer_id: null,
+  }))
+
+  // 先检查重复
+  const checkResult = await checkDuplicates(entries)
+
+  if (!checkResult) {
+    // 检测失败，直接创建
+    await photoCreateDirect()
+    return
+  }
+
+  // 如果有重复，显示确认弹窗
+  if (checkResult.exact_duplicates_count > 0 ||
+      checkResult.likely_duplicates_count > 0 ||
+      checkResult.possible_duplicates_count > 0) {
+    pendingEntries.value = entries
+    pendingSource.value = 'photo'
+    duplicateCheckResults.value = checkResult
+    duplicateActions.value.clear()
+    duplicateCheckedItems.value = new Set()
+    showDuplicateModal.value = true
+  } else {
+    // 没有重复，直接创建
+    await photoCreateDirect()
+  }
+}
+
+async function photoCreateDirect(itemIndices?: number[]) {
+  /**
+   * 直接通过拍照识别创建记账（跳过重复检测或已确认后）
+   * @param itemIndices 可选，指定要创建的项目索引。为空表示全部创建。
+   */
+  creating.value = true
+  try {
+    let itemsToCreate = photoRecognizeResults.value
+    if (itemIndices && itemIndices.length > 0) {
+      itemsToCreate = itemIndices.map(i => photoRecognizeResults.value[i]).filter(Boolean)
+    }
+
+    const items = itemsToCreate.map((r: any) => ({
+      amount: r.amount,
+      description: r.description,
+      category: r.category,
+      entry_date: r.entry_date_ts ? dayjs(r.entry_date_ts).toISOString() : null,
+      confidence: r.confidence,
+    }))
+
+    if (items.length === 0) {
+      message.info('没有需要创建的记录')
+      showDuplicateModal.value = false
+      return
+    }
+
+    await api.post('/accounting/photo/create', {
+      items,
+      image_paths: photoImagePaths.value,
+    })
+
+    message.success(`成功创建 ${items.length} 条记账记录`)
     showCreateModal.value = false
-    photoFileList.value = []
-    photoForm.value.entry_date = null
+    showDuplicateModal.value = false
+    resetPhotoState()
     await fetchEntries()
     await fetchStats()
   } catch (error: any) {
-    message.error(error.response?.data?.detail || 'OCR识别失败')
+    message.error(error.response?.data?.detail || '创建失败')
   } finally {
     creating.value = false
   }
@@ -1056,16 +1174,27 @@ function resetManualForm() {
 
 async function checkDuplicates(entries: any[]) {
   /**
-   * 检查一组记账条目是否重复
-   * @param entries 待检查的记账条目数组
-   * @returns 重复检测结果
+   * 检查一组记账条目是否重复，带居中加载动画和60秒超时
    */
+  duplicateChecking.value = true
   try {
-    const { data } = await api.post('/accounting/check-duplicates', { entries })
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 60000)
+
+    const { data } = await api.post('/accounting/check-duplicates', { entries }, {
+      signal: controller.signal
+    })
+    clearTimeout(timeout)
+    duplicateChecking.value = false
     return data
   } catch (error: any) {
-    console.error('重复检测失败:', error)
-    message.error(error.response?.data?.detail || '重复检测失败')
+    duplicateChecking.value = false
+    if (error.name === 'AbortError' || error.code === 'ERR_CANCELED') {
+      message.warning('查重超时，已跳过重复检测')
+    } else {
+      console.error('重复检测失败:', error)
+      message.warning('查重失败，已跳过重复检测')
+    }
     return null
   }
 }
@@ -1101,8 +1230,10 @@ async function handleManualCreateWithDuplicateCheck() {
       checkResult.likely_duplicates_count > 0 ||
       checkResult.possible_duplicates_count > 0) {
     pendingEntries.value = [entryData]
+    pendingSource.value = 'manual'
     duplicateCheckResults.value = checkResult
     duplicateActions.value.clear()
+    duplicateCheckedItems.value = new Set()
     showDuplicateModal.value = true
   } else {
     // 没有重复，直接创建
@@ -1130,92 +1261,71 @@ async function createEntryDirect(entryData: any) {
   }
 }
 
-function handleDuplicateAction(index: number, action: 'ignore' | 'skip' | 'ai') {
-  /**
-   * 处理单条记账的重复决定
-   * @param index 记账条目索引
-   * @param action 'ignore'=忽略重复继续记账, 'skip'=跳过此条, 'ai'=让AI再次判断
-   */
-  duplicateActions.value.set(index, action)
+function toggleDuplicateCheck(index: number, checked: boolean) {
+  if (checked) {
+    duplicateCheckedItems.value.add(index)
+  } else {
+    duplicateCheckedItems.value.delete(index)
+  }
+  // 触发响应式更新
+  duplicateCheckedItems.value = new Set(duplicateCheckedItems.value)
+}
 
-  if (action === 'ignore') {
-    // 立即创建这条记账
-    const entryData = pendingEntries.value[index]
-    if (entryData) {
-      createEntryDirect(entryData)
+function getMaxSimilarity(result: any): number {
+  if (!result.duplicates || result.duplicates.length === 0) return 0
+  return Math.max(...result.duplicates.map((d: any) => d.similarity_score))
+}
+
+async function executeDuplicateCreate(keepIndices: number[], skippedCount: number) {
+  if (keepIndices.length === 0) {
+    message.info(`全部跳过，未创建任何记录`)
+    showDuplicateModal.value = false
+    return
+  }
+
+  if (pendingSource.value === 'photo') {
+    await photoCreateDirect(keepIndices)
+    message.success(`创建 ${keepIndices.length} 条，跳过 ${skippedCount} 条重复`)
+  } else {
+    creating.value = true
+    try {
+      for (const idx of keepIndices) {
+        const entryData = pendingEntries.value[idx]
+        if (entryData) {
+          await api.post('/accounting/entry', entryData)
+        }
+      }
+      message.success(`创建 ${keepIndices.length} 条，跳过 ${skippedCount} 条重复`)
+      showDuplicateModal.value = false
+      showCreateModal.value = false
+      resetManualForm()
+      await fetchEntries()
+      await fetchStats()
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '处理失败')
+    } finally {
+      creating.value = false
     }
-  } else if (action === 'skip') {
-    message.info(`已跳过第 ${index + 1} 条记账`)
-  } else if (action === 'ai') {
-    message.info('AI再次判断功能开发中...')
-    // TODO: 调用AI进行更详细的判断
   }
 }
 
-async function handleBatchDuplicateAction(action: 'skip-all' | 'ignore-all' | 'smart') {
-  /**
-   * 批量处理重复记账
-   * @param action
-   *   - 'skip-all': 全部跳过
-   *   - 'ignore-all': 全部忽略，继续记账
-   *   - 'smart': 智能处理（跳过完全重复，保留其他）
-   */
-  if (action === 'skip-all') {
-    showDuplicateModal.value = false
-    message.info('已跳过所有重复记账')
-  } else if (action === 'ignore-all') {
-    // 全部创建
-    creating.value = true
-    try {
-      for (const entryData of pendingEntries.value) {
-        await api.post('/accounting/entry', entryData)
-      }
-      message.success(`成功创建 ${pendingEntries.value.length} 条记账`)
-      showDuplicateModal.value = false
-      showCreateModal.value = false
-      resetManualForm()
-      await fetchEntries()
-      await fetchStats()
-    } catch (error: any) {
-      message.error(error.response?.data?.detail || '批量记账失败')
-    } finally {
-      creating.value = false
-    }
-  } else if (action === 'smart') {
-    // 智能处理：跳过完全重复，创建其他
-    creating.value = true
-    try {
-      let createdCount = 0
-      let skippedCount = 0
-
-      for (let i = 0; i < duplicateCheckResults.value.results.length; i++) {
-        const result = duplicateCheckResults.value.results[i]
-
-        if (result.match_level === 'exact') {
-          // 完全重复，跳过
-          skippedCount++
-        } else {
-          // 其他情况，创建
-          const entryData = pendingEntries.value[i]
-          if (entryData) {
-            await api.post('/accounting/entry', entryData)
-            createdCount++
-          }
-        }
-      }
-
-      message.success(`智能处理完成：创建 ${createdCount} 条，跳过 ${skippedCount} 条重复`)
-      showDuplicateModal.value = false
-      showCreateModal.value = false
-      resetManualForm()
-      await fetchEntries()
-      await fetchStats()
-    } catch (error: any) {
-      message.error(error.response?.data?.detail || '智能处理失败')
-    } finally {
-      creating.value = false
+function autoCheckDuplicateItems() {
+  // 替我勾选：相似度 < 60% 的自动勾选，>= 60% 的取消勾选
+  const newChecked = new Set<number>()
+  for (let i = 0; i < duplicateCheckResults.value.results.length; i++) {
+    const result = duplicateCheckResults.value.results[i]
+    if (!result.is_duplicate || getMaxSimilarity(result) < 0.6) {
+      newChecked.add(i)
     }
   }
+  duplicateCheckedItems.value = newChecked
+}
+
+async function handleBatchDuplicateAction() {
+  // 按勾选处理：只创建勾选的条目
+  const keepIndices = Array.from(duplicateCheckedItems.value)
+  const skippedCount = duplicateCheckResults.value.results.filter((r: any) => r.is_duplicate).length - keepIndices.length
+  await executeDuplicateCreate(keepIndices, skippedCount)
 }
 
 async function handleImportCreateWithDuplicateCheck() {
@@ -1244,8 +1354,10 @@ async function handleImportCreateWithDuplicateCheck() {
         checkResult.likely_duplicates_count > 0 ||
         checkResult.possible_duplicates_count > 0) {
       pendingEntries.value = entries
+      pendingSource.value = 'import'
       duplicateCheckResults.value = checkResult
       duplicateActions.value.clear()
+      duplicateCheckedItems.value = new Set()
       showDuplicateModal.value = true
     } else {
       // 没有重复，直接导入
@@ -1293,12 +1405,49 @@ onMounted(() => {
 <style scoped>
 .accounting-container {
   padding: 20px;
+  position: relative;
+}
+
+/* ===== 查重加载遮罩 ===== */
+.dedup-loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dedup-loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 48px;
+  border-radius: 16px;
+  background: var(--theme-bg-card, #1a1a2e);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
 /* ===== 记账列表卡片 ===== */
 .entry-list-card :deep(.n-card__content) {
   padding-left: 8px !important;
   padding-right: 8px !important;
+}
+
+.entry-list-header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.select-all-label {
+  font-size: 13px;
+  color: var(--theme-text-secondary, #6b7280);
+  user-select: none;
 }
 
 /* ===== 页面头部 ===== */
@@ -1377,6 +1526,98 @@ onMounted(() => {
 
 .stat-value.warn {
   color: var(--theme-warning, #f0a020);
+}
+
+/* ===== 识别结果预览 ===== */
+.recognize-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.recognize-item {
+  padding: 12px;
+  border: 1px solid var(--theme-border, #e5e7eb);
+  border-radius: 10px;
+  background: var(--theme-bg-card, #fff);
+}
+
+.recognize-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.recognize-item-idx {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--theme-text-secondary, #6b7280);
+}
+
+/* ===== 重复检测列表 ===== */
+.dup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dup-item {
+  padding: 10px 12px;
+  border: 1px solid var(--theme-border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--theme-bg-card, #fff);
+}
+
+.dup-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.dup-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.dup-match {
+  margin-left: 24px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--theme-bg-hover, rgba(255,255,255,0.04));
+  border: 1px solid var(--theme-border-light, rgba(255,255,255,0.06));
+  margin-top: 4px;
+}
+
+.dup-match-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.dup-similarity {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--theme-text-secondary);
+}
+
+.dup-match-info {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+  line-height: 1.5;
+}
+
+.dup-match-meta {
+  display: block;
+  font-size: 11px;
+  color: var(--theme-text-tertiary);
 }
 
 /* ===== 筛选栏 ===== */

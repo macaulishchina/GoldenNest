@@ -3,106 +3,138 @@
 OCR识别小票、语音转文本、自动分类
 """
 import base64
+import json
 import re
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from app.schemas.accounting import (
     AccountingPhotoOCRResponse,
-    AccountingVoiceTranscriptResponse
+    AccountingVoiceTranscriptResponse,
+    PhotoRecognizeItem,
 )
 from app.services.ai_service import ai_service
 
 
-async def parse_receipt_image(image_data: str) -> AccountingPhotoOCRResponse:
+async def parse_receipt_images(image_data_list: List[str]) -> List[PhotoRecognizeItem]:
     """
-    解析小票图片，提取金额、商品和分类
+    解析一张或多张消费凭证图片，智能判断是一次消费还是多次消费。
 
     Args:
-        image_data: Base64编码的图片数据（包含data:image前缀）
+        image_data_list: Base64编码的图片数据列表（每张包含data:image前缀）
 
     Returns:
-        AccountingPhotoOCRResponse: 包含金额、分类、描述的响应对象
+        List[PhotoRecognizeItem]: 识别出的消费条目列表（可能1条也可能多条）
     """
-    # 构造提示词
-    prompt = """请分析这张小票或收据图片，提取以下信息（以JSON格式返回）：
-1. amount: 总金额（数字，不包含货币符号）
-2. description: 商品或服务的简短描述（10字以内）
-3. category: 消费分类，必须从以下选项中选择一个：
-   - food: 餐饮
-   - transport: 交通
-   - shopping: 购物
-   - entertainment: 娱乐
-   - healthcare: 医疗
-   - education: 教育
-   - housing: 住房
-   - utilities: 水电煤
-   - other: 其他
+    n = len(image_data_list)
+    prompt = f"""你是专业的消费凭证识别助手。用户上传了 {n} 张图片。
 
-返回格式示例：
-{
-  "amount": 58.5,
-  "description": "超市购物",
-  "category": "shopping"
-}
+请仔细分析所有图片，判断它们代表的消费情况：
+- 多张图片可能是同一笔消费的不同角度/页面（如小票正反面），此时合并为1条记录
+- 多张图片也可能是不同的消费记录，此时分别提取每条记录
+- 单张图片中也可能包含多条消费记录（如月账单），此时拆分为多条
+
+对每条消费记录，提取以下字段：
+1. amount: 总金额（数字，不含货币符号）
+2. description: 商品或服务的简短描述（15字以内）
+3. category: 消费分类，必须从以下选项中选一个：
+   food(餐饮), transport(交通), shopping(购物), entertainment(娱乐),
+   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他)
+4. entry_date: 消费日期时间（ISO 8601格式，如 "2025-10-25T14:13:00"）。
+   如果图片中有明确日期则提取；如果无法识别则返回 null
+5. confidence: 识别置信度（0-1之间的数字）
+
+返回JSON数组格式，即使只有1条也用数组：
+```json
+[
+  {{
+    "amount": 51.04,
+    "description": "Steam游戏购买",
+    "category": "entertainment",
+    "entry_date": "2025-10-25T14:13:00",
+    "confidence": 0.95
+  }}
+]
+```
 
 注意：
-- 如果无法识别金额，返回0
-- 如果无法识别商品，description返回"消费"
-- 如果无法确定分类，category返回"other"
-- confidence字段表示识别置信度（0-1之间）
+- 金额无法识别时返回 0
+- 描述无法识别时返回 "消费"
+- 分类不确定时返回 "other"
+- 日期无法识别时 entry_date 返回 null
+- 只返回JSON数组，不要返回其他内容
 """
 
     try:
-        # 调用视觉API
-        response_text = await ai_service.chat_with_vision(
-            text=prompt,
-            image_base64=image_data,
-            system_prompt="你是一个专业的小票识别助手，能够准确提取小票信息并分类。"
+        # 构建多图消息内容
+        content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for img_b64 in image_data_list:
+            if not img_b64.startswith("data:"):
+                img_b64 = f"data:image/jpeg;base64,{img_b64}"
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": img_b64},
+            })
+
+        # 直接构建消息调用底层API
+        messages = [
+            {"role": "system", "content": "你是专业的消费凭证识别助手，能从小票、发票、订单截图、账单等各类图片中准确提取消费信息。只返回JSON。"},
+            {"role": "user", "content": content},
+        ]
+
+        response_text = await ai_service._call_chat(
+            messages=messages,
+            max_tokens=4000,
+            temperature=0.1,
         )
 
-        # 解析JSON响应
-        import json
-
-        # 提取JSON（可能包含在```json代码块中）
+        # 解析JSON数组
         json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1)
-        else:
-            # 尝试直接解析整个响应
-            json_str = response_text
+        json_str = json_match.group(1) if json_match else response_text
 
-        result = json.loads(json_str)
+        # 尝试提取 [ ... ]
+        arr_match = re.search(r'\[.*\]', json_str, re.DOTALL)
+        if arr_match:
+            json_str = arr_match.group(0)
 
-        # 验证并提取字段
-        amount = float(result.get("amount", 0))
-        description = str(result.get("description", "消费"))
-        category = str(result.get("category", "other"))
-        confidence = float(result.get("confidence", 0.8))
+        results = json.loads(json_str)
+        if isinstance(results, dict):
+            results = [results]
 
-        # 验证分类有效性
         valid_categories = [
             "food", "transport", "shopping", "entertainment",
             "healthcare", "education", "housing", "utilities", "other"
         ]
-        if category not in valid_categories:
-            category = "other"
 
-        return AccountingPhotoOCRResponse(
-            amount=amount,
-            category=category,
-            description=description,
-            confidence=confidence,
-            raw_text=response_text
-        )
+        items = []
+        for r in results:
+            category = str(r.get("category", "other"))
+            if category not in valid_categories:
+                category = "other"
+
+            entry_date = r.get("entry_date")
+            if entry_date and isinstance(entry_date, str):
+                # 保持字符串格式，前端/API层再解析
+                pass
+            else:
+                entry_date = None
+
+            items.append(PhotoRecognizeItem(
+                amount=float(r.get("amount", 0)),
+                description=str(r.get("description", "消费")),
+                category=category,
+                entry_date=entry_date,
+                confidence=min(1.0, max(0.0, float(r.get("confidence", 0.8)))),
+            ))
+
+        return items if items else [PhotoRecognizeItem(
+            amount=0, description="识别失败", category="other",
+            entry_date=None, confidence=0.0
+        )]
 
     except Exception as e:
-        # OCR失败时返回默认值
-        return AccountingPhotoOCRResponse(
-            amount=0,
-            category="other",
-            description="识别失败",
-            confidence=0.0,
-            raw_text=str(e)
-        )
+        return [PhotoRecognizeItem(
+            amount=0, description=f"识别失败: {str(e)[:50]}",
+            category="other", entry_date=None, confidence=0.0
+        )]
 
 
 async def transcribe_voice(audio_data: str) -> AccountingVoiceTranscriptResponse:

@@ -44,6 +44,7 @@ Desktop.ini
 *.sqlite
 *.sqlite3
 data/
+backend/uploads/
 
 # 日志
 *.log
@@ -77,3 +78,5 @@ frontend/.frontend_owner
 .frontend_test_pid
 backend/.backend_test_pid
 frontend/.frontend_test_pid
+
+TODO.md
