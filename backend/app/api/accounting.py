@@ -26,7 +26,7 @@ from app.schemas.accounting import (
     DuplicateCheckRequest, DuplicateCheckResponse, DuplicateCheckResult, DuplicateMatch, DuplicateMatchLevel,
     PhotoRecognizeResponse, PhotoRecognizeItem, PhotoCreateRequest,
 )
-from app.services.ai_accounting import parse_receipt_images, transcribe_voice, categorize_entry, check_duplicate_with_ai
+from app.services.ai_accounting import parse_receipt_images, transcribe_voice, categorize_entry, check_duplicate_with_ai, transcribe_audio_file, parse_voice_text
 
 router = APIRouter()
 
@@ -264,6 +264,57 @@ async def create_entries_from_photos(
         page_size=len(response_entries),
         entries=response_entries,
     )
+
+
+# ==================== 语音识别 ====================
+
+@router.post("/voice/recognize")
+async def voice_recognize(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    语音识别：上传音频文件 → Whisper转录 → AI解析为记账条目
+    """
+    # 读取音频文件
+    audio_bytes = await file.read()
+    if len(audio_bytes) == 0:
+        raise HTTPException(status_code=400, detail="音频文件为空")
+    if len(audio_bytes) > 25 * 1024 * 1024:  # 25MB limit
+        raise HTTPException(status_code=400, detail="音频文件过大，请控制在25MB以内")
+
+    filename = file.filename or "audio.webm"
+
+    try:
+        # 1. Whisper 转录
+        transcript = await transcribe_audio_file(audio_bytes, filename)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=str(e)
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"语音转录失败: {str(e)}"
+        )
+
+    if not transcript.strip():
+        return {"transcript": "", "items": []}
+
+    try:
+        # 2. AI 解析文本 → 结构化条目
+        items = await parse_voice_text(transcript)
+    except Exception as e:
+        # 解析失败仍返回转录文本，前端可手动输入
+        return {"transcript": transcript, "items": []}
+
+    return {
+        "transcript": transcript,
+        "items": [item.dict() for item in items],
+    }
 
 
 @router.post("/voice", response_model=AccountingEntryResponse)

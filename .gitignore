@@ -67,6 +67,11 @@ temp/
 *.tmp
 *.bak
 
+# SSL 证书（包含私钥，勿提交）
+ssl/
+*.pem
+*.key
+
 # 服务启动标记文件
 .backend_owner
 .frontend_owner

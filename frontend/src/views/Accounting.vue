@@ -144,8 +144,8 @@
                       {{ getCategoryLabel(entry.category) }}
                       <span class="dot">·</span>
                       {{ entry.consumer_nickname || '家庭共同' }}
-                      <span class="dot">·</span>
-                      {{ entry.user_nickname }}
+                      <!-- <span class="dot">·</span>
+                      {{ entry.user_nickname }} -->
                       <span class="dot">·</span>
                       {{ getSourceLabel(entry.source) }}
                     </div>
@@ -312,12 +312,87 @@
         </n-tab-pane>
 
         <n-tab-pane name="voice" tab="语音输入">
-          <n-space vertical size="large" align="center">
-            <n-text depth="3">语音识别功能开发中...</n-text>
-            <n-text depth="3">示例："中午吃饭花了38块5"</n-text>
-            <n-button size="large" circle type="primary" disabled>
-              🎤
-            </n-button>
+          <n-space vertical size="large">
+            <!-- 录音区 -->
+            <div class="voice-record-area">
+              <div class="voice-hint">
+                {{ voiceRecording ? '正在录音...' : (voiceTranscript ? '识别完成' : '点击麦克风开始录音') }}
+              </div>
+              <div class="voice-btn-wrap">
+                <button
+                  class="voice-mic-btn"
+                  :class="{ recording: voiceRecording }"
+                  @click="toggleVoiceRecording"
+                  :disabled="voiceRecognizing"
+                >
+                  <span class="mic-icon">🎤</span>
+                  <span v-if="voiceRecording" class="voice-pulse"></span>
+                </button>
+              </div>
+              <div v-if="voiceRecording" class="voice-timer">{{ voiceTimerText }}</div>
+              <div v-if="voiceRecognizing" class="voice-status">
+                <n-spin size="small" />
+                <span style="margin-left: 8px">识别中...</span>
+              </div>
+            </div>
+
+            <!-- 转录文本 -->
+            <div v-if="voiceTranscript" class="voice-transcript">
+              <n-text depth="3" style="font-size: 12px">语音内容：</n-text>
+              <n-text>{{ voiceTranscript }}</n-text>
+            </div>
+
+            <!-- 识别结果（复用拍照识别的样式） -->
+            <template v-if="voiceRecognizeResults.length > 0">
+              <n-divider style="margin: 8px 0" />
+              <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px">识别结果（{{ voiceRecognizeResults.length }} 条）</div>
+              <div class="recognize-list">
+                <div v-for="(item, idx) in voiceRecognizeResults" :key="idx" class="recognize-item">
+                  <div class="recognize-item-header">
+                    <span class="recognize-item-idx">#{{ idx + 1 }}</span>
+                    <n-tag :type="item.confidence >= 0.8 ? 'success' : item.confidence >= 0.5 ? 'warning' : 'error'" size="small">
+                      {{ (item.confidence * 100).toFixed(0) }}%
+                    </n-tag>
+                    <n-button size="tiny" quaternary type="error" @click="voiceRecognizeResults.splice(idx, 1)" style="margin-left: auto">
+                      移除
+                    </n-button>
+                  </div>
+                  <div style="display: flex; gap: 8px; align-items: flex-end">
+                    <n-form-item label="金额" :show-feedback="false" size="small" style="flex: 1; min-width: 0">
+                      <n-input-number v-model:value="item.amount" :min="0.01" :precision="2" size="small" style="width: 100%">
+                        <template #prefix>¥</template>
+                      </n-input-number>
+                    </n-form-item>
+                    <n-form-item label="分类" :show-feedback="false" size="small" style="flex: 0 0 100px">
+                      <n-select v-model:value="item.category" :options="categoryOptions" size="small" />
+                    </n-form-item>
+                  </div>
+                  <n-form-item label="消费日期" :show-feedback="false" size="small">
+                    <n-date-picker v-model:value="item.entry_date_ts" type="datetime" size="small" style="width: 100%" format="yyyy-MM-dd HH:mm" />
+                  </n-form-item>
+                  <n-form-item label="描述" :show-feedback="false" size="small">
+                    <n-input v-model:value="item.description" type="textarea" size="small" :autosize="{ minRows: 1, maxRows: 3 }" />
+                  </n-form-item>
+                </div>
+              </div>
+            </template>
+
+            <n-space justify="end" style="margin-top: 16px">
+              <n-button
+                v-if="voiceTranscript || voiceRecognizeResults.length > 0"
+                @click="resetVoiceState"
+              >
+                🔄 重新录音
+              </n-button>
+              <n-button
+                type="primary"
+                :loading="creating"
+                :disabled="voiceRecognizeResults.length === 0"
+                @click="handleVoiceCreateConfirm"
+              >
+                ✅ 确认创建 ({{ voiceRecognizeResults.length }})
+              </n-button>
+            </n-space>
           </n-space>
         </n-tab-pane>
 
@@ -639,6 +714,21 @@ const photoRecognizeResults = ref<any[]>([])
 const photoImagePaths = ref<string[]>([])
 const recognizing = ref(false)
 
+// 语音输入
+const voiceRecording = ref(false)
+const voiceRecognizing = ref(false)
+const voiceTranscript = ref('')
+const voiceRecognizeResults = ref<any[]>([])
+const voiceTimer = ref(0)
+const voiceTimerText = computed(() => {
+  const m = Math.floor(voiceTimer.value / 60)
+  const s = voiceTimer.value % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+})
+let mediaRecorder: MediaRecorder | null = null
+let audioChunks: Blob[] = []
+let voiceTimerInterval: ReturnType<typeof setInterval> | null = null
+
 // 批量导入
 const importJson = ref('')
 const importTemplate = `[
@@ -874,8 +964,9 @@ async function handleManualCreate() {
 }
 
 function openCreateModal() {
-  // 清空拍照识别状态
+  // 清空拍照识别 & 语音状态
   resetPhotoState()
+  resetVoiceState()
   createMethod.value = 'manual'
   showCreateModal.value = true
 }
@@ -890,6 +981,188 @@ function resetPhotoState() {
   photoImagePaths.value = []
   recognizing.value = false
 }
+
+// ========== 语音输入 ==========
+
+function resetVoiceState() {
+  stopVoiceRecording()
+  voiceTranscript.value = ''
+  voiceRecognizeResults.value = []
+  voiceTimer.value = 0
+  voiceRecognizing.value = false
+}
+
+async function toggleVoiceRecording() {
+  if (voiceRecording.value) {
+    stopVoiceRecording()
+  } else {
+    await startVoiceRecording()
+  }
+}
+
+async function startVoiceRecording() {
+  try {
+    // navigator.mediaDevices 仅在安全上下文（HTTPS/localhost）可用
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      message.error('当前浏览器不支持录音（需要 HTTPS 访问）。请使用 HTTPS 或 localhost 访问本站。')
+      return
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    // 选择浏览器支持的格式
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+          ? 'audio/mp4'
+          : ''
+
+    mediaRecorder = mimeType
+      ? new MediaRecorder(stream, { mimeType })
+      : new MediaRecorder(stream)
+
+    audioChunks = []
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) audioChunks.push(e.data)
+    }
+    mediaRecorder.onstop = async () => {
+      // 停止所有音轨
+      stream.getTracks().forEach(t => t.stop())
+      if (audioChunks.length === 0) return
+      const blob = new Blob(audioChunks, { type: mediaRecorder?.mimeType || 'audio/webm' })
+      await sendVoiceToServer(blob)
+    }
+
+    mediaRecorder.start(1000) // 每秒一个 chunk
+    voiceRecording.value = true
+    voiceTranscript.value = ''
+    voiceRecognizeResults.value = []
+    voiceTimer.value = 0
+    voiceTimerInterval = setInterval(() => { voiceTimer.value++ }, 1000)
+  } catch (err: any) {
+    console.error('Microphone access error:', err)
+    if (err.name === 'NotAllowedError') {
+      message.error('请允许使用麦克风权限')
+    } else if (err.name === 'NotFoundError') {
+      message.error('未检测到麦克风设备')
+    } else {
+      message.error('无法启动录音: ' + (err.message || '未知错误'))
+    }
+  }
+}
+
+function stopVoiceRecording() {
+  if (voiceTimerInterval) {
+    clearInterval(voiceTimerInterval)
+    voiceTimerInterval = null
+  }
+  voiceRecording.value = false
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  }
+}
+
+async function sendVoiceToServer(blob: Blob) {
+  voiceRecognizing.value = true
+  try {
+    // 根据 MIME 确定扩展名
+    const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm'
+    const formData = new FormData()
+    formData.append('file', blob, `voice.${ext}`)
+
+    const { data } = await api.post('/accounting/voice/recognize', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    })
+
+    voiceTranscript.value = data.transcript || ''
+
+    if (data.items && data.items.length > 0) {
+      voiceRecognizeResults.value = data.items.map((item: any) => ({
+        ...item,
+        entry_date_ts: item.entry_date ? new Date(item.entry_date).getTime() : Date.now(),
+      }))
+      message.success(`识别到 ${data.items.length} 条记录`)
+    } else if (voiceTranscript.value) {
+      message.warning('已转录语音，但未识别出消费记录，请手动输入')
+    } else {
+      message.warning('未识别到语音内容，请重新录制')
+    }
+  } catch (err: any) {
+    console.error('Voice recognize error:', err)
+    message.error(err.response?.data?.detail || '语音识别失败，请重试')
+  } finally {
+    voiceRecognizing.value = false
+  }
+}
+
+async function handleVoiceCreateConfirm() {
+  if (voiceRecognizeResults.value.length === 0) return
+
+  const invalidItems = voiceRecognizeResults.value.filter((r: any) => !r.amount || r.amount <= 0)
+  if (invalidItems.length > 0) {
+    message.warning('存在金额为0的记录，请修正后再创建')
+    return
+  }
+
+  // 构建 entries 用于重复检测
+  const entries = voiceRecognizeResults.value.map((r: any) => ({
+    amount: r.amount,
+    description: r.description,
+    category: r.category,
+    entry_date: r.entry_date_ts ? dayjs(r.entry_date_ts).toISOString() : dayjs().toISOString(),
+    consumer_id: null,
+  }))
+
+  // 先检查重复
+  const checkResult = await checkDuplicates(entries)
+  if (!checkResult) {
+    await voiceCreateDirect()
+    return
+  }
+
+  if (checkResult.exact_duplicates_count > 0 ||
+      checkResult.likely_duplicates_count > 0 ||
+      checkResult.possible_duplicates_count > 0) {
+    // 设置 pending 数据供 dedup 弹窗使用
+    pendingEntries.value = entries
+    pendingSource.value = 'manual' // voice 走 manual 逐条创建路径
+    duplicateCheckResults.value = checkResult
+    duplicateActions.value.clear()
+    duplicateCheckedItems.value = new Set()
+    showDuplicateModal.value = true
+  } else {
+    // 没有重复，直接创建，不弹窗
+    await voiceCreateDirect()
+  }
+}
+
+async function voiceCreateDirect() {
+  creating.value = true
+  try {
+    for (const r of voiceRecognizeResults.value) {
+      await api.post('/accounting/entry', {
+        amount: r.amount,
+        category: r.category,
+        description: r.description,
+        entry_date: r.entry_date_ts ? dayjs(r.entry_date_ts).toISOString() : dayjs().toISOString(),
+        consumer_id: null,
+        source: 'voice',
+      })
+    }
+    message.success(`成功创建 ${voiceRecognizeResults.value.length} 条记账`)
+    showCreateModal.value = false
+    resetVoiceState()
+    await fetchEntries()
+    await fetchStats()
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || '创建失败')
+  } finally {
+    creating.value = false
+  }
+}
+
+// ========== 拍照识别 ==========
 
 async function handlePhotoRecognize() {
   if (photoFileList.value.length === 0) {
@@ -1526,6 +1799,106 @@ onMounted(() => {
 
 .stat-value.warn {
   color: var(--theme-warning, #f0a020);
+}
+
+/* ===== 语音录入 ===== */
+.voice-record-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 0 8px;
+}
+
+.voice-hint {
+  font-size: 14px;
+  color: var(--theme-text-secondary, #6b7280);
+}
+
+.voice-btn-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voice-mic-btn {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 3px solid var(--theme-primary, #4f8ef7);
+  background: var(--theme-bg-card, #fff);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.voice-mic-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.voice-mic-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.voice-mic-btn.recording {
+  border-color: #e74c3c;
+  background: rgba(231, 76, 60, 0.08);
+  animation: voice-glow 1.5s ease-in-out infinite;
+}
+
+.mic-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.voice-pulse {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid rgba(231, 76, 60, 0.4);
+  animation: voice-pulse-anim 1.2s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes voice-pulse-anim {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+@keyframes voice-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.3); }
+  50% { box-shadow: 0 0 0 12px rgba(231, 76, 60, 0); }
+}
+
+.voice-timer {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #e74c3c;
+}
+
+.voice-status {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--theme-text-secondary, #6b7280);
+}
+
+.voice-transcript {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--theme-bg-secondary, #f9fafb);
+  border: 1px solid var(--theme-border, #e5e7eb);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 /* ===== 识别结果预览 ===== */

@@ -5,6 +5,7 @@ OCR识别小票、语音转文本、自动分类
 import base64
 import json
 import re
+import logging
 from typing import Optional, List, Dict, Any
 from app.schemas.accounting import (
     AccountingPhotoOCRResponse,
@@ -12,6 +13,8 @@ from app.schemas.accounting import (
     PhotoRecognizeItem,
 )
 from app.services.ai_service import ai_service
+
+logger = logging.getLogger(__name__)
 
 
 async def parse_receipt_images(image_data_list: List[str]) -> List[PhotoRecognizeItem]:
@@ -135,6 +138,261 @@ async def parse_receipt_images(image_data_list: List[str]) -> List[PhotoRecogniz
             amount=0, description=f"识别失败: {str(e)[:50]}",
             category="other", entry_date=None, confidence=0.0
         )]
+
+
+async def transcribe_audio_file(audio_bytes: bytes, filename: str = "audio.webm") -> str:
+    """
+    使用 AI 音频模型将音频转为文本。
+
+    策略：
+    1. 尝试 Whisper API（适用于 OpenAI / Azure）
+    2. 使用后台配置的 AI_MODEL，通过 chat/completions 传入音频
+       用户需自行在后台将模型切换到支持音频输入的模型，例如：
+       - qwen3-omni-flash（推荐，全模态）
+       - qwen-omni-turbo
+       - qwen3-asr-flash（专用ASR）
+
+    Args:
+        audio_bytes: 音频文件的原始字节
+        filename: 文件名（用于确定格式）
+
+    Returns:
+        转录的文本内容
+    """
+    import httpx
+    from app.core.config import get_active_ai_config, settings
+
+    def _get(key: str) -> str:
+        val = get_active_ai_config(key)
+        return val if val else getattr(settings, key, "")
+
+    api_key = _get("AI_API_KEY")
+    base_url = _get("AI_BASE_URL")
+
+    if not api_key or not base_url:
+        raise ValueError("AI 服务未配置")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    # 根据文件名推断格式
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "webm"
+
+    audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+    # --- 方案1: 尝试 Whisper API（OpenAI / Azure） ---
+    whisper_url = f"{base_url.rstrip('/')}/audio/transcriptions"
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            files = {"file": (filename, audio_bytes)}
+            data = {"model": "whisper-1", "language": "zh", "response_format": "json"}
+            logger.info(f"Trying Whisper → {whisper_url}")
+            resp = await client.post(whisper_url, headers={"Authorization": f"Bearer {api_key}"}, files=files, data=data)
+            if resp.status_code < 400:
+                result = resp.json()
+                text = result.get("text", "").strip()
+                if text:
+                    logger.info(f"Whisper OK: {text[:100]}")
+                    return text
+    except Exception as e:
+        logger.info(f"Whisper not available: {e}")
+
+    # --- 方案2: 使用后台配置的 AI_MODEL ---
+    chat_url = f"{base_url.rstrip('/')}/chat/completions"
+    ai_model = _get("AI_MODEL")
+
+    # qwen3-omni-flash 支持的音频格式: AMR, WAV, 3GP, 3GPP, AAC, MP3 等
+    # webm/opus 不在官方列表中，但可能兼容；如果不兼容需要转码
+    # 尝试用 ffmpeg 将 webm 转为 wav（如果可用）
+    actual_audio_b64 = audio_b64
+    actual_ext = ext
+    if ext in ("webm", "opus", "ogg"):
+        try:
+            import subprocess
+            import tempfile
+            import os as _os
+            with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp_in:
+                tmp_in.write(audio_bytes)
+                tmp_in_path = tmp_in.name
+            tmp_out_path = tmp_in_path.rsplit(".", 1)[0] + ".wav"
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-i", tmp_in_path, "-ar", "16000", "-ac", "1", tmp_out_path],
+                capture_output=True, timeout=30
+            )
+            if result.returncode == 0 and _os.path.exists(tmp_out_path):
+                with open(tmp_out_path, "rb") as f:
+                    wav_bytes = f.read()
+                actual_audio_b64 = base64.b64encode(wav_bytes).decode("utf-8")
+                actual_ext = "wav"
+                logger.info(f"Converted {ext} → wav ({len(audio_bytes)} → {len(wav_bytes)} bytes)")
+            else:
+                logger.warning(f"ffmpeg conversion failed (rc={result.returncode}), using original {ext}")
+            # 清理临时文件
+            for p in [tmp_in_path, tmp_out_path]:
+                try:
+                    _os.unlink(p)
+                except Exception:
+                    pass
+        except FileNotFoundError:
+            logger.info("ffmpeg not found, sending original audio format")
+        except Exception as e:
+            logger.warning(f"Audio conversion failed: {e}, using original format")
+
+    # Qwen-Omni 系列模型要求必须 stream=True，否则返回 400
+    # input_audio.data 必须使用 data URI 格式: data:audio/{format};base64,{base64}
+    audio_data_uri = f"data:audio/{actual_ext};base64,{actual_audio_b64}"
+    body = {
+        "model": ai_model,
+        "messages": [
+            {"role": "system", "content": "你是一个语音转文字助手。请将用户的音频内容完整转录为文字，只返回转录文本，不要添加任何额外说明。"},
+            {"role": "user", "content": [
+                {"type": "input_audio", "input_audio": {"data": audio_data_uri, "format": actual_ext}},
+                {"type": "text", "text": "请将这段音频转录为文字。"},
+            ]},
+        ],
+        "modalities": ["text"],
+        "stream": True,
+        "stream_options": {"include_usage": True},
+        "temperature": 0.1,
+    }
+
+    logger.info(f"Trying audio transcription (stream) via configured model → {ai_model}, format={actual_ext}")
+    error_msg = None
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            # 先发送请求，获取完整响应头
+            resp = await client.send(
+                client.build_request("POST", chat_url, json=body, headers=headers),
+                stream=True,
+            )
+
+            try:
+                if resp.status_code >= 400:
+                    error_body = (await resp.aread()).decode("utf-8", errors="replace")[:500]
+                    logger.error(f"Audio stream failed ({ai_model}): {resp.status_code} {error_body}")
+                    error_msg = (
+                        f"语音转录失败（模型: {ai_model}，状态码: {resp.status_code}）。"
+                        f"请在后台将 AI_MODEL 切换到支持音频输入的模型，"
+                        f"推荐：qwen3-omni-flash、qwen-omni-turbo、qwen3-asr-flash"
+                    )
+                else:
+                    # 解析 SSE 流式响应，拼接文本
+                    collected_text = []
+                    async for raw_line in resp.aiter_lines():
+                        raw_line = raw_line.strip()
+                        if not raw_line or not raw_line.startswith("data:"):
+                            continue
+                        data_str = raw_line[5:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                            choices = chunk.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                content = delta.get("content")
+                                if content:
+                                    collected_text.append(content)
+                        except Exception:
+                            continue
+
+                    text = "".join(collected_text).strip()
+                    if text:
+                        logger.info(f"Audio OK ({ai_model}): {text[:100]}")
+                        return text
+                    else:
+                        logger.error(f"Audio stream returned empty text ({ai_model})")
+            finally:
+                await resp.aclose()
+
+    except ValueError:
+        raise
+    except Exception as e:
+        import traceback
+        logger.error(f"Audio error ({ai_model}): {e}\n{traceback.format_exc()}")
+
+    raise ValueError(
+        error_msg or (
+            f"语音转录失败（模型: {ai_model}）。"
+            f"请确认后台 AI_MODEL 已切换到支持音频输入的模型，"
+            f"推荐：qwen3-omni-flash、qwen-omni-turbo、qwen3-asr-flash"
+        )
+    )
+
+
+async def parse_voice_text(text: str) -> List[PhotoRecognizeItem]:
+    """
+    使用 AI 将语音转录文本解析为结构化的记账条目。
+
+    Args:
+        text: 语音转录的文本
+
+    Returns:
+        List[PhotoRecognizeItem]: 识别出的消费条目
+    """
+    if not text:
+        return []
+
+    prompt = f"""你是一个记账助手。用户通过语音说了以下内容：
+"{text}"
+
+请从中提取消费记录。用户可能一次说了多条消费。
+
+对每条消费记录，提取：
+1. amount: 金额（数字，不含货币符号）。如果说"块"="元"，"毛"="角"=0.1元。
+2. description: 消费描述（简短，15字以内）
+3. category: 从以下选项选择：
+   food(餐饮), transport(交通), shopping(购物), entertainment(娱乐),
+   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他)
+4. entry_date: 如果语音中提到了具体日期时间则提取（ISO 8601格式），否则返回 null
+5. confidence: 识别置信度（0-1）
+
+返回JSON数组（即使只有1条）：
+```json
+[
+  {{"amount": 38.5, "description": "午餐", "category": "food", "entry_date": null, "confidence": 0.9}}
+]
+```
+
+注意：
+- 如果无法识别出任何消费信息，返回空数组 []
+- 金额无法确定时设为 0
+"""
+
+    try:
+        result = await ai_service.chat_json(
+            user_prompt=prompt,
+            system_prompt="你是记账助手，从语音内容中提取消费记录。只返回JSON。",
+            temperature=0.1,
+        )
+
+        if result is None:
+            return []
+
+        # 结果可能是 dict 包含列表，也可能直接是列表
+        items_raw = result if isinstance(result, list) else result.get("items", result.get("entries", []))
+        if not isinstance(items_raw, list):
+            items_raw = [items_raw]
+
+        items = []
+        for item in items_raw:
+            if not isinstance(item, dict):
+                continue
+            items.append(PhotoRecognizeItem(
+                amount=float(item.get("amount", 0)),
+                description=str(item.get("description", "消费"))[:50],
+                category=str(item.get("category", "other")),
+                entry_date=item.get("entry_date"),
+                confidence=min(max(float(item.get("confidence", 0.8)), 0), 1),
+            ))
+
+        return items if items else []
+
+    except Exception as e:
+        logger.error(f"Parse voice text failed: {e}")
+        return []
 
 
 async def transcribe_voice(audio_data: str) -> AccountingVoiceTranscriptResponse:
