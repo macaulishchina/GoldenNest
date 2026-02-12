@@ -6,6 +6,8 @@
           <router-view />
           <!-- Steam 风格成就解锁弹窗 -->
           <AchievementToast />
+          <!-- AI 模型调用提示 -->
+          <AIModelToast ref="aiModelToastRef" />
         </n-notification-provider>
       </n-dialog-provider>
     </n-message-provider>
@@ -13,13 +15,19 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { onMounted, onUnmounted, watch, ref, provide } from 'vue'
 import AchievementToast from '@/components/AchievementToast.vue'
+import AIModelToast from '@/components/AIModelToast.vue'
 import { fetchUnshownAchievements } from '@/utils/achievement'
 import { useUserStore } from '@/stores/user'
 import { useThemeStore } from '@/stores/theme'
+import { setupAIModelInterceptor } from '@/utils/aiModelNotify'
 
 const themeStore = useThemeStore()
+
+// AI 模型调用提示
+const aiModelToastRef = ref<InstanceType<typeof AIModelToast> | null>(null)
+provide('aiModelToast', aiModelToastRef)
 
 // 监听主题变化，更新 body 类名
 watch(() => themeStore.currentTheme, (newTheme) => {
@@ -52,6 +60,8 @@ const stopAchievementPolling = () => {
 
 onMounted(() => {
   startAchievementPolling()
+  // 注册 AI 模型调用拦截器
+  setupAIModelInterceptor(aiModelToastRef)
 })
 
 onUnmounted(() => {

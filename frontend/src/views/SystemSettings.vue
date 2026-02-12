@@ -22,6 +22,15 @@
         <span v-else>⚠️ 未配置 AI 服务，图片识别等功能不可用</span>
       </n-alert>
 
+      <!-- 显示 AI 模型信息开关 -->
+      <div class="ai-model-toggle">
+        <div class="ai-model-toggle-left">
+          <span class="ai-model-toggle-label">✦ 显示 AI 模型调用信息</span>
+          <span class="ai-model-toggle-desc">开启后，每次 AI 调用时将短暂显示使用的功能和模型名</span>
+        </div>
+        <n-switch v-model:value="showAIModelInfoVal" @update:value="onToggleAIModelInfo" />
+      </div>
+
       <!-- 服务商列表 -->
       <n-spin :show="loading">
         <div v-if="providers.length === 0 && !loading" style="text-align: center; padding: 40px; color: var(--theme-text-tertiary)">
@@ -296,8 +305,15 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import { AddOutline } from '@vicons/ionicons5'
 import { aiConfigApi } from '@/api'
+import { getShowAIModelInfo, setShowAIModelInfo } from '@/utils/aiModelNotify'
 
 const message = useMessage()
+
+// 显示 AI 模型信息开关
+const showAIModelInfoVal = ref(getShowAIModelInfo())
+function onToggleAIModelInfo(val: boolean) {
+  setShowAIModelInfo(val)
+}
 
 // 状态
 const loading = ref(false)
@@ -780,6 +796,35 @@ async function openFnModelPicker() {
     margin-top: 6px;
     align-self: flex-end;
   }
+}
+
+/* ========== AI 模型信息开关 ========== */
+.ai-model-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(24, 160, 88, 0.06) 0%, rgba(59, 130, 246, 0.04) 100%);
+  border: 1px solid rgba(24, 160, 88, 0.12);
+}
+
+.ai-model-toggle-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-model-toggle-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--theme-text-primary, #333);
+}
+
+.ai-model-toggle-desc {
+  font-size: 12px;
+  color: var(--theme-text-tertiary, #999);
 }
 
 /* ========== 功能级模型配置 ========== */

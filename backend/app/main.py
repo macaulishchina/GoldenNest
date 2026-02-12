@@ -103,8 +103,37 @@ class ExternalUrlMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# AI 调用元数据中间件 —— 将 AI 模型/功能信息注入响应头
+class AIMetadataMiddleware(BaseHTTPMiddleware):
+    """
+    将当前请求中 AI 调用的元数据写入响应头，
+    前端可据此展示"由 xx 模型驱动"的优雅提示。
+
+    响应头：
+    - X-AI-Function: 功能标识（如 receipt_ocr）
+    - X-AI-Function-Name: 功能名称（如 小票/发票识别）
+    - X-AI-Model: 实际使用的模型名
+    - X-AI-Source: 配置来源 function/global/env
+    """
+    async def dispatch(self, request: Request, call_next):
+        from app.services.ai_service import ai_call_metadata
+        # 每个请求开始时重置
+        token = ai_call_metadata.set(None)
+        try:
+            response = await call_next(request)
+            meta = ai_call_metadata.get()
+            if meta:
+                response.headers["X-AI-Function"] = meta.get("function_key", "")
+                response.headers["X-AI-Function-Name"] = meta.get("function_name", "")
+                response.headers["X-AI-Model"] = meta.get("model", "")
+                response.headers["X-AI-Source"] = meta.get("source", "")
+            return response
+        finally:
+            ai_call_metadata.reset(token)
+
 # 添加中间件（注意顺序：后添加的先执行）
 app.add_middleware(ExternalUrlMiddleware)
+app.add_middleware(AIMetadataMiddleware)
 
 # 配置CORS
 app.add_middleware(
@@ -113,6 +142,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-AI-Function", "X-AI-Function-Name", "X-AI-Model", "X-AI-Source"],
 )
 
 # 注册路由

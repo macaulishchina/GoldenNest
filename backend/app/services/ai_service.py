@@ -24,12 +24,19 @@ import json
 import logging
 import asyncio
 import re
+import contextvars
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
 
 import httpx
 
 from app.core.config import settings, get_active_ai_config
+
+# 请求级 AI 调用元数据，供中间件读取后注入响应头
+# 值格式: {"function_key": str, "model": str, "source": str, "function_name": str}
+ai_call_metadata: contextvars.ContextVar[Optional[Dict[str, str]]] = contextvars.ContextVar(
+    "ai_call_metadata", default=None
+)
 
 logger = logging.getLogger(__name__)
 
@@ -431,6 +438,23 @@ class AIService:
 
         content = result["choices"][0]["message"]["content"].strip()
         logger.info(f"{fk_tag}AI response ({len(content)} chars): {content[:200]}...")
+
+        # 写入请求级上下文，供中间件注入响应头
+        fn_name = ""
+        if function_key:
+            try:
+                from app.core.ai_functions import AI_FUNCTION_REGISTRY
+                fn_def = AI_FUNCTION_REGISTRY.get(function_key)
+                fn_name = fn_def.name if fn_def else function_key
+            except Exception:
+                fn_name = function_key
+        ai_call_metadata.set({
+            "function_key": function_key or "global",
+            "function_name": fn_name,
+            "model": ai_model,
+            "source": cfg.source,
+        })
+
         return content
 
     # -------------------- 工具方法 --------------------

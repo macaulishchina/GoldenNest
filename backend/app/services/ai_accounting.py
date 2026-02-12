@@ -196,6 +196,13 @@ async def transcribe_audio_file(audio_bytes: bytes, filename: str = "audio.webm"
                 text = result.get("text", "").strip()
                 if text:
                     logger.info(f"Whisper OK: {text[:100]}")
+                    from app.services.ai_service import ai_call_metadata
+                    ai_call_metadata.set({
+                        "function_key": "voice_transcription",
+                        "function_name": "语音转文字",
+                        "model": "whisper-1",
+                        "source": "global",
+                    })
                     return text
     except Exception as e:
         logger.info(f"Whisper not available: {e}")
@@ -302,6 +309,13 @@ async def transcribe_audio_file(audio_bytes: bytes, filename: str = "audio.webm"
                     text = "".join(collected_text).strip()
                     if text:
                         logger.info(f"Audio OK ({ai_model}): {text[:100]}")
+                        from app.services.ai_service import ai_call_metadata
+                        ai_call_metadata.set({
+                            "function_key": "voice_transcription",
+                            "function_name": "语音转文字",
+                            "model": ai_model,
+                            "source": "global",
+                        })
                         return text
                     else:
                         logger.error(f"Audio stream returned empty text ({ai_model})")
