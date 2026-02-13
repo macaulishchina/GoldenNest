@@ -22,6 +22,7 @@ import { fetchUnshownAchievements } from '@/utils/achievement'
 import { useUserStore } from '@/stores/user'
 import { useThemeStore } from '@/stores/theme'
 import { setupAIModelInterceptor } from '@/utils/aiModelNotify'
+import { initSiteMeta } from '@/utils/siteMeta'
 
 const themeStore = useThemeStore()
 
@@ -62,6 +63,8 @@ onMounted(() => {
   startAchievementPolling()
   // 注册 AI 模型调用拦截器
   setupAIModelInterceptor(aiModelToastRef)
+  // 初始化站点图标和 PWA 元数据
+  initSiteMeta()
 })
 
 onUnmounted(() => {

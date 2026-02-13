@@ -407,3 +407,24 @@ export const announcementAiApi = {
   improve: (data: { content: string; improve_type?: string }) =>
     api.post('/announcements/ai/improve', data)
 }
+
+// 站点配置 API - 图标 / PWA / 站点名称
+export const siteConfigApi = {
+  // 获取站点信息（公开）
+  getInfo: () => api.get('/site-config/info'),
+  // 获取站点设置（管理员）
+  getSettings: () => api.get('/site-config/settings'),
+  // 更新站点设置（管理员）
+  updateSettings: (data: { site_name?: string; short_name?: string; theme_color?: string; bg_color?: string }) =>
+    api.put('/site-config/settings', data),
+  // 上传图标（管理员）
+  uploadIcon: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/site-config/icon', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+  // 删除图标（管理员）
+  deleteIcon: () => api.delete('/site-config/icon'),
+}

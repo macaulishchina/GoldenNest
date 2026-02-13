@@ -127,6 +127,11 @@ const router = createRouter({
           component: () => import('@/views/SystemSettings.vue')
         },
         {
+          path: 'site-settings',
+          name: 'SiteSettings',
+          component: () => import('@/views/SiteSettings.vue')
+        },
+        {
           path: 'settings',
           name: 'Settings',
           component: () => import('@/views/Settings.vue')

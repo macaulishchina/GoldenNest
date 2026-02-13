@@ -376,6 +376,10 @@
                 <n-icon :size="20"><SettingsOutline /></n-icon>
                 <span>AI 服务配置</span>
               </div>
+              <div v-if="userStore.isAdmin" class="drawer-menu-item" @click="navigateAndClose('/site-settings')">
+                <n-icon :size="20"><SettingsOutline /></n-icon>
+                <span>网站配置</span>
+              </div>
               <div class="drawer-menu-item" @click="navigateAndClose('/settings')">
                 <n-icon :size="20"><PersonOutline /></n-icon>
                 <span>个人设置</span>
@@ -852,6 +856,10 @@ const menuOptions = computed<MenuOption[]>(() => [
       ...(userStore.isAdmin ? [{
         label: 'AI 服务配置',
         key: 'system-settings',
+        icon: renderIcon(SettingsOutline)
+      }, {
+        label: '网站配置',
+        key: 'site-settings',
         icon: renderIcon(SettingsOutline)
       }] : []),
       {
