@@ -91,23 +91,24 @@
          :class="{ 'enc-clickable': enc.type === 'monster' || enc.type === 'boss' }"
          @click.stop="(enc.type === 'monster' || enc.type === 'boss') && (showMonsterDetail = !showMonsterDetail)">
       <template v-if="enc.type === 'monster' || enc.type === 'boss'">
-        <span class="enc-icon">{{ enc.type === 'boss' ? '🐉' : (enc.elite ? '⭐' : '👾') }}</span>
-        <span class="enc-name">{{ enc.name }}</span>
-        <span v-if="enc.elite && enc.ability" class="elite-tag" @click.stop="showTip(enc.ability.name + ': ' + enc.ability.desc)">{{ enc.ability.name }}</span>
-        <span class="enc-stat atk">⚔️{{ enc.monster_attack }}</span>
-        <span v-if="enc.monster_defense > 0" class="enc-stat def">🛡️{{ enc.monster_defense }}</span>
+        <div class="enc-line1">
+          <span class="enc-icon">{{ enc.type === 'boss' ? '🐉' : (enc.elite ? '⭐' : '👾') }}</span>
+          <span class="enc-name">{{ enc.name }}</span>
+          <span v-if="enc.elite && enc.ability" class="elite-tag" @click.stop="showTip(enc.ability.name + ': ' + enc.ability.desc)">{{ enc.ability.name }}</span>
+          <span class="enc-stat atk">⚔️{{ enc.monster_attack }}</span>
+          <span v-if="enc.monster_defense > 0" class="enc-stat def">🛡️{{ enc.monster_defense }}</span>
+        </div>
         <div class="monster-hp">
           <div class="monster-hp-fill" :style="{ width: monsterHpPct + '%' }"></div>
           <span>{{ enc.monster_hp }}/{{ enc.monster_max_hp }}</span>
         </div>
       </template>
-      <template v-else-if="enc.type === 'chest'"><span class="enc-icon">🎁</span><span class="enc-name">发现宝箱！</span></template>
-      <template v-else-if="enc.type === 'trap'"><span class="enc-icon">⚠️</span><span class="enc-name">发现陷阱！</span></template>
+      <template v-else-if="enc.type === 'chest'"><div class="enc-line1"><span class="enc-icon">🎁</span><span class="enc-name">发现宝箱！</span></div></template>
+      <template v-else-if="enc.type === 'trap'"><div class="enc-line1"><span class="enc-icon">⚠️</span><span class="enc-name">发现陷阱！</span></div></template>
       <template v-else-if="enc.type === 'shop'">
-        <span class="enc-icon">🏪</span><span class="enc-name">{{ enc.name || '商店' }}</span>
-        <span class="shop-wallet">💰{{ state.exp_earned }}</span>
+        <div class="enc-line1"><span class="enc-icon">🏪</span><span class="enc-name">{{ enc.name || '商店' }}</span><span class="shop-wallet">💰{{ state.exp_earned }}</span></div>
       </template>
-      <template v-else-if="enc.type === 'blessing'"><span class="enc-icon">✨</span><span class="enc-name">{{ enc.name }}</span></template>
+      <template v-else-if="enc.type === 'blessing'"><div class="enc-line1"><span class="enc-icon">✨</span><span class="enc-name">{{ enc.name }}</span></div></template>
     </div>
     <!-- 怪物详情面板 -->
     <div v-if="showMonsterDetail && (enc.type === 'monster' || enc.type === 'boss') && !state.game_over"
@@ -151,20 +152,27 @@
           <span v-if="bpStats.exp_bonus">📖+{{ bpStats.exp_bonus }}%</span>
         </div>
       </div>
-      <!-- 主题套装面板 -->
+      <!-- 主题套装面板 (折叠式) -->
       <div v-if="state.backpack.major_sets?.length" class="bp-major-panel">
-        <div v-for="s in state.backpack.major_sets" :key="s.id"
-             class="bp-major-set" :class="{ 'ms-inactive': !s.active, 'ms-complete': s.complete }"
-             @click.stop="showTip(s.name + ' (' + s.pieces + '/' + s.total + '件) ' + s.bonus_desc + (s.exclusive ? ' | 专属: ' + s.exclusive.name + ' ' + s.exclusive.desc : ''))">
-          <div class="ms-row">
-            <span class="ms-name" :class="{ dimmed: !s.active }">{{ s.name }}</span>
-            <span class="ms-count">({{ s.pieces }}/{{ s.total }})</span>
-            <span v-if="s.active" class="ms-badge active">激活</span>
-            <span v-else class="ms-badge inactive">未激活</span>
-            <button v-if="s.can_merge" class="ms-merge-btn" @click.stop="mergeSet(s.id)">✨合体</button>
+        <div class="ms-toggle" @click.stop="showMajorSets = !showMajorSets">
+          <span class="ms-toggle-icons">{{ state.backpack.major_sets.map((s: any) => [...s.name][0]).join('') }}</span>
+          <span class="ms-toggle-label">套装 {{ state.backpack.major_sets.filter((s: any) => s.active).length }}/{{ state.backpack.max_active_major }}激活</span>
+          <span class="ms-toggle-arrow" :class="{ open: showMajorSets }">▸</span>
+        </div>
+        <div class="ms-list" :class="{ expanded: showMajorSets }">
+          <div v-for="s in state.backpack.major_sets" :key="s.id"
+               class="bp-major-set" :class="{ 'ms-inactive': !s.active, 'ms-complete': s.complete }"
+               @click.stop="showTip(s.name + ' (' + s.pieces + '/' + s.total + '件) ' + s.bonus_desc + (s.exclusive ? ' | 专属: ' + s.exclusive.name + ' ' + s.exclusive.desc : ''))">
+            <div class="ms-row">
+              <span class="ms-name" :class="{ dimmed: !s.active }">{{ s.name }}</span>
+              <span class="ms-count">({{ s.pieces }}/{{ s.total }})</span>
+              <span v-if="s.active" class="ms-badge active">激活</span>
+              <span v-else class="ms-badge inactive">未激活</span>
+              <button v-if="s.can_merge" class="ms-merge-btn" @click.stop="mergeSet(s.id)">✨合体</button>
+            </div>
+            <div class="ms-bonus" :class="{ dimmed: !s.active }">{{ s.bonus_desc }}</div>
+            <div v-if="s.exclusive" class="ms-excl" :class="{ dimmed: !s.exclusive.active }">{{ s.exclusive.name }} {{ s.exclusive.desc }}</div>
           </div>
-          <div class="ms-bonus" :class="{ dimmed: !s.active }">{{ s.bonus_desc }}</div>
-          <div v-if="s.exclusive" class="ms-excl" :class="{ dimmed: !s.exclusive.active }">{{ s.exclusive.name }} {{ s.exclusive.desc }}</div>
         </div>
       </div>
       <!-- 经典套装 / 连锁 / 被动 提示栏 -->
@@ -232,19 +240,15 @@
           </template>
         </div>
         <div class="bp-tb-btns">
-          <button v-if="selItem.consumable" class="tb-btn use" @click="useItem(selItem.uid)">💊用</button>
-          <button class="tb-btn move" @click="enterMoveMode">📦移</button>
-          <button v-if="!selItem.consumable && selItem.w !== selItem.h" class="tb-btn rotate" @click="rotateItem(selItem.uid)">🔄转</button>
+          <button v-if="selItem.consumable" class="tb-btn use" @click="useItem(selItem.uid)">💊使用</button>
+          <button class="tb-btn move" @click="enterMoveMode">📦移动</button>
+          <button v-if="!selItem.consumable && selItem.w !== selItem.h" class="tb-btn rotate" @click="rotateItem(selItem.uid)">🔄旋转</button>
           <button v-if="!selItem.consumable" class="tb-btn enchant" :disabled="state.exp_earned < (state.backpack?.enchant_cost || 99)"
-                  @click="enchantItem(selItem.uid)">💎{{ state.backpack?.enchant_cost || 15 }}E</button>
-          <button v-if="selItem.can_merge" class="tb-btn merge" @click="enterMergeMode">🔨合</button>
-          <button class="tb-btn sell" @click="sellItem(selItem.uid)">💰{{ selItem.sell_price }}E</button>
-          <button v-if="!discardConfirm" class="tb-btn discard" @click="discardConfirm = true">🗑️</button>
-          <span v-else class="discard-confirm">
-            <span class="dc-label">确认丢弃?</span>
-            <button class="tb-btn discard" @click="discardItem(selItem.uid)">✓</button>
-            <button class="tb-btn cancel" @click="discardConfirm = false">✕</button>
-          </span>
+                  @click="enchantItem(selItem.uid)">💎附魔{{ state.backpack?.enchant_cost || 15 }}E</button>
+          <button v-if="selItem.can_merge" class="tb-btn merge" @click="enterMergeMode">🔨合成</button>
+          <button v-if="!sellConfirm" class="tb-btn sell" @click.stop="sellConfirm = true">💰卖{{ selItem.sell_price }}E</button>
+          <button v-if="sellConfirm" class="tb-btn sell" @click="sellItem(selItem.uid)">✓确认</button>
+          <button v-if="sellConfirm" class="tb-btn cancel" @click="sellConfirm = false">✕</button>
         </div>
       </div>
       <!-- 合成模式提示 -->
@@ -356,6 +360,8 @@ const selectedUid = ref<number | null>(null)
 const moveMode = ref(false)
 const mergeMode = ref(false)
 const discardConfirm = ref(false)
+const sellConfirm = ref(false)
+const showMajorSets = ref(false)
 const showStatDetail = ref(false)
 const showMonsterDetail = ref(false)
 const retreatConfirm = ref(false)
@@ -517,6 +523,7 @@ function onItemClick(item: any) {
   selectedUid.value = selectedUid.value === item.uid ? null : item.uid
   moveMode.value = false
   discardConfirm.value = false
+  sellConfirm.value = false
 }
 
 function onCellClick(r: number, c: number) {
@@ -528,7 +535,7 @@ function onCellClick(r: number, c: number) {
 
 function enterMoveMode() { moveMode.value = true }
 function exitMoveMode() { moveMode.value = false }
-function clearSelect() { if (!isDragging.value) { selectedUid.value = null; moveMode.value = false; mergeMode.value = false; discardConfirm.value = false; showStatDetail.value = false; showMonsterDetail.value = false; tipText.value = '' } }
+function clearSelect() { if (!isDragging.value) { selectedUid.value = null; moveMode.value = false; mergeMode.value = false; discardConfirm.value = false; sellConfirm.value = false; showStatDetail.value = false; showMonsterDetail.value = false; tipText.value = '' } }
 function showTip(text: string) { tipText.value = tipText.value === text ? '' : text }
 
 /* ---- 新系统辅助 ---- */
@@ -839,11 +846,12 @@ function rerollBlessing() {
 
 /* ---- 遭遇信息行 ---- */
 .enc-row {
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-  padding: 6px 8px; margin-bottom: 4px;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 5px 8px; margin-bottom: 4px;
   background: var(--theme-bg-card, #fff); border-radius: 8px;
   border: 1px solid var(--theme-border-light, #eee);
 }
+.enc-line1 { display: flex; align-items: center; gap: 6px; }
 .enc-clickable { cursor: pointer; }
 .enc-clickable:hover { border-color: var(--theme-primary, #ff9800); box-shadow: 0 1px 6px rgba(255,152,0,.12); }
 .enc-icon { font-size: 22px; }
@@ -863,7 +871,7 @@ function rerollBlessing() {
   border: 1px solid rgba(156,39,176,.3); color: #7b1fa2;
 }
 .monster-hp {
-  position: relative; flex: 1; min-width: 60px; height: 14px;
+  position: relative; width: 100%; height: 14px;
   background: #ffcdd2; border-radius: 7px; overflow: hidden;
 }
 .monster-hp-fill { height: 100%; background: #e53935; border-radius: 7px; transition: width .3s; }
@@ -927,6 +935,30 @@ function rerollBlessing() {
 .bp-expand-btn:disabled { opacity: .4; cursor: not-allowed; }
 /* 套装/连锁/被动提示 */
 .bp-major-panel { margin-bottom: 4px; }
+.ms-toggle {
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 6px; cursor: pointer;
+  background: linear-gradient(135deg, rgba(255,152,0,.06), rgba(255,193,7,.04));
+  border: 1px solid rgba(255,152,0,.2);
+  font-size: 10px; color: var(--theme-text-secondary, #666);
+  transition: all .2s;
+}
+.ms-toggle:hover { border-color: rgba(255,152,0,.4); background: rgba(255,152,0,.1); }
+.ms-toggle-icons { font-size: 11px; letter-spacing: 1px; }
+.ms-toggle-label { font-weight: 600; color: #f57c00; }
+.ms-toggle-arrow {
+  margin-left: auto; font-size: 10px; color: #bbb;
+  transition: transform .25s ease;
+}
+.ms-toggle-arrow.open { transform: rotate(90deg); }
+.ms-list {
+  max-height: 0; overflow: hidden; opacity: 0;
+  transition: max-height .3s ease, opacity .25s ease, margin .2s ease;
+  margin-top: 0;
+}
+.ms-list.expanded {
+  max-height: 500px; opacity: 1; margin-top: 4px;
+}
 .bp-major-set {
   padding: 3px 6px; margin-bottom: 2px; border-radius: 6px;
   border: 1px solid rgba(255,152,0,.3); background: rgba(255,152,0,.06);
@@ -1130,29 +1162,20 @@ function rerollBlessing() {
   background: rgba(124,77,255,.1); border: 1px solid rgba(124,77,255,.3);
   color: #7c4dff; white-space: nowrap;
 }
-.bp-tb-btns { display: flex; gap: 3px; flex-wrap: wrap; }
+.bp-tb-btns { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .tb-btn {
-  padding: 3px 6px; border: none; border-radius: 4px;
+  padding: 4px 8px; border: none; border-radius: 6px;
   font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .tb-btn.use { background: #43a047; color: #fff; }
 .tb-btn.move { background: #1565c0; color: #fff; }
 .tb-btn.rotate { background: #7c4dff; color: #fff; }
-.tb-btn.discard { background: #ef5350; color: #fff; }
-/* 丢弃二次确认 */
-.discard-confirm {
-  display: inline-flex; align-items: center; gap: 3px;
-  padding: 2px 4px; border-radius: 5px;
-  background: rgba(239,83,80,.12); border: 1px solid rgba(239,83,80,.4);
-  animation: dc-in .15s ease-out;
-}
-.dc-label { font-size: 10px; color: #c62828; font-weight: 600; white-space: nowrap; }
-@keyframes dc-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
+/* 出售二次确认 */
 .tb-btn.sell { background: #ff9800; color: #fff; }
 .tb-btn.enchant { background: #7c4dff; color: #fff; }
 .tb-btn.enchant:disabled { opacity: .4; cursor: not-allowed; }
 .tb-btn.merge { background: #f57c00; color: #fff; }
-.tb-btn.cancel { background: var(--theme-border, #bbb); color: #333; margin-left: 6px; }
+.tb-btn.cancel { background: var(--theme-border, #bbb); color: #333; }
 .bp-move-hint {
   margin-top: 4px; padding: 4px 8px; border-radius: 4px;
   background: rgba(21,101,192,.08); color: #1565c0;
