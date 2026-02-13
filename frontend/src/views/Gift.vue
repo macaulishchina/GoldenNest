@@ -32,9 +32,9 @@
             <n-form-item label="赠送比例">
               <n-input-number 
                 v-model:value="formData.amount" 
-                :min="0.01" 
+                :min="0.0001" 
                 :max="myEquity * 100"
-                :step="0.1"
+                :step="0.0001"
                 style="width: 100%"
                 placeholder="输入比例"
                 @blur="updateGiftAmount"
@@ -109,12 +109,12 @@
             <div class="amount-input-wrapper">
               <n-input-number 
                 v-model:value="formData.amount" 
-                :min="0.01" 
+                :min="0.0001" 
                 :max="myEquity * 100"
-                :step="0.1"
+                :step="0.0001"
                 :show-button="false"
                 size="small"
-                placeholder="0.00"
+                placeholder="0.0000"
                 @blur="updateGiftAmount"
               />
               <span class="amount-suffix">%</span>
@@ -406,13 +406,22 @@ function updateGiftAmount() {
   }
 }
 
+// 精确计算赠送金额（避免比例反算精度丢失）
+function getExactGiftMoney(): number | undefined {
+  // 如果用户直接输入了金额，优先使用精确金额
+  if (formData.value.giftAmount && formData.value.giftAmount > 0) {
+    return Math.round(formData.value.giftAmount * 100) / 100
+  }
+  return undefined
+}
+
 // 当金额改变时，更新比例
 function updateAmount() {
   if (formData.value.giftAmount && formData.value.giftAmount > 0 && totalSavings.value > 0) {
     const newAmount = (formData.value.giftAmount / totalSavings.value) * 100
     // 限制在有效范围内
     if (newAmount <= myEquity.value * 100) {
-      formData.value.amount = Math.round(newAmount * 10) / 10 // 保留一位小数
+      formData.value.amount = Math.round(newAmount * 10000) / 10000 // 保留四位小数
     }
   }
 }
@@ -490,6 +499,7 @@ async function handleSend() {
     await giftApi.send({
       to_user_id: formData.value.to_user_id!,
       amount: sendAmount,
+      gift_money: getExactGiftMoney(),
       message: formData.value.message || undefined
     })
     

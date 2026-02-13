@@ -71,6 +71,7 @@ async def build_gift_response(db: AsyncSession, gift: EquityGift) -> GiftRespons
         to_user_nickname=to_user.nickname,
         to_avatar_version=to_user.avatar_version or 0,
         amount=gift.amount,
+        gift_money=gift.gift_money,
         message=gift.message,
         status=gift.status.value,
         created_at=gift.created_at,
@@ -148,6 +149,7 @@ async def send_gift(
         from_user_id=current_user.id,
         to_user_id=gift_data.to_user_id,
         amount=gift_data.amount,
+        gift_money=gift_data.gift_money,
         message=gift_data.message,
         status=EquityGiftStatus.PENDING,
     )
@@ -261,6 +263,14 @@ async def respond_to_gift(
         family_total = family_total_result.scalar() or 0
         
         transfer_amount = family_total * gift.amount
+        
+        # 如果有精确金额，优先使用（避免比例反算精度丢失）
+        if gift.gift_money is not None and gift.gift_money > 0:
+            # 用精确金额，但确保不超过比例对应的金额（容许微小误差）
+            if gift.gift_money <= transfer_amount * 1.001:
+                transfer_amount = gift.gift_money
+        
+        transfer_amount = round(transfer_amount, 2)
         
         if transfer_amount > 0:
             # 从赠送者扣除存款记录

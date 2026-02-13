@@ -662,6 +662,7 @@ def sanitize_state(game_type: str, session: dict) -> dict:
             "difficulty": session.get("difficulty", "easy"),
             "cash": round(session["cash"], 2),
             "shares": session["shares"],
+            "allow_short": session.get("allow_short", False),
             "portfolio_value": round(session["cash"] + session["shares"] * visible_prices[-1], 2),
             "history": session["history"],
             "completed": session.get("completed", False),
@@ -673,10 +674,22 @@ def sanitize_state(game_type: str, session: dict) -> dict:
         return result
 
     elif game_type == "adventure":
+        # 聚合 buffs: {"id": count} → [{"name": ..., "count": ...}]
+        raw_buffs = session.get("buffs", {})
+        # 兼容旧格式（list of strings）
+        if isinstance(raw_buffs, list):
+            migrated = {}
+            for b in raw_buffs:
+                migrated[b] = migrated.get(b, 0) + 1
+            raw_buffs = migrated
+            session["buffs"] = migrated
+        buffs_display = [{"name": name, "count": count} for name, count in raw_buffs.items()]
         state = {
             "floor": session["floor"],
             "max_floor": session["max_floor"],
             "difficulty": session.get("difficulty", "easy"),
+            "endless": session.get("endless", False),
+            "retreated": session.get("retreated", False),
             "hp": session["hp"],
             "max_hp": session["max_hp"],
             "attack": session["attack"],
@@ -687,9 +700,11 @@ def sanitize_state(game_type: str, session: dict) -> dict:
             "floors_cleared": session["floors_cleared"],
             "game_over": session.get("game_over", False),
             "encounter_resolved": session.get("encounter_resolved", False),
-            "crit_chance": session.get("crit_chance", 0),
+            "crit_chance": min(session.get("crit_chance", 0), 100),
+            "crit_damage": session.get("crit_damage", 180),
             "lifesteal": session.get("lifesteal", 0),
-            "buffs": session.get("buffs", []),
+            "buffs": buffs_display,
+            "kill_streak": session.get("kill_streak", 0),
         }
         enc = session.get("encounter")
         if enc:
@@ -699,6 +714,7 @@ def sanitize_state(game_type: str, session: dict) -> dict:
                     safe_enc["monster_hp"] = enc["monster_hp"]
                     safe_enc["monster_max_hp"] = enc["monster_max_hp"]
                     safe_enc["monster_attack"] = enc["monster_attack"]
+                    safe_enc["monster_defense"] = enc.get("monster_defense", 0)
                 elif enc["type"] == "shop":
                     safe_enc["items"] = enc.get("items", [])
                 elif enc["type"] == "blessing":
@@ -779,13 +795,13 @@ def create_memory_session(difficulty: str = "easy") -> dict:
 
 
 STOCK_DIFFICULTIES = {
-    "easy":   {"rounds": 5,  "volatility": 0.08, "initial_cash": 10000,
+    "easy":   {"rounds": 5,  "volatility": 0.08, "initial_cash": 10000, "allow_short": False,
                "exp_tiers": [(50, 40), (30, 30), (10, 20), (0, 10), (-999, 5)]},
-    "medium": {"rounds": 10, "volatility": 0.15, "initial_cash": 10000,
+    "medium": {"rounds": 10, "volatility": 0.15, "initial_cash": 10000, "allow_short": False,
                "exp_tiers": [(50, 80), (30, 50), (10, 30), (0, 15), (-999, 5)]},
-    "hard":   {"rounds": 15, "volatility": 0.22, "initial_cash": 10000,
+    "hard":   {"rounds": 15, "volatility": 0.22, "initial_cash": 10000, "allow_short": True,
                "exp_tiers": [(50, 200), (30, 120), (10, 60), (0, 30), (-999, 10)]},
-    "expert": {"rounds": 25, "volatility": 0.35, "initial_cash": 10000,
+    "expert": {"rounds": 25, "volatility": 0.35, "initial_cash": 10000, "allow_short": True,
                "exp_tiers": [(100, 1000), (50, 500), (20, 200), (0, 80), (-999, 20)]},
 }
 
@@ -810,6 +826,7 @@ def create_stock_session(difficulty: str = "easy") -> dict:
         "cash": float(initial_cash),
         "initial_cash": float(initial_cash),
         "shares": 0,
+        "allow_short": cfg.get("allow_short", False),
         "history": [],
     }
 
@@ -845,6 +862,13 @@ ADVENTURE_DIFFICULTIES = {
         "monster_hp_mult": 2.0, "monster_atk_mult": 1.8,
         "floor_exp": [0, 10, 18, 26, 35, 45, 55, 65, 78, 90, 105, 120, 135, 150, 168, 185, 205, 230, 260],
         "boss": {"name": "末日收割者", "hp": 300, "attack": 35},
+    },
+    "endless": {
+        "max_floor": 999999, "player_hp": 120, "atk_bonus": 0,
+        "monster_hp_mult": 1.0, "monster_atk_mult": 1.0,
+        "floor_exp": [],  # dynamic, calculated per floor
+        "boss": None,  # no fixed boss, dynamic mini-bosses
+        "endless": True,
     },
 }
 
@@ -925,16 +949,123 @@ ADVENTURE_BLESSINGS = [
 ]
 
 
-def _make_encounter(enc_type: str, floor: int, difficulty: str) -> dict:
+def _endless_floor_exp(floor: int) -> int:
+    """Calculate EXP reward for an endless mode floor.
+    Scales roughly as: base 5 + floor * 1.5, with some variance.
+    """
+    base = 5 + int(floor * 1.5)
+    variance = max(1, int(base * 0.15))
+    return base + random.randint(-variance, variance)
+
+
+def _endless_monster_stats(floor: int, player_stats: dict = None) -> dict:
+    """Generate a monster with stats scaled to floor level in endless mode.
+    Also factors in player power to keep challenge proportional.
+    """
+    effective_floor = floor
+    # Random upward spike: 35% chance to face a harder monster (disabled on early floors)
+    if floor > 5 and random.random() < 0.35:
+        spike = random.uniform(1.15, 1.6)
+        effective_floor = int(floor * spike)
+    effective_floor = max(floor, effective_floor)
+    
+    # Base stats from floor (flattened curve for better pacing)
+    hp = int(18 + effective_floor * 2.8 + (effective_floor ** 0.55) * 5)
+    atk = int(4 + effective_floor * 0.7 + (effective_floor ** 0.5) * 2)
+    defense = max(0, int((effective_floor - 15) * 0.25)) if effective_floor > 15 else 0
+    
+    # Soft start: reduce monster stats on early floors so player can build up
+    if floor <= 6:
+        soft = 0.5 + 0.5 * (floor / 6)  # F1=0.58, F3=0.75, F6=1.0
+        hp = max(8, int(hp * soft))
+        atk = max(2, int(atk * soft))
+    
+    # Dynamic scaling using lagged DPS (player enjoys power spikes for a few floors)
+    if player_stats:
+        lagged_dps = player_stats.get("scaling_dps", 0)
+        p_def = player_stats.get("defense", 0)
+        baseline_dps = 10 + floor * 0.5
+        if lagged_dps > baseline_dps * 1.5:
+            power_ratio = min(lagged_dps / baseline_dps, 4.0)  # cap at 4x
+            scale = 1.0 + (power_ratio - 1.5) * 0.25  # gentle scaling
+            hp = int(hp * scale)
+            atk = int(atk * (1.0 + (power_ratio - 1.5) * 0.15))
+            defense = int(defense * scale) if defense > 0 else 0
+            # Player defense is very high, monster needs more ATK to punch through
+            if p_def > 0 and atk <= p_def * 1.2:
+                atk = int(p_def * 1.3 + floor * 0.5)
+    
+    # Name pool with tier-based naming
+    if effective_floor <= 10:
+        names = ["小偷鼠", "贪婪蛇", "税务怪"]
+    elif effective_floor <= 30:
+        names = ["通胀兽", "市场狼", "干预者"]
+    elif effective_floor <= 60:
+        names = ["金融危机龙", "蒲公英恶魔", "黑天鹅"]
+    elif effective_floor <= 100:
+        names = ["末日收割者", "混沌巨兽", "时空裂隙"]
+    else:
+        names = ["天启古神", "宇宙吐息者", "无尽深渊"]
+    
+    return {"name": random.choice(names), "hp": hp, "attack": atk, "defense": defense}
+
+
+def _endless_boss_stats(floor: int, player_stats: dict = None) -> dict:
+    """Generate a mini-boss for endless mode (appears every 10 floors).
+    Scales with player power for sustained challenge.
+    """
+    effective_floor = floor
+    hp = int(40 + effective_floor * 4 + (effective_floor ** 0.6) * 8)
+    atk = int(7 + effective_floor * 1.0 + (effective_floor ** 0.5) * 2.8)
+    defense = max(0, int((effective_floor - 8) * 0.4)) if effective_floor > 8 else 0
+    
+    # Dynamic scaling using lagged DPS (player enjoys power spikes before monsters catch up)
+    if player_stats:
+        lagged_dps = player_stats.get("scaling_dps", 0)
+        p_def = player_stats.get("defense", 0)
+        baseline_dps = 10 + floor * 0.5
+        if lagged_dps > baseline_dps * 1.5:
+            power_ratio = min(lagged_dps / baseline_dps, 5.0)  # bosses scale harder
+            scale = 1.0 + (power_ratio - 1.5) * 0.3
+            hp = int(hp * scale)
+            atk = int(atk * (1.0 + (power_ratio - 1.5) * 0.2))
+            defense = int(defense * scale) if defense > 0 else 0
+            if p_def > 0 and atk <= p_def * 1.2:
+                atk = int(p_def * 1.5 + floor * 0.8)
+    
+    if effective_floor <= 20:
+        names = ["小贪官", "市场操纵者"]
+    elif effective_floor <= 50:
+        names = ["金融危机龙", "老千岁魔"]
+    elif effective_floor <= 100:
+        names = ["末日收割者", "混沌魔神"]
+    else:
+        names = ["宇宙统治者", "时空破坏神"]
+    
+    return {"name": random.choice(names), "hp": hp, "attack": atk, "defense": defense}
+
+
+def _make_encounter(enc_type: str, floor: int, difficulty: str, player_stats: dict = None) -> dict:
     """根据遭遇类型生成具体遭遇数据"""
     cfg = ADVENTURE_DIFFICULTIES.get(difficulty, ADVENTURE_DIFFICULTIES["medium"])
+    is_endless = cfg.get("endless", False)
     
     if enc_type == "boss":
+        if is_endless:
+            stats = _endless_boss_stats(floor, player_stats)
+            return {"type": "boss", "name": stats["name"],
+                    "monster_hp": stats["hp"], "monster_max_hp": stats["hp"],
+                    "monster_attack": stats["attack"], "monster_defense": stats.get("defense", 0)}
         b = cfg["boss"]
         return {"type": "boss", "name": b["name"],
                 "monster_hp": b["hp"], "monster_max_hp": b["hp"],
                 "monster_attack": b["attack"]}
     elif enc_type == "monster":
+        if is_endless:
+            stats = _endless_monster_stats(floor, player_stats)
+            return {"type": "monster", "name": stats["name"],
+                    "monster_hp": stats["hp"], "monster_max_hp": stats["hp"],
+                    "monster_attack": stats["attack"], "monster_defense": stats.get("defense", 0)}
         m = random.choice(ADVENTURE_MONSTERS)
         hp = int(m["hp"] * cfg["monster_hp_mult"])
         atk = int(m["attack"] * cfg["monster_atk_mult"])
@@ -949,6 +1080,9 @@ def _make_encounter(enc_type: str, floor: int, difficulty: str) -> dict:
             trap_dmg = random.randint(15, 35)
         elif difficulty == "expert":
             trap_dmg = random.randint(20, 45)
+        elif is_endless:
+            base_dmg = 10 + int(floor * 0.8)
+            trap_dmg = random.randint(base_dmg, int(base_dmg * 1.5))
         return {"type": "trap", "name": "陷阱", "damage": trap_dmg}
     elif enc_type == "shop":
         return {"type": "shop", "name": "商店", "items": [
@@ -966,9 +1100,33 @@ def _make_encounter(enc_type: str, floor: int, difficulty: str) -> dict:
         return _make_encounter("monster", floor, difficulty)
 
 
-def _generate_encounter(floor: int, difficulty: str = "medium", floor_plan: list = None) -> dict:
+def _generate_encounter(floor: int, difficulty: str = "medium", floor_plan: list = None, player_stats: dict = None) -> dict:
     """生成指定楼层的遭遇。如果有预生成计划则使用计划，否则回退到旧逻辑"""
     cfg = ADVENTURE_DIFFICULTIES.get(difficulty, ADVENTURE_DIFFICULTIES["medium"])
+    is_endless = cfg.get("endless", False)
+    
+    if is_endless:
+        # Endless mode: dynamic generation per floor
+        # Mini-boss every 10 floors
+        if floor > 0 and floor % 10 == 0:
+            return _make_encounter("boss", floor, difficulty, player_stats)
+        # Blessing every 3-4 floors (starting from floor 3)
+        blessing_interval = 3 if floor <= 30 else 4
+        if floor >= 3 and floor % blessing_interval == 0:
+            return _make_encounter("blessing", floor, difficulty, player_stats)
+        # Shop guaranteed before mini-boss (floor 9, 19, 29, ...)
+        if floor > 0 and floor % 10 == 9:
+            return _make_encounter("shop", floor, difficulty, player_stats)
+        # Regular floors: weighted random
+        # No shop on floor 1
+        if floor <= 1:
+            allowed = ["monster", "chest", "trap"]
+        else:
+            allowed = ["monster", "chest", "trap", "shop"]
+        weights_map = {"monster": 50, "chest": 18, "trap": 18, "shop": 14}
+        weights = [weights_map.get(t, 10) for t in allowed]
+        enc_type = random.choices(allowed, weights=weights, k=1)[0]
+        return _make_encounter(enc_type, floor, difficulty, player_stats)
     
     if floor >= cfg["max_floor"]:
         return _make_encounter("boss", floor, difficulty)
@@ -986,18 +1144,20 @@ def _generate_encounter(floor: int, difficulty: str = "medium", floor_plan: list
 
 def create_adventure_session(pet_level: int, difficulty: str = "easy") -> dict:
     cfg = ADVENTURE_DIFFICULTIES.get(difficulty, ADVENTURE_DIFFICULTIES["easy"])
-    floor_plan = _generate_floor_plan(difficulty)
+    is_endless = cfg.get("endless", False)
+    floor_plan = None if is_endless else _generate_floor_plan(difficulty)
     encounter = _generate_encounter(1, difficulty, floor_plan)
     return {
         "started_at": datetime.utcnow().isoformat(),
         "difficulty": difficulty,
         "floor": 1,
         "max_floor": cfg["max_floor"],
+        "endless": is_endless,
         "hp": cfg["player_hp"],
         "max_hp": cfg["player_hp"],
         "attack": 10 + pet_level + cfg["atk_bonus"],
         "defense": 0,
-        "potions": 0,
+        "potions": 1 if is_endless else 0,
         "exp_earned": 0,
         "encounter": encounter,
         "encounter_resolved": False,
@@ -1006,8 +1166,11 @@ def create_adventure_session(pet_level: int, difficulty: str = "easy") -> dict:
         "game_over": False,
         "floor_plan": floor_plan,
         "crit_chance": 0,
+        "crit_damage": 180,
         "lifesteal": 0,
-        "buffs": [],
+        "buffs": {},
+        "scaling_dps": 0,  # lagged DPS for monster scaling (lets player enjoy power spikes)
+        "kill_streak": 0,  # consecutive kills without fleeing → combo ATK bonus
     }
 
 
@@ -1194,6 +1357,7 @@ def process_stock_action(session: dict, action: dict) -> dict:
         session["exp_earned"] = 0
         session["abandoned"] = True
         initial_cash = session.get("initial_cash", 10000)
+        # For short positions, negative shares * price is subtracted (cover cost)
         session["final_value"] = round(session["cash"] + session["shares"] * session["prices"][session["current_round"]], 2)
         session["profit_pct"] = round((session["final_value"] - initial_cash) / initial_cash * 100, 2)
         return {"completed": True, "exp_earned": 0, "abandoned": True}
@@ -1220,8 +1384,14 @@ def process_stock_action(session: dict, action: dict) -> dict:
     elif act == "sell":
         if quantity <= 0:
             raise HTTPException(status_code=400, detail="卖出数量必须大于0")
-        if quantity > session["shares"]:
+        allow_short = session.get("allow_short", False)
+        if not allow_short and quantity > session["shares"]:
             raise HTTPException(status_code=400, detail="持股不足")
+        # Short selling: limit max short position to avoid excessive risk
+        if allow_short:
+            max_short = int(session["cash"] / price)  # margin based on current cash
+            if session["shares"] - quantity < -max_short:
+                raise HTTPException(status_code=400, detail="做空保证金不足")
         session["cash"] += quantity * price
         session["shares"] -= quantity
 
@@ -1239,6 +1409,7 @@ def process_stock_action(session: dict, action: dict) -> dict:
     exp_earned = 0
     if completed:
         final_price = session["prices"][total_rounds]
+        # For short positions (negative shares), this deducts the cover cost
         session["cash"] += session["shares"] * final_price
         session["cash"] = round(session["cash"], 2)
         session["shares"] = 0
@@ -1273,17 +1444,40 @@ def process_adventure_action(session: dict, action: dict) -> dict:
         session["log"].append("🏳️ 你放弃了探险...")
         return {"completed": True, "exp_earned": 0, "abandoned": True}
     
+    # 处理撤退（无尽模式专用 - 保留已获得的经验）
+    if act == "retreat":
+        is_endless = session.get("endless", False)
+        if not is_endless:
+            raise HTTPException(status_code=400, detail="只有无尽模式可以撤退")
+        session["game_over"] = True
+        session["completed"] = True
+        session["retreated"] = True
+        earned = session["exp_earned"]
+        session["log"].append(f"🚪 你选择了撤退，带回了 {earned} EXP！")
+        return {"completed": True, "exp_earned": earned, "retreated": True}
+    
     if session.get("game_over"):
         raise HTTPException(status_code=400, detail="探险已结束")
 
     enc = session["encounter"]
     log = session["log"]
 
-    # 遭遇已解决 → 只允许进入下一层
+    # 遭遇已解决 → 允许进入下一层或撤退
     if session.get("encounter_resolved"):
+        if act == "retreat":
+            is_endless = session.get("endless", False)
+            if not is_endless:
+                raise HTTPException(status_code=400, detail="只有无尽模式可以撤退")
+            session["game_over"] = True
+            session["completed"] = True
+            session["retreated"] = True
+            earned = session["exp_earned"]
+            log.append(f"🚪 你选择了撤退，带回了 {earned} EXP！")
+            return {"completed": True, "exp_earned": earned, "retreated": True}
         if act != "next_floor":
             raise HTTPException(status_code=400, detail="请进入下一层")
-        if session["floor"] >= session["max_floor"]:
+        is_endless = session.get("endless", False)
+        if not is_endless and session["floor"] >= session["max_floor"]:
             session["game_over"] = True
             session["completed"] = True
             log.append("🏆 恭喜通关全部楼层！")
@@ -1291,7 +1485,24 @@ def process_adventure_action(session: dict, action: dict) -> dict:
         session["floor"] += 1
         difficulty = session.get("difficulty", "easy")
         floor_plan = session.get("floor_plan")
-        new_enc = _generate_encounter(session["floor"], difficulty, floor_plan)
+        player_stats = None
+        if session.get("endless"):
+            # Compute current real DPS
+            p_atk = session.get("attack", 10)
+            p_crit = min(session.get("crit_chance", 0), 100)
+            p_crit_dmg = session.get("crit_damage", 180)
+            p_lifesteal = session.get("lifesteal", 0)
+            crit_mult = 1.0 + (p_crit / 100.0) * ((p_crit_dmg - 100) / 100.0)
+            sustain_mult = 1.0 + p_lifesteal / 200.0
+            current_dps = p_atk * crit_mult * sustain_mult
+            # Blend with lagged scaling_dps (decay=0.7 → takes ~4-5 floors to catch up)
+            old_scaling = session.get("scaling_dps", 0)
+            session["scaling_dps"] = old_scaling * 0.7 + current_dps * 0.3
+            player_stats = {
+                "scaling_dps": session["scaling_dps"],
+                "defense": session.get("defense", 0),
+            }
+        new_enc = _generate_encounter(session["floor"], difficulty, floor_plan, player_stats)
         session["encounter"] = new_enc
         session["encounter_resolved"] = False
         log.append(f"📍 进入第{session['floor']}层，遭遇了{new_enc['name']}！")
@@ -1301,13 +1512,22 @@ def process_adventure_action(session: dict, action: dict) -> dict:
 
     if enc_type in ("monster", "boss"):
         if act == "fight":
-            dmg_to_monster = max(1, session["attack"])
+            monster_def = enc.get("monster_defense", 0)
+            base_atk = session["attack"]
+            # 连杀连击加成: 每连杀+8% ATK，最高+40%
+            streak = session.get("kill_streak", 0)
+            combo_mult = 1.0 + min(streak * 0.08, 0.40)
+            effective_atk = int(base_atk * combo_mult)
+            dmg_to_monster = max(1, effective_atk - monster_def)
             # 暴击检查
-            crit_chance = session.get("crit_chance", 0)
+            crit_chance = min(session.get("crit_chance", 0), 100)
             is_crit = crit_chance > 0 and random.randint(1, 100) <= crit_chance
             if is_crit:
-                dmg_to_monster = int(dmg_to_monster * 1.8)
-                log.append(f"💥 暴击！")
+                crit_dmg_pct = session.get("crit_damage", 180)
+                dmg_to_monster = int(dmg_to_monster * crit_dmg_pct / 100)
+                log.append(f"💥 暴击！({crit_dmg_pct}%伤害)")
+            if streak >= 2:
+                log.append(f"🔥 {streak}连杀！攻击+{int((combo_mult-1)*100)}%")
             enc["monster_hp"] -= dmg_to_monster
             log.append(f"⚔️ 你对{enc['name']}造成{dmg_to_monster}点伤害！")
             # 吸血检查
@@ -1320,12 +1540,34 @@ def process_adventure_action(session: dict, action: dict) -> dict:
                 if actual_heal > 0:
                     log.append(f"🧛 吸血恢复{actual_heal}HP")
             if enc["monster_hp"] <= 0:
+                # 超杀回血: 溢出伤害的30%转为HP恢复
+                overkill = abs(enc["monster_hp"])
+                if overkill > 0:
+                    overkill_heal = max(1, int(overkill * 0.3))
+                    old_hp = session["hp"]
+                    session["hp"] = min(session["max_hp"], session["hp"] + overkill_heal)
+                    actual_ok_heal = session["hp"] - old_hp
+                    if actual_ok_heal > 0:
+                        log.append(f"💪 超杀！溢出伤害恢复{actual_ok_heal}HP")
+                # 连杀计数+1
+                session["kill_streak"] = session.get("kill_streak", 0) + 1
                 # 根据难度配置获取楼层经验
                 difficulty = session.get("difficulty", "easy")
                 cfg = ADVENTURE_DIFFICULTIES.get(difficulty, ADVENTURE_DIFFICULTIES["easy"])
-                floor_exp_list = cfg["floor_exp"]
+                is_endless = cfg.get("endless", False)
                 floor = session["floor"]
-                earned = floor_exp_list[min(floor, len(floor_exp_list) - 1)]
+                if is_endless:
+                    earned = _endless_floor_exp(floor)
+                    # Boss floors give 2x EXP
+                    if enc_type == "boss":
+                        earned = earned * 2
+                else:
+                    floor_exp_list = cfg["floor_exp"]
+                    earned = floor_exp_list[min(floor, len(floor_exp_list) - 1)]
+                # 连杀EXP加成: 3+连杀额外+20%EXP
+                if session["kill_streak"] >= 3:
+                    bonus_pct = min(session["kill_streak"] * 5, 30)  # max +30%
+                    earned = int(earned * (1 + bonus_pct / 100))
                 session["exp_earned"] += earned
                 session["floors_cleared"] += 1
                 session["encounter_resolved"] = True
@@ -1355,7 +1597,8 @@ def process_adventure_action(session: dict, action: dict) -> dict:
             if random.random() < 0.5:
                 session["encounter_resolved"] = True
                 session["floors_cleared"] += 1
-                log.append(f"🏃 成功逃离了{enc['name']}！")
+                session["kill_streak"] = 0  # 逃跑重置连杀
+                log.append(f"🏃 成功逃离了{enc['name']}！（连杀中断）")
                 return {"completed": False, "exp_earned": 0, "battle_result": "fled"}
             monster_dmg = max(1, enc["monster_attack"] - session["defense"])
             session["hp"] -= monster_dmg
@@ -1483,14 +1726,33 @@ def process_adventure_action(session: dict, action: dict) -> dict:
                 session["potions"] += effect["potions"]
                 log.append(f"{chosen['name']}：获得{effect['potions']}瓶药水")
             if "crit" in effect:
-                session["crit_chance"] = session.get("crit_chance", 0) + effect["crit"]
-                log.append(f"{chosen['name']}：暴击率+{effect['crit']}%")
+                current_crit = session.get("crit_chance", 0)
+                add_crit = effect["crit"]
+                if current_crit >= 100:
+                    # 暴击率已满，转换为爆伤加成 (每15%暴击率 → +20%爆伤)
+                    bonus_crit_dmg = int(add_crit / 15 * 20)
+                    session["crit_damage"] = session.get("crit_damage", 180) + bonus_crit_dmg
+                    log.append(f"{chosen['name']}：暴击率已满！转化为爆伤+{bonus_crit_dmg}%（当前{session['crit_damage']}%）")
+                elif current_crit + add_crit > 100:
+                    overflow = current_crit + add_crit - 100
+                    session["crit_chance"] = 100
+                    bonus_crit_dmg = int(overflow / 15 * 20)
+                    session["crit_damage"] = session.get("crit_damage", 180) + bonus_crit_dmg
+                    log.append(f"{chosen['name']}：暴击率→100%！溢出转化爆伤+{bonus_crit_dmg}%")
+                else:
+                    session["crit_chance"] = current_crit + add_crit
+                    log.append(f"{chosen['name']}：暴击率+{add_crit}%")
             if "lifesteal" in effect:
                 session["lifesteal"] = session.get("lifesteal", 0) + effect["lifesteal"]
                 log.append(f"{chosen['name']}：吸血+{effect['lifesteal']}%")
-            # 记录已获得的祝福
-            buffs = session.get("buffs", [])
-            buffs.append(chosen["name"])
+            # 记录已获得的祝福（累计计数）
+            buffs = session.get("buffs", {})
+            if isinstance(buffs, list):
+                migrated = {}
+                for b in buffs:
+                    migrated[b] = migrated.get(b, 0) + 1
+                buffs = migrated
+            buffs[chosen["name"]] = buffs.get(chosen["name"], 0) + 1
             session["buffs"] = buffs
             session["encounter_resolved"] = True
             session["floors_cleared"] += 1
@@ -1873,6 +2135,9 @@ async def start_game(
     # 创建新会话 - 所有游戏都需要选择难度
     difficulty = data.difficulty or "easy"
     valid_difficulties = ["easy", "medium", "hard", "expert"]
+    # 冒险游戏额外支持无尽模式
+    if data.game_type == "adventure":
+        valid_difficulties.append("endless")
     if difficulty not in valid_difficulties:
         raise HTTPException(status_code=400, detail=f"无效的难度，请选择: {', '.join(valid_difficulties)}")
     

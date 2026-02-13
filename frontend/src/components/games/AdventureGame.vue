@@ -7,16 +7,31 @@
         <span class="hp-text">HP {{ state.hp }}/{{ state.max_hp }}</span>
       </div>
       <div class="stats">
-        <span>🗡️{{ state.attack }}</span>
+        <span>🗡️{{ state.attack }}<span v-if="state.kill_streak >= 2" class="combo-tag">×{{ Math.min(state.kill_streak * 8, 40) }}%</span></span>
         <span>🛡️{{ state.defense }}</span>
         <span>🧪{{ state.potions }}</span>
-        <span>📍{{ state.floor }}F</span>
+        <span>📍{{ state.floor }}F{{ state.endless ? '' : `/${state.max_floor}` }}</span>
         <span>⭐{{ state.exp_earned }}</span>
       </div>
-      <!-- 已获得的增益 -->
-      <div v-if="state.buffs && state.buffs.length" class="buffs-bar">
-        <span v-for="(b, i) in state.buffs" :key="i" class="buff-tag">{{ b }}</span>
+      <!-- 连杀提示 -->
+      <div v-if="state.kill_streak >= 2" class="streak-bar">
+        🔥 {{ state.kill_streak }}连杀！攻击+{{ Math.min(state.kill_streak * 8, 40) }}% · EXP{{ state.kill_streak >= 3 ? `+${Math.min(state.kill_streak * 5, 30)}%` : '' }}
       </div>
+      <!-- 已获得的增益（合并同类） -->
+      <div v-if="state.buffs && state.buffs.length" class="buffs-bar">
+        <span v-for="(b, i) in state.buffs" :key="i" class="buff-tag">
+          {{ b.name }}<span v-if="b.count > 1" class="buff-count">×{{ b.count }}</span>
+        </span>
+      </div>
+      <!-- 暴击/爆伤信息 -->
+      <div v-if="state.crit_chance > 0" class="crit-info">
+        🎯 {{ state.crit_chance }}%暴击
+        <span v-if="state.crit_damage > 180"> · 💥 {{ state.crit_damage }}%爆伤</span>
+      </div>
+      <!-- 无尽模式撤退按钮 -->
+      <button v-if="state.endless && !state.game_over" class="retreat-bar-btn" @click="doAction('retreat')">
+        🚪 安全撤退（保留 {{ state.exp_earned }} EXP）
+      </button>
     </div>
 
     <!-- 战斗日志 -->
@@ -31,6 +46,7 @@
         <div class="encounter-info">
           <span class="enc-icon">{{ enc.type === 'boss' ? '🐉' : '👾' }}</span>
           <span class="enc-name">{{ enc.name }}</span>
+          <span v-if="enc.monster_defense > 0" class="monster-def">🛡️{{ enc.monster_defense }}</span>
           <div class="monster-hp">
             <div class="monster-hp-fill" :style="{ width: monsterHpPct + '%' }"></div>
             <span>{{ enc.monster_hp }}/{{ enc.monster_max_hp }}</span>
@@ -109,7 +125,7 @@
       <!-- 已解决 → 下一层 -->
       <div v-if="state.encounter_resolved && !state.game_over" class="action-btns">
         <button class="btn next" @click="doAction('next_floor')">
-          {{ state.floor >= state.max_floor ? '🏆 完成探险' : '📍 进入下一层' }}
+          {{ !state.endless && state.floor >= state.max_floor ? '🏆 完成探险' : '📍 进入下一层' }}
         </button>
       </div>
     </div>
@@ -117,7 +133,9 @@
     <!-- 结果 -->
     <div v-if="state.game_over" class="game-result" :class="resultClass">
       <div class="result-title">{{ resultTitle }}</div>
-      <div class="result-detail">通过 {{ state.floors_cleared }}/{{ state.max_floor }} 层</div>
+      <div class="result-detail">
+        {{ state.endless ? `到达第 ${state.floor} 层` : `通过 ${state.floors_cleared}/${state.max_floor} 层` }}
+      </div>
       <div v-if="state.exp_earned > 0 && !state.abandoned" class="result-exp">获得 {{ state.exp_earned }} EXP</div>
       <div v-else class="result-exp lost">未获得经验</div>
     </div>
@@ -145,12 +163,14 @@ const monsterHpPct = computed(() => {
 // 结果展示
 const resultClass = computed(() => {
   if (props.state?.abandoned) return 'lose'
+  if (props.state?.retreated) return 'win'
   return props.state?.floors_cleared >= props.state?.max_floor ? 'win' : 'lose'
 })
 
 const resultTitle = computed(() => {
   if (props.state?.abandoned) return '🏳️ 已放弃'
-  if (props.state?.floors_cleared >= props.state?.max_floor) return '🏆 全部通关！'
+  if (props.state?.retreated) return '🚪 安全撤退！'
+  if (!props.state?.endless && props.state?.floors_cleared >= props.state?.max_floor) return '🏆 全部通关！'
   if (props.state?.hp <= 0) return '💀 探险失败'
   return '探险结束'
 })
@@ -241,6 +261,59 @@ function doAbandon() {
   border: 1px solid var(--theme-success-light, #c8e6c9);
   color: var(--theme-success, #2e7d32);
   white-space: nowrap;
+}
+.buff-count {
+  font-weight: bold;
+  color: var(--theme-primary, #ff9800);
+  margin-left: 2px;
+}
+.crit-info {
+  text-align: center;
+  font-size: 12px;
+  color: var(--theme-warning, #ff9800);
+  margin-top: 4px;
+}
+.retreat-bar-btn {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 0;
+  border: 1px solid var(--theme-warning, #ff9800);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theme-warning, #ff9800);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.retreat-bar-btn:hover {
+  background: rgba(255, 152, 0, 0.12);
+}
+.combo-tag {
+  font-size: 10px;
+  color: #ff5722;
+  font-weight: 700;
+  margin-left: 2px;
+}
+.streak-bar {
+  text-align: center;
+  font-size: 12px;
+  color: #ff5722;
+  background: rgba(255, 87, 34, 0.08);
+  border-radius: 6px;
+  padding: 3px 8px;
+  margin-top: 4px;
+  animation: streak-pulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes streak-pulse {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
+}
+.monster-def {
+  font-size: 12px;
+  color: var(--theme-text-secondary, #999);
+  margin-left: 4px;
 }
 .abandon-btn-inline {
   padding: 4px 8px;
@@ -334,6 +407,7 @@ function doAbandon() {
 .btn.shop { background: #1565c0; }
 .btn.skip { background: #757575; }
 .btn.next { background: linear-gradient(135deg, #667eea, #764ba2); }
+.btn.retreat { background: linear-gradient(135deg, #ff9800, #f57c00); }
 .shop-btns {
   display: grid;
   grid-template-columns: 1fr 1fr;

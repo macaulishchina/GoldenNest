@@ -10,6 +10,7 @@ class GiftCreate(BaseModel):
     """创建股权赠与请求"""
     to_user_id: int = Field(..., description="接收者用户ID")
     amount: float = Field(..., gt=0, le=1, description="赠与股权比例(0-1)")
+    gift_money: Optional[float] = Field(None, gt=0, description="赠与绝对金额(元)，用于精确转账避免比例精度丢失")
     message: Optional[str] = Field(None, max_length=500, description="祝福语")
 
 
@@ -24,6 +25,7 @@ class GiftResponse(BaseModel):
     to_user_nickname: str
     to_avatar_version: int = 0  # 接收者头像版本号
     amount: float
+    gift_money: Optional[float] = None
     message: Optional[str]
     status: str
     created_at: datetime

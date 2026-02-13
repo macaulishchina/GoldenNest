@@ -21,6 +21,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class AssetInfoUpdate(BaseModel):
+    """更新资产非金额信息（不需要审批）"""
+    name: Optional[str] = None
+    end_date: Optional[str] = None
+    bank_name: Optional[str] = None
+    note: Optional[str] = None
+
+
 async def get_user_family_id(user_id: int, db: AsyncSession) -> int:
     """获取用户的家庭ID"""
     result = await db.execute(
@@ -255,3 +263,51 @@ async def get_my_assets(
             "created_at": asset.created_at.isoformat()
         } for asset in assets]
     }
+
+
+@router.patch("/{asset_id}/info")
+async def update_asset_info(
+    asset_id: int,
+    data: AssetInfoUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    更新资产非金额信息（名称、到期日、银行、备注等），不需要审批，直接生效。
+    """
+    from datetime import datetime as dt
+    family_id = await get_user_family_id(current_user.id, db)
+    result = await db.execute(
+        select(Asset).where(
+            Asset.id == asset_id,
+            Asset.family_id == family_id,
+            Asset.is_deleted == False
+        )
+    )
+    asset = result.scalar_one_or_none()
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    
+    updated_fields = []
+    if data.name is not None and data.name.strip():
+        asset.name = data.name.strip()
+        updated_fields.append("名称")
+    if data.end_date is not None:
+        if data.end_date == '':
+            asset.end_date = None
+            updated_fields.append("到期日")
+        else:
+            asset.end_date = dt.fromisoformat(data.end_date.replace('Z', '+00:00'))
+            updated_fields.append("到期日")
+    if data.bank_name is not None:
+        asset.bank_name = data.bank_name.strip() if data.bank_name.strip() else None
+        updated_fields.append("银行/机构")
+    if data.note is not None:
+        asset.note = data.note.strip() if data.note.strip() else None
+        updated_fields.append("备注")
+    
+    if not updated_fields:
+        raise HTTPException(status_code=400, detail="没有需要更新的字段")
+    
+    await db.commit()
+    return {"message": f"已更新：{', '.join(updated_fields)}", "id": asset_id}

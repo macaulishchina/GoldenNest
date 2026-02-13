@@ -66,11 +66,19 @@ const difficulties: Record<string, string> = {
 
 const diffLabel = computed(() => difficulties[props.state?.difficulty] || '')
 
-// 倒计时（每配对成功加10秒，初始10秒）
-const timeLeft = ref(10)
+// 倒计时（按难度设置初始时间）
+const TIMER_BY_DIFFICULTY: Record<string, number> = {
+  easy: 20,
+  medium: 15,
+  hard: 10,
+  expert: 10
+}
+const timeLeft = ref(TIMER_BY_DIFFICULTY[props.state?.difficulty] || 10)
 const timeUp = ref(false)
 const showAbandonConfirm = ref(false)
+const consecutiveFails = ref(0) // 连续失败计数（地狱难度惩罚用）
 let timer: ReturnType<typeof setInterval> | null = null
+let noMatchTimeout: ReturnType<typeof setTimeout> | null = null // 不匹配翻回定时器
 
 onMounted(() => {
   startTimer()
@@ -78,6 +86,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
+  if (noMatchTimeout) clearTimeout(noMatchTimeout)
 })
 
 function startTimer() {
@@ -95,10 +104,11 @@ function startTimer() {
   }, 1000)
 }
 
-// 监听配对成功，加时间
+// 监听配对成功，加时间 + 重置连续失败
 watch(() => props.state?.matched_pairs, (newVal, oldVal) => {
   if (newVal && oldVal !== undefined && newVal > oldVal) {
     timeLeft.value = Math.min(30, timeLeft.value + 10)
+    consecutiveFails.value = 0 // 配对成功重置连续失败计数
   }
 })
 
@@ -148,8 +158,12 @@ watch(() => props.state.last_flip_result, (result) => {
     activeSymbols.value = { [result.position]: result.symbol }
   } else if (result.action === 'match') {
     memorySound.match()
+    // 立即清理，不需要等待动画
+    if (noMatchTimeout) { clearTimeout(noMatchTimeout); noMatchTimeout = null }
     tempFlipped.value = []
     activeSymbols.value = {}
+    isProcessing.value = false
+    consecutiveFails.value = 0
     // 检查是否全部匹配完 → 胜利
     if (props.state.matched_pairs >= props.state.total_pairs) {
       memorySound.win()
@@ -162,16 +176,38 @@ watch(() => props.state.last_flip_result, (result) => {
       [result.positions[1]]: result.symbols[1],
     }
     isProcessing.value = true
-    setTimeout(() => {
+    // 地狱难度：连续失败惩罚
+    if (props.state?.difficulty === 'expert') {
+      consecutiveFails.value++
+      if (consecutiveFails.value >= 2) {
+        const penalty = consecutiveFails.value // 第2次连续失败扣 2s，第3次扣 3s...
+        timeLeft.value = Math.max(0, timeLeft.value - penalty)
+      }
+    } else {
+      consecutiveFails.value++
+    }
+    // 加快翻回动画（从800ms降为400ms）
+    if (noMatchTimeout) clearTimeout(noMatchTimeout)
+    noMatchTimeout = setTimeout(() => {
       tempFlipped.value = []
       activeSymbols.value = {}
       isProcessing.value = false
-    }, 800)
+      noMatchTimeout = null
+    }, 400)
   }
 }, { deep: true })
 
 function flipCard(idx: number) {
-  if (isProcessing.value) return
+  // 如果正在处理不匹配动画，强制结束当前动画，允许丝滑连续操作
+  if (isProcessing.value) {
+    if (noMatchTimeout) {
+      clearTimeout(noMatchTimeout)
+      noMatchTimeout = null
+    }
+    tempFlipped.value = []
+    activeSymbols.value = {}
+    isProcessing.value = false
+  }
   if (props.state.completed) return
   if (timeUp.value) return
   if (props.state.board[idx] !== null) return
@@ -263,7 +299,7 @@ function doAbandon() {
   position: relative;
   width: 100%;
   height: 100%;
-  transition: transform 0.4s;
+  transition: transform 0.25s;
   transform-style: preserve-3d;
 }
 .card-slot.flipped .card-inner,

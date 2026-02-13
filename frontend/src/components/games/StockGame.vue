@@ -3,7 +3,9 @@
     <div class="game-header">
       <div class="stat">回合: <strong>{{ state.current_round }}/{{ state.total_rounds }}</strong></div>
       <div class="stat">资金: <strong>¥{{ formatNum(state.cash) }}</strong></div>
-      <div class="stat">持股: <strong>{{ state.shares }}</strong></div>
+      <div class="stat">
+        <strong :class="positionClass">{{ positionLabel }}</strong>
+      </div>
     </div>
 
     <!-- 价格走势图 -->
@@ -43,25 +45,72 @@
       </span>
     </div>
 
+    <!-- 持仓信息条 (做空模式) -->
+    <div v-if="state.allow_short && !state.completed" class="position-bar">
+      <div class="pos-indicator" :class="positionClass">
+        <span class="pos-icon">{{ state.shares > 0 ? '📈' : state.shares < 0 ? '📉' : '⏸️' }}</span>
+        <span>{{ positionLabel }}</span>
+      </div>
+      <div class="pos-details">
+        <span v-if="state.shares > 0">持仓市值 ¥{{ formatNum(state.shares * currentPrice) }}</span>
+        <span v-else-if="state.shares < 0">做空市值 ¥{{ formatNum(Math.abs(state.shares) * currentPrice) }}</span>
+        <span v-else>空仓观望中</span>
+      </div>
+    </div>
+
     <!-- 操作区 -->
     <div v-if="!state.completed" class="action-area">
+      <!-- 数量输入 -->
       <div class="quantity-row">
         <label>数量:</label>
-        <input v-model.number="quantity" type="number" min="1" :max="maxBuy" class="qty-input" />
-        <button class="qty-btn" @click="quantity = maxBuy">全仓</button>
-        <button class="qty-btn" @click="quantity = Math.floor(maxBuy / 2)">半仓</button>
+        <input v-model.number="quantity" type="number" min="1" class="qty-input" />
+        <div class="quick-btns">
+          <button class="qty-btn" @click="quantity = maxBuy" title="用全部资金买入">全买</button>
+          <button class="qty-btn" @click="quantity = Math.floor(maxBuy / 2)">半仓</button>
+          <button v-if="state.shares !== 0" class="qty-btn clear-btn" @click="quantity = Math.abs(state.shares)" title="平掉当前所有持仓">平仓</button>
+        </div>
       </div>
-      <div class="btn-row">
-        <button class="action-btn buy" @click="doAction('buy')" :disabled="quantity <= 0 || quantity * currentPrice > state.cash">
-          买入
-        </button>
-        <button class="action-btn hold" @click="doAction('hold')">
-          持有
-        </button>
-        <button class="action-btn sell" @click="doAction('sell')" :disabled="state.shares <= 0 || quantity <= 0 || quantity > state.shares">
-          卖出
-        </button>
-      </div>
+
+      <!-- 做空模式操作按钮 -->
+      <template v-if="state.allow_short">
+        <div class="btn-row short-mode">
+          <button class="action-btn buy-long"
+            @click="doAction('buy')"
+            :disabled="quantity <= 0 || quantity * currentPrice > state.cash">
+            <span class="btn-icon">📈</span>
+            <span class="btn-label">{{ state.shares < 0 ? '买入平空' : '买入做多' }}</span>
+          </button>
+          <button class="action-btn hold" @click="doAction('hold')">
+            <span class="btn-icon">⏳</span>
+            <span class="btn-label">观望</span>
+          </button>
+          <button class="action-btn sell-short"
+            @click="doAction('sell')"
+            :disabled="quantity <= 0 || (state.shares - quantity < -maxShort)">
+            <span class="btn-icon">📉</span>
+            <span class="btn-label">{{ state.shares > 0 ? '卖出平多' : '卖出做空' }}</span>
+          </button>
+        </div>
+        <div class="short-info-bar">
+          <span>可做多: {{ maxBuy }} 股</span>
+          <span>可做空: {{ maxShortable }} 股</span>
+        </div>
+      </template>
+
+      <!-- 普通模式操作按钮 -->
+      <template v-else>
+        <div class="btn-row">
+          <button class="action-btn buy" @click="doAction('buy')" :disabled="quantity <= 0 || quantity * currentPrice > state.cash">
+            买入
+          </button>
+          <button class="action-btn hold" @click="doAction('hold')">
+            持有
+          </button>
+          <button class="action-btn sell" @click="doAction('sell')" :disabled="quantity <= 0 || state.shares <= 0 || quantity > state.shares">
+            卖出
+          </button>
+        </div>
+      </template>
     </div>
 
     <!-- 结果 -->
@@ -105,7 +154,36 @@ const priceColor = computed(() => priceChange.value >= 0 ? '#e53935' : '#43a047'
 const initialCash = computed(() => props.state.initial_cash || 10000)
 const profitPct = computed(() => ((props.state.portfolio_value - initialCash.value) / initialCash.value) * 100)
 
-const maxBuy = computed(() => Math.floor(props.state.cash / currentPrice.value))
+const maxBuy = computed(() => {
+  return Math.floor(props.state.cash / currentPrice.value)
+})
+
+const maxShort = computed(() => {
+  // 做空保证金限制：可做空的最大股数 = cash / price
+  return Math.floor(props.state.cash / currentPrice.value)
+})
+
+const maxShortable = computed(() => {
+  // 当前还能做空多少股（考虑已有持仓）
+  // shares > 0: 先卖平多再做空，可做空 = shares + maxShort
+  // shares < 0: 已有空仓，还能做空 = maxShort - |shares|
+  // shares = 0: 可做空 = maxShort
+  return Math.max(0, props.state.shares + maxShort.value)
+})
+
+// 持仓状态
+const positionLabel = computed(() => {
+  const shares = props.state.shares
+  if (shares > 0) return `持有 ${shares} 股`
+  if (shares < 0) return `做空 ${Math.abs(shares)} 股`
+  return '空仓'
+})
+
+const positionClass = computed(() => {
+  if (props.state.shares > 0) return 'pos-long'
+  if (props.state.shares < 0) return 'pos-short'
+  return 'pos-flat'
+})
 
 const chartPoints = computed(() => {
   const prices: number[] = props.state.prices || [100]
@@ -237,6 +315,17 @@ function doAbandon() {
   cursor: pointer;
 }
 .qty-btn:hover { background: var(--theme-bg-secondary, #f0f0f0); }
+.qty-btn.clear-btn {
+  border-color: var(--theme-warning, #ff9800);
+  color: var(--theme-warning, #ff9800);
+}
+.qty-btn.clear-btn:hover {
+  background: #fff3e0;
+}
+.quick-btns {
+  display: flex;
+  gap: 4px;
+}
 .btn-row {
   display: flex;
   gap: 8px;
@@ -255,6 +344,62 @@ function doAbandon() {
 .action-btn.buy { background: #e53935; }
 .action-btn.hold { background: #757575; }
 .action-btn.sell { background: #43a047; }
+
+/* 做空模式按钮 */
+.btn-row.short-mode {
+  gap: 6px;
+}
+.btn-row.short-mode .action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+}
+.btn-icon { font-size: 16px; line-height: 1; }
+.btn-label { font-size: 12px; line-height: 1; }
+.action-btn.buy-long { background: #e53935; }
+.action-btn.sell-short { background: #43a047; }
+
+/* 持仓信息条 */
+.position-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  background: var(--theme-bg-secondary, #f5f5f5);
+  border-left: 3px solid #999;
+}
+.position-bar:has(.pos-long) { border-left-color: #e53935; }
+.position-bar:has(.pos-short) { border-left-color: #43a047; }
+.pos-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: bold;
+}
+.pos-icon { font-size: 14px; }
+.pos-long { color: #e53935; }
+.pos-short { color: #43a047; }
+.pos-flat { color: #999; }
+.pos-details {
+  font-size: 12px;
+  color: var(--theme-text-secondary, #666);
+}
+
+/* 做空信息栏 */
+.short-info-bar {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--theme-text-tertiary, #999);
+  padding: 4px 2px 0;
+}
+
+.short-position { color: #e53935; }
 
 /* 结果 */
 .game-result {

@@ -399,6 +399,7 @@ class EquityGift(Base):
     from_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     to_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     amount: Mapped[float] = mapped_column(Float)  # 赠与股权比例(0-1)
+    gift_money: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 赠与绝对金额(元)，用于精确转账
     message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # 祝福语
     status: Mapped[EquityGiftStatus] = mapped_column(SQLEnum(EquityGiftStatus), default=EquityGiftStatus.PENDING)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -23,7 +23,7 @@
           <div
             class="board"
             :style="{
-              gridTemplateColumns: `repeat(${state.cols}, minmax(${state.cols > 12 ? '28px' : '36px'}, 1fr))`,
+              gridTemplateColumns: `repeat(${state.cols}, 36px)`,
             }"
           >
             <div
@@ -98,6 +98,17 @@ const boardScrollRef = ref<HTMLElement | null>(null)
 const mouseDownCell = ref<{ r: number; c: number } | null>(null)
 const isLeftMouseDown = ref(false)
 const isRightMouseDown = ref(false)
+
+// ===== 点击特效 =====
+const cellEffects = ref<Map<string, string>>(new Map())
+
+function playCellEffect(r: number, c: number, type: 'reveal' | 'flag' | 'unflag' | 'mine') {
+  const key = `${r},${c}`
+  cellEffects.value.set(key, type)
+  setTimeout(() => {
+    cellEffects.value.delete(key)
+  }, 400)
+}
 
 // ===== 触摸支持（优化版）=====
 const touchStartTime = ref(0)
@@ -187,6 +198,16 @@ watch(() => props.state?.completed, (newVal, oldVal) => {
       mineSound.win()
     } else {
       mineSound.explode()
+      // 踩雷时对所有雷格播放特效
+      if (!props.state?.abandoned && props.state?.board) {
+        for (let r = 0; r < props.state.rows; r++) {
+          for (let c = 0; c < props.state.cols; c++) {
+            if (props.state.board[r][c] === -1) {
+              playCellEffect(r, c, 'mine')
+            }
+          }
+        }
+      }
     }
   }
 })
@@ -218,6 +239,12 @@ function cellClass(r: number, c: number) {
     if (mouseDownCell.value && mouseDownCell.value.r === r && mouseDownCell.value.c === c) {
       classes.push('chord-hover')
     }
+  }
+  
+  // 点击特效
+  const effectType = cellEffects.value.get(key)
+  if (effectType) {
+    classes.push(`cell-effect-${effectType}`)
   }
   
   return classes.join(' ')
@@ -336,6 +363,8 @@ function cellClick(r: number, c: number) {
   // 对未翻开的格子：如果有标记不做任何操作
   if (flagged || questioned) return
   
+  // 播放点击特效
+  playCellEffect(r, c, 'reveal')
   mineSound.reveal()
   emit('action', { action: 'reveal', row: r, col: c })
 }
@@ -344,6 +373,7 @@ function cellRightClick(r: number, c: number) {
   if (!props.state || props.state.completed) return
   if (!props.state.revealed[r][c]) {
     const isFlagged = props.state.flagged[r][c]
+    playCellEffect(r, c, isFlagged ? 'unflag' : 'flag')
     if (isFlagged) mineSound.unflag()
     else mineSound.flag()
     emit('action', { action: 'flag', row: r, col: c })
@@ -411,6 +441,7 @@ function cellTouchStart(r: number, c: number, e: TouchEvent) {
       if (!props.state.revealed[r][c]) {
         // 长按未翻开格子 → 插旗/取消旗
         const isFlagged = props.state.flagged[r][c]
+        playCellEffect(r, c, isFlagged ? 'unflag' : 'flag')
         if (isFlagged) mineSound.unflag()
         else mineSound.flag()
         emit('action', { action: 'flag', row: r, col: c })
@@ -567,10 +598,10 @@ function doAbandon() {
   display: grid;
   gap: 2px;
   width: max-content;
-  min-width: 100%;
 }
 .cell {
-  aspect-ratio: 1;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -583,9 +614,48 @@ function doAbandon() {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
-  min-width: 24px;
-  min-height: 24px;
   position: relative;
+  overflow: hidden;
+}
+
+/* 点击特效：翻开 */
+.cell.cell-effect-reveal {
+  animation: cell-reveal-flash 0.35s ease-out;
+}
+@keyframes cell-reveal-flash {
+  0% { box-shadow: inset 0 0 0 0 rgba(255, 255, 255, 0.8); }
+  30% { box-shadow: inset 0 0 20px 5px rgba(255, 255, 255, 0.6); transform: scale(1.05); }
+  100% { box-shadow: inset 0 0 0 0 transparent; transform: scale(1); }
+}
+
+/* 点击特效：插旗 */
+.cell.cell-effect-flag {
+  animation: cell-flag-pop 0.35s ease-out;
+}
+@keyframes cell-flag-pop {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.15); box-shadow: 0 0 12px rgba(255, 152, 0, 0.6); }
+  100% { transform: scale(1); box-shadow: none; }
+}
+
+/* 点击特效：取消旗 */
+.cell.cell-effect-unflag {
+  animation: cell-unflag-shrink 0.3s ease-out;
+}
+@keyframes cell-unflag-shrink {
+  0% { transform: scale(1); }
+  30% { transform: scale(0.85); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* 点击特效：踩雷 */
+.cell.cell-effect-mine {
+  animation: cell-mine-explode 0.5s ease-out;
+}
+@keyframes cell-mine-explode {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.8); }
+  30% { transform: scale(1.2); box-shadow: 0 0 20px 8px rgba(244, 67, 54, 0.5); background: #ff5252; }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
 }
 
 /* 未翻开格子 */

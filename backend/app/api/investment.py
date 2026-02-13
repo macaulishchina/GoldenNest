@@ -13,7 +13,7 @@ from app.models.models import (
     FamilyMember, User, Transaction, TransactionType
 )
 from app.schemas.investment import (
-    InvestmentCreate, InvestmentUpdate, InvestmentResponse,
+    InvestmentCreate, InvestmentUpdate, InvestmentInfoUpdate, InvestmentResponse,
     InvestmentIncomeCreate, InvestmentIncomeResponse, InvestmentPositionResponse,
     InvestmentSummary
 )
@@ -244,6 +244,46 @@ async def update_investment(
         status_code=400,
         detail="此接口已废弃。更新理财需要家庭成员审批，请使用 POST /api/approval/investment/update 接口"
     )
+
+
+@router.patch("/{investment_id}/info")
+async def update_investment_info(
+    investment_id: int,
+    data: InvestmentInfoUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    更新理财产品非金额信息（名称、到期日、备注等），不需要审批，直接生效。
+    """
+    family_id = await get_user_family_id(current_user.id, db)
+    result = await db.execute(
+        select(Investment).where(
+            Investment.id == investment_id,
+            Investment.family_id == family_id,
+            Investment.is_deleted == False
+        )
+    )
+    investment = result.scalar_one_or_none()
+    if not investment:
+        raise HTTPException(status_code=404, detail="理财产品不存在")
+    
+    updated_fields = []
+    if data.name is not None:
+        investment.name = data.name
+        updated_fields.append("名称")
+    if data.end_date is not None:
+        investment.end_date = data.end_date
+        updated_fields.append("到期日")
+    if data.note is not None:
+        investment.note = data.note
+        updated_fields.append("备注")
+    
+    if not updated_fields:
+        raise HTTPException(status_code=400, detail="没有需要更新的字段")
+    
+    await db.commit()
+    return {"message": f"已更新：{', '.join(updated_fields)}", "id": investment_id}
 
 
 @router.post("/{investment_id}/income")

@@ -327,6 +327,7 @@
             <div class="diff-label">{{ diff.label }}</div>
             <div class="diff-desc">{{ diff.desc }}</div>
             <div class="diff-exp">奖励: {{ diff.exp }}</div>
+            <div v-if="diff.rules" class="diff-rules">{{ diff.rules }}</div>
           </div>
         </div>
         <div class="modal-actions">
@@ -467,10 +468,10 @@ const GAME_DIFFICULTIES = {
   memory: {
     name: '记忆翻牌',
     difficulties: [
-      { key: 'easy', label: '入门', desc: '3×4 (6对)', exp: '15~30 EXP' },
-      { key: 'medium', label: '普通', desc: '4×4 (8对)', exp: '30~60 EXP' },
-      { key: 'hard', label: '困难', desc: '4×5 (10对)', exp: '60~120 EXP' },
-      { key: 'expert', label: '地狱', desc: '6×6 (18对)', exp: '300~1000 EXP' },
+      { key: 'easy', label: '入门', desc: '3×4 (6对) | 初始20秒', exp: '15~30 EXP' },
+      { key: 'medium', label: '普通', desc: '4×4 (8对) | 初始15秒', exp: '30~60 EXP' },
+      { key: 'hard', label: '困难', desc: '4×5 (10对) | 初始10秒', exp: '60~120 EXP' },
+      { key: 'expert', label: '地狱', desc: '6×6 (18对) | 初始10秒 | 连续失败扣时', exp: '300~1000 EXP' },
     ]
   },
   stock: {
@@ -478,8 +479,8 @@ const GAME_DIFFICULTIES = {
     difficulties: [
       { key: 'easy', label: '入门', desc: '5回合 低波动', exp: '10~50 EXP' },
       { key: 'medium', label: '普通', desc: '10回合 中波动', exp: '20~100 EXP' },
-      { key: 'hard', label: '困难', desc: '15回合 高波动', exp: '50~200 EXP' },
-      { key: 'expert', label: '地狱', desc: '25回合 极端波动', exp: '200~1000 EXP' },
+      { key: 'hard', label: '困难', desc: '15回合 高波动 | 支持做空', exp: '50~200 EXP', rules: '可卖空股票获利于下跌行情，做空保证金基于现金' },
+      { key: 'expert', label: '地狱', desc: '25回合 极端波动 | 支持做空', exp: '200~1000 EXP', rules: '可卖空股票获利于下跌行情，做空保证金基于现金' },
     ]
   },
   adventure: {
@@ -489,6 +490,7 @@ const GAME_DIFFICULTIES = {
       { key: 'medium', label: '普通', desc: '8层 中难度', exp: '50~100 EXP' },
       { key: 'hard', label: '困难', desc: '12层 高难度', exp: '115~250 EXP' },
       { key: 'expert', label: '地狱', desc: '18层 极高难度', exp: '500~1000 EXP' },
+      { key: 'endless', label: '无尽', desc: '无限层 难度递增', exp: '无上限', rules: '层数越高怪物越强，偶有难度波动。可随时撤退保留经验，死亡也保留经验。每10层有Boss' },
     ]
   },
   minesweeper: {
@@ -771,16 +773,13 @@ const doAbandonGame = async () => {
 // 关闭游戏
 const closeGame = () => {
   gameFullscreen.value = false
+  activeGame.value = null
+  activeGameState.value = {}
   if (gameCompleted.value) {
-    activeGame.value = null
-    activeGameState.value = {}
     gameCompleted.value = false
-    loadPet()
-  } else {
-    // 游戏未完成，确认是否退出
-    activeGame.value = null
-    activeGameState.value = {}
   }
+  // 刷新宠物数据，更新 game_status 中的 has_active_session 状态
+  loadPet()
 }
 
 // 领取里程碑
@@ -2195,6 +2194,7 @@ onMounted(() => {
   padding: 12px;
   border: 1px solid var(--theme-border);
   background: var(--theme-bg-secondary);
+  color: var(--theme-text-primary);
   border-radius: 8px;
   cursor: pointer;
 }
@@ -2615,6 +2615,32 @@ onMounted(() => {
 .difficulty-card.expert .diff-exp {
   color: var(--theme-primary);
   font-weight: 600;
+}
+
+.diff-rules {
+  font-size: 11px;
+  color: var(--theme-text-tertiary, #999);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.difficulty-card.endless {
+  border-color: #9c7cf4;
+  background: linear-gradient(135deg, rgba(156, 124, 244, 0.15), rgba(124, 77, 255, 0.10));
+}
+
+.difficulty-card.endless .diff-label {
+  color: #c4a8ff;
+}
+
+.difficulty-card.endless .diff-exp {
+  color: #c4a8ff;
+  font-weight: 600;
+}
+
+.difficulty-card.endless .diff-desc,
+.difficulty-card.endless .diff-rules {
+  color: var(--theme-text-secondary);
 }
 
 @media (max-width: 480px) {

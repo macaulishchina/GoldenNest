@@ -6,14 +6,16 @@
       💡 <strong>提示：</strong>家庭自由资金通过「资金注入」页面增加，此处仅登记定期、基金、股票等投资型资产。
     </n-alert>
     
-    <!-- 资产登记表单 -->
-    <n-card class="card-hover" style="margin-bottom: 24px">
-      <template #header>
-        <n-space align="center">
-          <span>发起资产登记申请</span>
-          <n-tag type="info" size="small">需全员通过</n-tag>
-        </n-space>
-      </template>
+    <!-- 发起资产登记按钮 -->
+    <div style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center;">
+      <n-button type="primary" @click="showCreateModal = true">
+        <template #icon><n-icon><SendOutline /></n-icon></template>
+        发起资产登记
+      </n-button>
+      <n-tag type="info" size="small">需全员通过</n-tag>
+    </div>
+    <!-- 资产登记弹窗 -->
+    <n-modal v-model:show="showCreateModal" preset="card" title="发起资产登记申请" style="max-width: 650px; max-height: 90vh; overflow-y: auto">
       <template #header-extra>
         <n-button 
           size="small" 
@@ -21,7 +23,7 @@
           @click="triggerImageUpload"
           :disabled="imageParsing"
         >
-          📷 导入图片识别
+          📷 图片识别
         </n-button>
         <input 
           ref="imageInputRef" 
@@ -203,7 +205,29 @@
           </n-space>
         </n-form-item>
       </n-form>
-    </n-card>
+    </n-modal>
+
+    <!-- 资产编辑弹窗 -->
+    <n-modal v-model:show="showEditModal" preset="card" title="编辑资产信息" style="max-width: 500px">
+      <n-form v-if="editForm" label-placement="left" label-width="90px">
+        <n-form-item label="产品名称">
+          <n-input v-model:value="editForm.name" placeholder="产品名称" />
+        </n-form-item>
+        <n-form-item label="到期日期">
+          <n-date-picker v-model:value="editForm.end_date" type="date" style="width: 100%" clearable placeholder="可选" />
+        </n-form-item>
+        <n-form-item label="银行/机构">
+          <n-input v-model:value="editForm.bank_name" placeholder="可选" />
+        </n-form-item>
+        <n-form-item label="备注">
+          <n-input v-model:value="editForm.note" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="可选" />
+        </n-form-item>
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <n-button @click="showEditModal = false">取消</n-button>
+          <n-button type="primary" :loading="editSaving" @click="saveAssetEdit">保存</n-button>
+        </div>
+      </n-form>
+    </n-modal>
     
     <!-- 待审批的资产申请 -->
     <n-card 
@@ -225,7 +249,7 @@
           </div>
           <div class="approval-card-footer">
             <span class="approval-progress">
-              {{ item.approved_count || 0 }}/{{ item.total_members || 0 }} 已审批
+              {{ item.approved_count || 0 }}/{{ item.total_members <= 1 ? 1 : (item.total_members - 1) }} 已审批
             </span>
             <div class="approval-actions" v-if="item.requester_id !== userStore.user?.id && !item.has_voted">
               <n-button size="small" type="success" @click="handleApprove(item.id, true)">同意</n-button>
@@ -272,7 +296,7 @@
       
       <n-spin :show="assetsLoading">
         <div v-if="assets.length > 0" class="asset-cards">
-          <div v-for="asset in assets" :key="asset.id" class="asset-card">
+          <div v-for="asset in assets" :key="asset.id" class="asset-card" style="cursor: pointer" @click="openEditModal(asset)">
             <div class="asset-card-header">
               <n-space align="center">
                 <span class="asset-name">{{ asset.name }}</span>
@@ -338,6 +362,55 @@ import { useApprovalStore } from '@/stores/approval'
 const message = useMessage()
 const userStore = useUserStore()
 const approvalStore = useApprovalStore()
+
+// 弹窗控制
+const showCreateModal = ref(false)
+
+// 资产编辑弹窗
+const showEditModal = ref(false)
+const editSaving = ref(false)
+const selectedEditAsset = ref<any>(null)
+const editForm = ref({
+  name: '',
+  end_date: null as number | null,
+  bank_name: '',
+  note: ''
+})
+
+const openEditModal = (asset: any) => {
+  selectedEditAsset.value = asset
+  editForm.value = {
+    name: asset.name || '',
+    end_date: asset.end_date ? new Date(asset.end_date).getTime() : null,
+    bank_name: asset.bank_name || '',
+    note: asset.note || ''
+  }
+  showEditModal.value = true
+}
+
+const saveAssetEdit = async () => {
+  if (!selectedEditAsset.value) return
+  if (!editForm.value.name?.trim()) {
+    message.warning('产品名称不能为空')
+    return
+  }
+  editSaving.value = true
+  try {
+    await assetApi.updateInfo(selectedEditAsset.value.id, {
+      name: editForm.value.name.trim(),
+      end_date: editForm.value.end_date ? new Date(editForm.value.end_date).toISOString() : '',
+      bank_name: editForm.value.bank_name || '',
+      note: editForm.value.note || '',
+    })
+    message.success('资产信息已更新')
+    showEditModal.value = false
+    await loadAssets()
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    editSaving.value = false
+  }
+}
 
 // 表单数据
 const formData = ref({
@@ -739,6 +812,7 @@ const handleSubmit = async () => {
     
     await approvalApi.createAsset(submitData)
     message.success('资产登记申请已提交')
+    showCreateModal.value = false
     resetForm()
     loadPendingApprovals()
     loadCashBalance()

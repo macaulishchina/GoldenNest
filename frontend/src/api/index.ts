@@ -101,6 +101,11 @@ export const investmentApi = {
     is_active?: boolean
     note?: string
   }) => api.put(`/investment/${id}`, data),
+  updateInfo: (id: number, data: {
+    name?: string
+    end_date?: string
+    note?: string
+  }) => api.patch(`/investment/${id}/info`, data),
   addIncome: (id: number, data: { amount: number; income_date: string; note?: string }) => 
     api.post(`/investment/${id}/income`, data),
   getSummary: () => api.get('/investment/summary'),
@@ -134,7 +139,7 @@ export const achievementApi = {
 // 股权赠与 API
 export const giftApi = {
   // 发送股权赠与
-  send: (data: { to_user_id: number; amount: number; message?: string }) =>
+  send: (data: { to_user_id: number; amount: number; gift_money?: number; message?: string }) =>
     api.post('/gift/send', data),
   // 获取赠与列表
   list: (params?: { time_range?: string }) => api.get('/gift/list', { params }),
@@ -294,7 +299,15 @@ export const assetApi = {
   getExchangeRate: (currency: string) => api.get(`/asset/exchange-rate/${currency}`),
   
   // 解析资产凭证图片
-  parseImage: (image: string) => api.post('/asset/parse-image', { image }, { timeout: 60000 })
+  parseImage: (image: string) => api.post('/asset/parse-image', { image }, { timeout: 60000 }),
+  
+  // 更新资产非金额信息（直接生效，不需审批）
+  updateInfo: (id: number, data: {
+    name?: string
+    end_date?: string
+    bank_name?: string
+    note?: string
+  }) => api.patch(`/asset/${id}/info`, data)
 }
 
 // 投票 API

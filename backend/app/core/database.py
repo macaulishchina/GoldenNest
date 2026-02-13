@@ -3,6 +3,7 @@
 """
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import event
 from app.core.config import settings
 
 
@@ -10,8 +11,22 @@ from app.core.config import settings
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=True,  # 开发模式下打印SQL
-    future=True
+    future=True,
+    pool_size=5,
+    max_overflow=0,
+    pool_timeout=30,
+    connect_args={"timeout": 30},  # aiosqlite busy_timeout (秒)
 )
+
+
+# SQLite WAL 模式 + busy_timeout，大幅减少 "database is locked"
+@event.listens_for(engine.sync_engine, "connect")
+def _set_sqlite_pragma(dbapi_conn, connection_record):
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=30000")   # 30秒等待锁
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
 
 # 创建异步会话工厂
 async_session_maker = async_sessionmaker(

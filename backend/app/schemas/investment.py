@@ -26,6 +26,13 @@ class InvestmentUpdate(BaseModel):
     note: Optional[str] = Field(None, max_length=500)
 
 
+class InvestmentInfoUpdate(BaseModel):
+    """更新理财非金额信息（不需要审批）"""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    end_date: Optional[datetime] = None
+    note: Optional[str] = Field(None, max_length=500)
+
+
 class InvestmentIncomeCreate(BaseModel):
     """创建理财收益请求"""
     amount: float = Field(..., description="收益金额")

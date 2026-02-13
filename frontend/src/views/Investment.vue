@@ -169,15 +169,12 @@
       <div class="mobile-only">
         <n-spin :show="loading">
           <div class="investment-cards" v-if="investments.length > 0">
-            <div v-for="item in investments" :key="item.id" class="investment-card" :class="{ 'deleted': item.is_deleted }">
+            <div v-for="item in investments" :key="item.id" class="investment-card" :class="{ 'deleted': item.is_deleted }" @click="!item.is_deleted && openDetailModal(item)">
               <div class="card-header">
                 <span class="product-name">{{ item.name }}</span>
                 <n-tag :type="item.is_deleted ? 'error' : (item.is_active ? 'success' : 'default')" size="small">
                   {{ item.is_deleted ? '已删除' : (item.is_active ? '持有中' : '已结束') }}
                 </n-tag>
-                <n-button v-if="!item.is_deleted" class="detail-btn" size="small" type="primary" secondary round @click="openHistoryModal(item)">详细</n-button>
-              </div>
-              <div class="card-type">
                 <n-tag size="small" :bordered="false">{{ typeLabels[item.investment_type] || item.investment_type }}</n-tag>
                 <n-tag v-if="item.currency && item.currency !== 'CNY'" size="small" :bordered="false" type="warning">{{ item.currency }}</n-tag>
               </div>
@@ -387,6 +384,44 @@
         </div>
         <n-empty v-else description="暂无操作记录" />
       </n-spin>
+    </n-modal>
+
+    <!-- 详情编辑弹窗（非金额字段可直接修改） -->
+    <n-modal v-model:show="showDetailModal" preset="card" title="理财产品详情" style="max-width: 500px">
+      <n-form v-if="detailForm" :model="detailForm" label-placement="left" label-width="90px">
+        <n-form-item label="产品名称">
+          <n-input v-model:value="detailForm.name" placeholder="输入产品名称" />
+        </n-form-item>
+        <n-form-item label="理财类型">
+          <n-select v-model:value="detailForm.investment_type" :options="typeOptions" />
+        </n-form-item>
+        <n-form-item label="币种">
+          <n-text>{{ detailForm.currency || 'CNY' }}</n-text>
+          <n-text depth="3" style="font-size: 12px; margin-left: 8px">（币种不可修改）</n-text>
+        </n-form-item>
+        <n-form-item label="初始本金">
+          <n-text type="info">{{ formatInvAmountWithCNY(selectedDetailInvestment || {}, 'principal') }}</n-text>
+          <n-text depth="3" style="font-size: 12px; margin-left: 8px">（金额修改需走审批）</n-text>
+        </n-form-item>
+        <n-form-item label="当前持仓">
+          <n-text type="info">{{ formatInvAmountWithCNY(selectedDetailInvestment || {}, 'current_principal') }}</n-text>
+        </n-form-item>
+        <n-form-item label="开始日期">
+          <n-date-picker v-model:value="detailForm.start_date" type="date" style="width: 100%" />
+        </n-form-item>
+        <n-form-item label="到期日期">
+          <n-date-picker v-model:value="detailForm.end_date" type="date" style="width: 100%" clearable />
+        </n-form-item>
+        <n-form-item label="备注">
+          <n-input v-model:value="detailForm.note" type="textarea" placeholder="备注（可选）" :rows="2" />
+        </n-form-item>
+        <n-form-item>
+          <n-space>
+            <n-button type="primary" :loading="detailSaving" @click="saveDetail">保存修改</n-button>
+            <n-button @click="showDetailModal = false">取消</n-button>
+          </n-space>
+        </n-form-item>
+      </n-form>
     </n-modal>
 
     <!-- AI 投资分析模态框 -->
@@ -600,6 +635,26 @@ const formatInvAmountWithCNY = (item: any, amountField: string = 'principal') =>
 // 收益登记相关
 const showIncomeModal = ref(false)
 const selectedInvestment = ref<any>(null)
+
+// 详情编辑相关
+const showDetailModal = ref(false)
+const selectedDetailInvestment = ref<any>(null)
+const detailSaving = ref(false)
+const detailForm = ref<{
+  name: string
+  investment_type: string
+  currency: string
+  start_date: number | null
+  end_date: number | null
+  note: string
+}>({
+  name: '',
+  investment_type: 'fund',
+  currency: 'CNY',
+  start_date: null,
+  end_date: null,
+  note: ''
+})
 const incomeForm = ref({
   current_value: null as number | null,
   income_date: Date.now(),
@@ -973,6 +1028,42 @@ async function openHistoryModal(investment: any) {
   }
 }
 
+function openDetailModal(investment: any) {
+  selectedDetailInvestment.value = investment
+  detailForm.value = {
+    name: investment.name || '',
+    investment_type: investment.investment_type || 'fund',
+    currency: investment.currency || 'CNY',
+    start_date: investment.start_date ? new Date(investment.start_date).getTime() : null,
+    end_date: investment.end_date ? new Date(investment.end_date).getTime() : null,
+    note: investment.note || ''
+  }
+  showDetailModal.value = true
+}
+
+async function saveDetail() {
+  if (!selectedDetailInvestment.value) return
+  if (!detailForm.value.name?.trim()) {
+    message.warning('产品名称不能为空')
+    return
+  }
+  detailSaving.value = true
+  try {
+    await investmentApi.updateInfo(selectedDetailInvestment.value.id, {
+      name: detailForm.value.name.trim(),
+      end_date: detailForm.value.end_date ? new Date(detailForm.value.end_date).toISOString() : undefined,
+      note: detailForm.value.note || undefined,
+    })
+    message.success('产品信息已更新')
+    showDetailModal.value = false
+    await loadData()
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    detailSaving.value = false
+  }
+}
+
 async function submitDecrease() {
   if (decreaseForm.value.amount === null) { 
     message.warning('请输入减持金额')
@@ -1144,12 +1235,24 @@ onMounted(loadData)
 
   /* 页面头部移动端适配 */
   .page-header-row {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .page-header-row .page-title {
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .page-header-row .n-button {
-    width: 100%;
+    width: auto;
+    flex-shrink: 0;
+    font-size: 13px;
+    padding: 0 10px;
   }
 
   /* 表单垂直布局 */
@@ -1319,28 +1422,14 @@ onMounted(loadData)
     margin-bottom: 10px;
     gap: 8px;
     min-height: 24px;
-  }
-  
-  .investment-card .detail-btn {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    opacity: 0.8;
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 8px rgba(50, 151, 211, 0.15);
-  }
-  
-  .investment-card:hover .detail-btn {
-    opacity: 1;
-    box-shadow: 0 4px 12px rgba(50, 151, 211, 0.25);
-    transform: translateY(-1px);
+    flex-wrap: wrap;
   }
 
   .investment-card .product-name {
     font-size: 16px;
     font-weight: 700;
     color: var(--theme-text-primary);
-    flex-shrink: 0;
+    word-break: break-all;
   }
 
   .investment-card .card-type {
