@@ -353,7 +353,7 @@
               :title="gameMuted ? '开启音效' : '关闭音效'"
             >{{ gameMuted ? '🔇' : '🔊' }}</button>
             <button
-              v-if="activeGame === 'minesweeper' && activeGameState"
+              v-if="(activeGame === 'minesweeper' || activeGame === 'adventure') && activeGameState"
               class="game-fullscreen-btn"
               @click="gameFullscreen = !gameFullscreen"
               :title="gameFullscreen ? '退出全屏' : '全屏模式'"
@@ -416,7 +416,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import { api, petAiApi } from '@/api'
 import { useUserStore } from '@/stores/user'
@@ -425,7 +425,7 @@ import MemoryGame from '@/components/games/MemoryGame.vue'
 import StockGame from '@/components/games/StockGame.vue'
 import AdventureGame from '@/components/games/AdventureGame.vue'
 import MinesweeperGame from '@/components/games/MinesweeperGame.vue'
-import { toggleMute, isMuted, warmUp } from '@/utils/gameSound'
+import { toggleMute, isMuted, warmUp, adventureBGM } from '@/utils/gameSound'
 
 const userStore = useUserStore()
 const message = useMessage()
@@ -454,6 +454,11 @@ const gameCompleted = ref(false)
 const showAbandonConfirm = ref(false)
 
 const gameFullscreen = ref(false)
+
+// 全屏时隐藏导航栏
+watch(gameFullscreen, (fs) => {
+  document.body.classList.toggle('game-fullscreen', fs)
+}, { immediate: false })
 const gameMuted = ref(false)
 
 // 移动端检测 - 用于扫雷自动全屏
@@ -772,6 +777,7 @@ const doAbandonGame = async () => {
 
 // 关闭游戏
 const closeGame = () => {
+  adventureBGM.stop()
   gameFullscreen.value = false
   activeGame.value = null
   activeGameState.value = {}
@@ -1585,7 +1591,7 @@ onMounted(() => {
   border-radius: 0;
   margin: 0;
   padding: 12px;
-  padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 8px);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -2197,6 +2203,12 @@ onMounted(() => {
   color: var(--theme-text-primary);
   border-radius: 8px;
   cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+.btn-cancel:hover {
+  background: var(--theme-bg-elevated, var(--theme-bg-secondary));
+  border-color: var(--theme-text-tertiary);
 }
 
 .btn-submit {
@@ -2625,22 +2637,25 @@ onMounted(() => {
 }
 
 .difficulty-card.endless {
-  border-color: #9c7cf4;
-  background: linear-gradient(135deg, rgba(156, 124, 244, 0.15), rgba(124, 77, 255, 0.10));
+  border-color: var(--theme-purple, #9c7cf4);
+  background: var(--theme-purple-bg, linear-gradient(135deg, #f3edff, #f5f0ff));
 }
 
 .difficulty-card.endless .diff-label {
-  color: #c4a8ff;
+  color: var(--theme-purple, #7c4dff);
+}
+
+.difficulty-card.endless .diff-desc {
+  color: var(--theme-text-secondary);
 }
 
 .difficulty-card.endless .diff-exp {
-  color: #c4a8ff;
+  color: var(--theme-purple, #7c4dff);
   font-weight: 600;
 }
 
-.difficulty-card.endless .diff-desc,
 .difficulty-card.endless .diff-rules {
-  color: var(--theme-text-secondary);
+  color: var(--theme-text-tertiary, #999);
 }
 
 @media (max-width: 480px) {

@@ -23,7 +23,7 @@
           <div
             class="board"
             :style="{
-              gridTemplateColumns: `repeat(${state.cols}, 36px)`,
+              gridTemplateColumns: `repeat(${state.cols}, 50px)`,
             }"
           >
             <div
@@ -600,13 +600,13 @@ function doAbandon() {
   width: max-content;
 }
 .cell {
-  width: 36px;
-  height: 36px;
+  width: 50px;
+  height: 50px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 3px;
-  font-size: clamp(10px, 2.5vw, 16px);
+  font-size: clamp(12px, 3vw, 20px);
   font-weight: bold;
   cursor: pointer;
   user-select: none;

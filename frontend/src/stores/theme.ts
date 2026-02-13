@@ -166,7 +166,7 @@ export const useThemeStore = defineStore('theme', () => {
       '--theme-error', '--theme-error-light', '--theme-error-bg',
       '--theme-warning', '--theme-warning-light', '--theme-warning-bg',
       '--theme-info', '--theme-info-light', '--theme-info-bg',
-      '--theme-purple', '--theme-purple-light',
+      '--theme-purple', '--theme-purple-light', '--theme-purple-bg',
       '--theme-shadow', '--theme-shadow-sm', '--theme-card-hover',
       '--theme-gradient-primary', '--theme-gradient-text'
     ]
@@ -199,6 +199,7 @@ export const useThemeStore = defineStore('theme', () => {
         root.style.setProperty('--theme-info-bg', 'rgba(239, 246, 255, 0.95)')
         root.style.setProperty('--theme-purple', '#8b5cf6')
         root.style.setProperty('--theme-purple-light', '#c4b5fd')
+        root.style.setProperty('--theme-purple-bg', 'rgba(243, 237, 255, 0.95)')
         root.style.setProperty('--theme-shadow', 'rgba(0, 0, 0, 0.1)')
         root.style.setProperty('--theme-shadow-sm', 'rgba(0, 0, 0, 0.05)')
         root.style.setProperty('--theme-card-hover', 'rgba(0, 0, 0, 0.02)')
@@ -266,6 +267,7 @@ export const useThemeStore = defineStore('theme', () => {
         root.style.setProperty('--theme-info-bg', 'rgba(219, 234, 254, 0.95)')
         root.style.setProperty('--theme-purple', '#8b5cf6')
         root.style.setProperty('--theme-purple-light', '#c4b5fd')
+        root.style.setProperty('--theme-purple-bg', 'rgba(243, 237, 255, 0.95)')
         root.style.setProperty('--theme-shadow', 'rgba(37, 99, 235, 0.1)')
         root.style.setProperty('--theme-shadow-sm', 'rgba(37, 99, 235, 0.05)')
         root.style.setProperty('--theme-card-hover', 'rgba(37, 99, 235, 0.02)')
@@ -299,6 +301,7 @@ export const useThemeStore = defineStore('theme', () => {
         root.style.setProperty('--theme-info-bg', 'rgba(239, 246, 255, 0.95)')
         root.style.setProperty('--theme-purple', '#8b5cf6')
         root.style.setProperty('--theme-purple-light', '#c4b5fd')
+        root.style.setProperty('--theme-purple-bg', 'rgba(243, 237, 255, 0.95)')
         root.style.setProperty('--theme-shadow', 'rgba(22, 163, 74, 0.1)')
         root.style.setProperty('--theme-shadow-sm', 'rgba(22, 163, 74, 0.05)')
         root.style.setProperty('--theme-card-hover', 'rgba(22, 163, 74, 0.02)')
@@ -332,6 +335,7 @@ export const useThemeStore = defineStore('theme', () => {
         root.style.setProperty('--theme-info-bg', 'rgba(239, 246, 255, 0.95)')
         root.style.setProperty('--theme-purple', '#8b5cf6')
         root.style.setProperty('--theme-purple-light', '#c4b5fd')
+        root.style.setProperty('--theme-purple-bg', 'rgba(243, 237, 255, 0.95)')
         root.style.setProperty('--theme-shadow', 'rgba(139, 92, 246, 0.1)')
         root.style.setProperty('--theme-shadow-sm', 'rgba(139, 92, 246, 0.05)')
         root.style.setProperty('--theme-card-hover', 'rgba(139, 92, 246, 0.02)')

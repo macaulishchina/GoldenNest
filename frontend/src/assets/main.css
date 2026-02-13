@@ -212,3 +212,8 @@ body.theme-purple {
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* 游戏全屏时隐藏底部导航栏 */
+body.game-fullscreen .mobile-tabbar {
+  display: none !important;
+}

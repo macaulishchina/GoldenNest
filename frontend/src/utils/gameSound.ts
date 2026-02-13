@@ -4,7 +4,6 @@
  */
 
 let audioCtx: AudioContext | null = null
-let ctxReady = false
 
 function getCtx(): AudioContext | null {
   if (!audioCtx) {
@@ -14,20 +13,17 @@ function getCtx(): AudioContext | null {
       return null
     }
   }
-  // resume if suspended (autoplay policy)
+  // 每次调用都尝试 resume —— 在用户手势内调用时浏览器会立即恢复
   if (audioCtx.state === 'suspended') {
-    audioCtx.resume().then(() => { ctxReady = true })
-    // 首次 resume 尚未完成时返回 null，跳过本次播放
-    if (!ctxReady) return null
-  } else {
-    ctxReady = true
+    audioCtx.resume()
   }
+  // 不再跳过播放：即使 resume 尚在进行中，oscillator 也会排队等待恢复后播放
   return audioCtx
 }
 
 /**
- * 预热 AudioContext —— 在任意用户交互时调用一次
- * 确保后续播放不会因为 resume 延迟而被截断
+ * 预热 AudioContext —— 在任意用户交互(click/touchend)时调用
+ * 播放一个静音缓冲区来解锁 iOS Safari 的音频策略
  */
 export function warmUp() {
   if (!audioCtx) {
@@ -36,10 +32,16 @@ export function warmUp() {
     } catch { return }
   }
   if (audioCtx.state === 'suspended') {
-    audioCtx.resume().then(() => { ctxReady = true })
-  } else {
-    ctxReady = true
+    audioCtx.resume()
   }
+  // iOS Safari 需要在用户手势中实际播放一个音频缓冲区来完全解锁
+  try {
+    const buf = audioCtx.createBuffer(1, 1, 22050)
+    const src = audioCtx.createBufferSource()
+    src.buffer = buf
+    src.connect(audioCtx.destination)
+    src.start(0)
+  } catch { /* ignore */ }
 }
 
 /** 是否静音 */
@@ -201,6 +203,215 @@ export const adventureSound = {
     setTimeout(() => playTone(784, 0.2, 'sine', 0.2), 240)
   },
 }
+
+// ============ 探险背景音乐 (程序生成) ============
+
+/**
+ * 用 Web Audio API 生成循环的地牢氛围背景音乐
+ * - 柔和和弦 pad（Am → F → C → G 循环）
+ * - 轻柔的琶音点缀
+ * - 低沉的低音线
+ * - 自动循环，调用 stop() 淡出停止
+ */
+class AdventureBGM {
+  private running = false
+  private masterGain: GainNode | null = null
+  private timers: ReturnType<typeof setTimeout>[] = []
+  private sources: (OscillatorNode | AudioBufferSourceNode)[] = []
+  private loopTimer: ReturnType<typeof setTimeout> | null = null
+  private _volume = 0.25
+
+  /** 和弦进行：Am → F → C → G，每个和弦的根音 + 三度 + 五度 */
+  private chords = [
+    [220, 261.63, 329.63],   // Am: A3 C4 E4
+    [174.61, 220, 261.63],   // F:  F3 A3 C4
+    [261.63, 329.63, 392],   // C:  C4 E4 G4
+    [196, 246.94, 293.66],   // G:  G3 B3 D4
+  ]
+
+  /** 琶音音符池（五声音阶风格）*/
+  private arpNotes = [329.63, 392, 440, 523.25, 587.33, 659.25, 783.99]
+
+  get volume() { return this._volume }
+  set volume(v: number) {
+    this._volume = Math.max(0, Math.min(1, v))
+    if (this.masterGain && this.running) {
+      const ctx = getCtx()
+      if (ctx) this.masterGain.gain.setTargetAtTime(this._volume, ctx.currentTime, 0.1)
+    }
+  }
+
+  start() {
+    if (this.running) return
+    if (muted) return
+    const ctx = getCtx()
+    if (!ctx) return
+
+    this.running = true
+    this.masterGain = ctx.createGain()
+    // 淡入
+    this.masterGain.gain.setValueAtTime(0, ctx.currentTime)
+    this.masterGain.gain.linearRampToValueAtTime(this._volume, ctx.currentTime + 1.5)
+    this.masterGain.connect(ctx.destination)
+
+    this.scheduleLoop(ctx)
+  }
+
+  stop() {
+    if (!this.running) return
+    this.running = false
+    // 清除未来的定时器
+    this.timers.forEach(t => clearTimeout(t))
+    this.timers = []
+    if (this.loopTimer) { clearTimeout(this.loopTimer); this.loopTimer = null }
+
+    // 淡出
+    const ctx = getCtx()
+    if (ctx && this.masterGain) {
+      const now = ctx.currentTime
+      this.masterGain.gain.cancelScheduledValues(now)
+      this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now)
+      this.masterGain.gain.linearRampToValueAtTime(0, now + 0.8)
+      // 延迟后断开并清理
+      setTimeout(() => {
+        this.sources.forEach(s => { try { s.stop() } catch { /* ok */ } })
+        this.sources = []
+        try { this.masterGain?.disconnect() } catch { /* ok */ }
+        this.masterGain = null
+      }, 1000)
+    } else {
+      this.sources.forEach(s => { try { s.stop() } catch { /* ok */ } })
+      this.sources = []
+      this.masterGain = null
+    }
+  }
+
+  /** 是否正在播放 */
+  get isPlaying() { return this.running }
+
+  private scheduleLoop(ctx: AudioContext) {
+    if (!this.running) return
+
+    const chordDur = 2.4    // 每个和弦持续秒数
+    const loopDur = chordDur * this.chords.length // 整个循环 ~9.6s
+
+    // ---- 和弦 Pad ----
+    this.chords.forEach((chord, ci) => {
+      const startDelay = ci * chordDur * 1000
+      const t = this.delay(() => {
+        if (!this.running || !this.masterGain) return
+        chord.forEach(freq => {
+          this.playPad(ctx, freq, chordDur, 0.06)
+        })
+      }, startDelay)
+      this.timers.push(t)
+    })
+
+    // ---- 低音线 ----
+    const bassNotes = [110, 87.31, 130.81, 98]  // Am bass, F bass, C bass, G bass
+    bassNotes.forEach((freq, i) => {
+      const t = this.delay(() => {
+        if (!this.running || !this.masterGain) return
+        this.playBass(ctx, freq, chordDur * 0.9, 0.07)
+      }, i * chordDur * 1000)
+      this.timers.push(t)
+    })
+
+    // ---- 琶音点缀 ----
+    const arpCount = 6 + Math.floor(Math.random() * 4)
+    for (let i = 0; i < arpCount; i++) {
+      const time = Math.random() * loopDur * 1000
+      const note = this.arpNotes[Math.floor(Math.random() * this.arpNotes.length)]
+      const t = this.delay(() => {
+        if (!this.running || !this.masterGain) return
+        this.playArp(ctx, note, 0.3 + Math.random() * 0.4, 0.02 + Math.random() * 0.02)
+      }, time)
+      this.timers.push(t)
+    }
+
+    // ---- 下一个循环 ----
+    this.loopTimer = this.delay(() => {
+      this.timers = []
+      this.scheduleLoop(ctx)
+    }, loopDur * 1000)
+  }
+
+  private playPad(ctx: AudioContext, freq: number, dur: number, vol: number) {
+    try {
+      if (!this.masterGain) return
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(freq, ctx.currentTime)
+      // 柔和包络
+      gain.gain.setValueAtTime(0, ctx.currentTime)
+      gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + 0.4)
+      gain.gain.setValueAtTime(vol, ctx.currentTime + dur - 0.5)
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + dur)
+      osc.connect(gain)
+      gain.connect(this.masterGain)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + dur)
+      this.sources.push(osc)
+      // 自动清理引用
+      osc.onended = () => {
+        const idx = this.sources.indexOf(osc)
+        if (idx >= 0) this.sources.splice(idx, 1)
+      }
+    } catch { /* ok */ }
+  }
+
+  private playBass(ctx: AudioContext, freq: number, dur: number, vol: number) {
+    try {
+      if (!this.masterGain) return
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'triangle'
+      osc.frequency.setValueAtTime(freq, ctx.currentTime)
+      gain.gain.setValueAtTime(0, ctx.currentTime)
+      gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + 0.2)
+      gain.gain.setValueAtTime(vol, ctx.currentTime + dur - 0.3)
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + dur)
+      osc.connect(gain)
+      gain.connect(this.masterGain)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + dur)
+      this.sources.push(osc)
+      osc.onended = () => {
+        const idx = this.sources.indexOf(osc)
+        if (idx >= 0) this.sources.splice(idx, 1)
+      }
+    } catch { /* ok */ }
+  }
+
+  private playArp(ctx: AudioContext, freq: number, dur: number, vol: number) {
+    try {
+      if (!this.masterGain) return
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(freq, ctx.currentTime)
+      // 短促明亮音
+      gain.gain.setValueAtTime(vol, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur)
+      osc.connect(gain)
+      gain.connect(this.masterGain)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + dur)
+      this.sources.push(osc)
+      osc.onended = () => {
+        const idx = this.sources.indexOf(osc)
+        if (idx >= 0) this.sources.splice(idx, 1)
+      }
+    } catch { /* ok */ }
+  }
+
+  private delay(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
+    return setTimeout(fn, ms)
+  }
+}
+
+export const adventureBGM = new AdventureBGM()
 
 // ============ 炒股音效 ============
 export const stockSound = {

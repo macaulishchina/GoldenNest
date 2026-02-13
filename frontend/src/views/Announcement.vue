@@ -23,11 +23,11 @@
             <button class="ai-btn" @click="showDraft" :disabled="aiDrafting">
               🤖 AI 草稿
             </button>
-            <button class="ai-btn" @click="improveContent" :disabled="aiImproving || !newContent?.trim()">
+            <button class="ai-btn" @click="improveContent" :disabled="aiImproving || !newContent.trim()">
               ✨ {{ aiImproving ? '优化中...' : 'AI 优化' }}
             </button>
           </div>
-          <button class="btn-publish" @click="publish" :disabled="publishing || !newContent?.trim()">
+          <button class="btn-publish" @click="publish" :disabled="publishing || !newContent.trim()">
             {{ publishing ? '发布中...' : '发布公告' }}
           </button>
         </div>
@@ -183,7 +183,7 @@
           <button
             class="btn-generate"
             @click="generateDraft"
-            :disabled="aiDrafting || !draftTopic?.trim()"
+            :disabled="aiDrafting || !draftTopic.trim()"
           >
             {{ aiDrafting ? '生成中...' : '生成草稿' }}
           </button>
@@ -436,7 +436,7 @@ async function generateDraft() {
       topic: draftTopic.value,
       style: draftStyle.value
     })
-    newContent.value = data.draft
+    newContent.value = data.content
     showAIDraftDialog.value = false
     message.success('AI 草稿已生成！')
   } catch (error) {
@@ -459,7 +459,7 @@ async function improveContent() {
       content: newContent.value,
       improve_type: 'general'
     })
-    newContent.value = data.improved
+    newContent.value = data.improved_content
     message.success('内容已优化！')
   } catch (error) {
     message.error(error.response?.data?.detail || '优化失败')
