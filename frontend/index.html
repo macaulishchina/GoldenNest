@@ -8,8 +8,9 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <link rel="apple-touch-icon" href="/api/site-config/icon/192" />
-    <link rel="manifest" href="/api/site-config/manifest.json" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/pwa-icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/pwa-icons/icon-512.png" />
+    <link rel="manifest" href="/api/site-config/manifest.json" crossorigin="use-credentials" />
     <meta name="theme-color" content="#f0c040" />
     <title>小金库 Golden Nest</title>
     <style>
@@ -33,6 +34,14 @@
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
     <script>
+      // 注册 Service Worker（PWA 安装必需）
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .then(function(reg) { console.log('SW registered:', reg.scope) })
+            .catch(function(err) { console.log('SW registration failed:', err) })
+        })
+      }
       // 动态计算真实视口高度，解决 iOS Safari 工具栏问题
       function setVH() {
         const vh = window.innerHeight * 0.01;

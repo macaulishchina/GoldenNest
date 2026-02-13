@@ -10,6 +10,8 @@ services:
       - ACCESS_TOKEN_EXPIRE_MINUTES=10080
     volumes:
       - ./data:/data
+      - ./data/uploads:/app/uploads
+      - ./ssl/ca.pem:/app/ssl/ca.pem:ro
     networks:
       - golden-nest-network
     healthcheck:
@@ -28,6 +30,7 @@ services:
       - "${HTTPS_PORT:-8443}:443"
     volumes:
       - ./ssl:/etc/nginx/ssl:ro
+      - ./data/uploads/site:/usr/share/nginx/pwa-icons:ro
     environment:
       - HTTPS_PORT=${HTTPS_PORT:-8443}
     depends_on:

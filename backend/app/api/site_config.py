@@ -5,9 +5,12 @@
 import os
 import logging
 import json
+import base64
+import plistlib
+import uuid
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, status
+from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from typing import Optional
@@ -59,7 +62,9 @@ async def _require_admin(
         select(FamilyMember).where(FamilyMember.user_id == current_user.id)
     )
     membership = result.scalar_one_or_none()
-    if not membership or membership.role != "admin":
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请先加入或创建家庭")
+    if membership.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅管理员可执行此操作")
     return current_user
 
@@ -105,7 +110,9 @@ async def get_manifest():
     manifest = {
         "name": site_name,
         "short_name": short_name,
+        "id": "/",
         "start_url": "/",
+        "scope": "/",
         "display": "standalone",
         "orientation": "portrait",
         "theme_color": theme_color,
@@ -113,20 +120,33 @@ async def get_manifest():
         "icons": [],
     }
 
-    # 如果有图标，添加 icon 条目
+    # 如果有图标，使用 nginx 直接服务的静态路径（/pwa-icons/），绕过 API 代理
+    # 这样图标直接由 nginx 提供，避免代理链中的潜在问题
     if cfg.get("icon_file"):
         manifest["icons"] = [
             {
-                "src": "/api/site-config/icon/192",
+                "src": "/pwa-icons/icon-192.png",
                 "sizes": "192x192",
                 "type": "image/png",
-                "purpose": "any maskable",
+                "purpose": "any",
             },
             {
-                "src": "/api/site-config/icon/512",
+                "src": "/pwa-icons/icon-512.png",
                 "sizes": "512x512",
                 "type": "image/png",
-                "purpose": "any maskable",
+                "purpose": "any",
+            },
+            {
+                "src": "/pwa-icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "maskable",
+            },
+            {
+                "src": "/pwa-icons/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "maskable",
             },
         ]
 
@@ -147,6 +167,103 @@ async def get_site_info():
         "has_icon": bool(cfg.get("icon_file")),
         "icon_url": "/api/site-config/icon/original" if cfg.get("icon_file") else None,
     }
+
+
+@router.get("/ios-profile")
+async def get_ios_profile(request: Request):
+    """生成 iOS 描述文件 (.mobileconfig)（公开接口）
+
+    包含：
+    - Web Clip 载荷：主屏幕快捷方式 + 内嵌图标（解决自签名证书下图标无法加载的问题）
+    - CA 证书载荷（可选）：自动信任自签名 CA，一次安装解决所有 HTTPS 信任问题
+    """
+    cfg = _load_config()
+    site_name = cfg.get("site_name", "小金库 Golden Nest")
+    short_name = cfg.get("short_name", "小金库")
+    theme_color = cfg.get("theme_color", "#f0c040")
+
+    # 推断当前访问的 base URL
+    host = request.headers.get("host", "localhost")
+    proto = request.headers.get("x-forwarded-proto", "https")
+    base_url = f"{proto}://{host}"
+
+    # 读取图标（内嵌到描述文件中，不依赖网络再次获取）
+    icon_data = b""
+    icon_path = os.path.join(SITE_CONFIG_DIR, "icon-192.png")
+    if not os.path.exists(icon_path):
+        icon_path = os.path.join(SITE_CONFIG_DIR, "icon-512.png")
+    if os.path.exists(icon_path):
+        with open(icon_path, "rb") as f:
+            icon_data = f.read()
+
+    if not icon_data:
+        raise HTTPException(status_code=404, detail="请先上传站点图标")
+
+    payloads = []
+
+    # 1. CA 证书载荷（如果存在）
+    ca_pem_path = "/app/ssl/ca.pem"
+    if os.path.exists(ca_pem_path):
+        try:
+            with open(ca_pem_path, "r") as f:
+                pem_content = f.read()
+            # PEM → DER：去掉头尾标记，解码 base64
+            pem_lines = pem_content.strip().split("\n")
+            b64_content = "".join(
+                line for line in pem_lines if not line.startswith("-----")
+            )
+            ca_der = base64.b64decode(b64_content)
+            payloads.append({
+                "PayloadContent": ca_der,
+                "PayloadDisplayName": "GoldenNest Local CA",
+                "PayloadDescription": "信任小金库自签名 HTTPS 证书",
+                "PayloadIdentifier": "com.goldennest.ca",
+                "PayloadType": "com.apple.security.root",
+                "PayloadUUID": str(uuid.uuid5(uuid.NAMESPACE_DNS, "goldennest-ca")),
+                "PayloadVersion": 1,
+            })
+            logger.info("iOS 描述文件：已包含 CA 证书")
+        except Exception as e:
+            logger.warning(f"读取 CA 证书失败，跳过: {e}")
+
+    # 2. Web Clip 载荷（主屏幕快捷方式，图标内嵌）
+    payloads.append({
+        "FullScreen": True,
+        "Icon": icon_data,
+        "IsRemovable": True,
+        "Label": short_name,
+        "PayloadDisplayName": f"{short_name} 主屏幕快捷方式",
+        "PayloadDescription": f"在主屏幕添加{short_name}快捷图标",
+        "PayloadIdentifier": "com.goldennest.webclip",
+        "PayloadType": "com.apple.webClip.managed",
+        "PayloadUUID": str(uuid.uuid5(uuid.NAMESPACE_DNS, "goldennest-webclip")),
+        "PayloadVersion": 1,
+        "URL": f"{base_url}/",
+    })
+
+    # 组装顶层描述文件
+    profile = {
+        "PayloadContent": payloads,
+        "PayloadDisplayName": site_name,
+        "PayloadDescription": f"安装{short_name}主屏幕快捷方式"
+                              + ("并信任 HTTPS 证书" if len(payloads) > 1 else ""),
+        "PayloadIdentifier": "com.goldennest.profile",
+        "PayloadOrganization": "GoldenNest",
+        "PayloadType": "Configuration",
+        "PayloadUUID": str(uuid.uuid5(uuid.NAMESPACE_DNS, "goldennest-profile")),
+        "PayloadVersion": 1,
+    }
+
+    plist_data = plistlib.dumps(profile)
+
+    return Response(
+        content=plist_data,
+        media_type="application/x-apple-aspen-config",
+        headers={
+            "Content-Disposition": 'attachment; filename="GoldenNest.mobileconfig"',
+            "Cache-Control": "no-cache",
+        },
+    )
 
 
 # ==================== 管理接口（需要管理员权限） ====================

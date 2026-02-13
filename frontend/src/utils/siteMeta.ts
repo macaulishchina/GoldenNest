@@ -20,22 +20,30 @@ export async function initSiteMeta() {
   try {
     const { data } = await axios.get<SiteInfo>('/api/site-config/info')
 
-    // 更新 favicon
-    if (data.has_icon && data.icon_url) {
+    // 更新 favicon（使用 nginx 直接服务的静态路径）
+    if (data.has_icon) {
       const faviconLink = document.querySelector<HTMLLinkElement>("link[rel='icon']")
         || document.getElementById('dynamic-favicon') as HTMLLinkElement
       if (faviconLink) {
-        faviconLink.href = `${data.icon_url}?v=${Date.now()}`
+        faviconLink.href = `/pwa-icons/icon-192.png?v=${Date.now()}`
       }
 
-      // 更新 apple-touch-icon
-      let appleLink = document.querySelector<HTMLLinkElement>("link[rel='apple-touch-icon']")
-      if (!appleLink) {
-        appleLink = document.createElement('link')
+      // 更新所有 apple-touch-icon
+      const appleLinks = document.querySelectorAll<HTMLLinkElement>("link[rel='apple-touch-icon']")
+      appleLinks.forEach((link) => {
+        const sizes = link.getAttribute('sizes')
+        if (sizes === '512x512') {
+          link.href = `/pwa-icons/icon-512.png?v=${Date.now()}`
+        } else {
+          link.href = `/pwa-icons/icon-192.png?v=${Date.now()}`
+        }
+      })
+      if (appleLinks.length === 0) {
+        const appleLink = document.createElement('link')
         appleLink.rel = 'apple-touch-icon'
+        appleLink.href = `/pwa-icons/icon-192.png?v=${Date.now()}`
         document.head.appendChild(appleLink)
       }
-      appleLink.href = `/api/site-config/icon/192?v=${Date.now()}`
     }
 
     // 更新 theme-color
