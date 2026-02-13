@@ -223,7 +223,7 @@ BACKPACK_ITEMS = {
     "dagger":        {"name": "匕首",   "icon": "🔪", "type": "weapon",  "w": 1, "h": 1, "rarity": "common",    "effects": {"atk": 2, "crit": 5},   "price": 5, "desc": "攻击+2 暴击+5%"},
     "poison_blade":  {"name": "淬毒刃", "icon": "🧪", "type": "weapon",  "w": 1, "h": 1, "rarity": "uncommon",  "effects": {"atk": 4, "lifesteal": 8}, "price": 10, "desc": "攻击+4 吸血+8%"},
     # ---- 盾牌 (2×1 横向) ----
-    "wooden_shield": {"name": "木盾",   "icon": "🪵", "type": "shield",  "w": 2, "h": 1, "rarity": "common",    "effects": {"def": 4},  "adj": {"shield": {"def": 1}}, "price": 5,  "desc": "防御+4"},
+    "wooden_shield": {"name": "木盾",   "icon": "🧱", "type": "shield",  "w": 2, "h": 1, "rarity": "common",    "effects": {"def": 4},  "adj": {"shield": {"def": 1}}, "price": 5,  "desc": "防御+4"},
     "iron_shield":   {"name": "铁盾",   "icon": "🛡️", "type": "shield",  "w": 2, "h": 1, "rarity": "uncommon",  "effects": {"def": 5},  "adj": {"shield": {"def": 2}}, "price": 11, "desc": "防御+5"},
     "holy_shield":   {"name": "圣盾",   "icon": "⚜️", "type": "shield",  "w": 2, "h": 1, "rarity": "rare",      "effects": {"def": 8, "max_hp": 15}, "adj": {"shield": {"def": 3}}, "price": 20, "desc": "防御+8 HP+15"},
     "buckler":       {"name": "圆盾",   "icon": "🔰", "type": "shield",  "w": 1, "h": 1, "rarity": "common",    "effects": {"def": 2},  "price": 4,  "desc": "防御+2"},
@@ -251,31 +251,31 @@ BACKPACK_ITEMS = {
     "heart_crystal": {"name": "生命水晶","icon": "💗", "type": "special", "w": 1, "h": 1, "rarity": "rare",     "effects": {"max_hp": 20}, "price": 15, "desc": "最大HP+20"},
     "berserker_mark":{"name": "狂战印记","icon": "🔴", "type": "special", "w": 1, "h": 1, "rarity": "rare",     "effects": {"atk": 6, "def": -2}, "price": 14, "desc": "攻击+6 防御-2"},
     # ---- 诅咒物品 (强属性 + 负面效果) ----
-    "cursed_blade":  {"name": "诅咒之刃", "icon": "🗡️", "type": "weapon",  "w": 1, "h": 2, "rarity": "rare",   "effects": {"atk": 16}, "curse": {"max_hp": -20}, "adj": {"weapon": {"atk": 3}}, "price": 15, "desc": "攻击+16 但HP-20", "cursed": True},
-    "cursed_crown":  {"name": "噩梦王冠", "icon": "👑", "type": "accessory","w": 1, "h": 1, "rarity": "rare",   "effects": {"crit": 20, "crit_damage": 35}, "curse": {"def": -3}, "price": 16, "desc": "暴击+20% 爆伤+35% 但防御-3", "cursed": True},
-    "cursed_shield": {"name": "苦痛之盾", "icon": "🛡️", "type": "shield",  "w": 2, "h": 1, "rarity": "rare",   "effects": {"def": 12}, "curse": {"atk": -4}, "price": 14, "desc": "防御+12 但攻击-4", "cursed": True},
+    "cursed_blade":  {"name": "诅咒之刃", "icon": "🩸", "type": "weapon",  "w": 1, "h": 2, "rarity": "rare",   "effects": {"atk": 16}, "curse": {"max_hp": -20}, "adj": {"weapon": {"atk": 3}}, "price": 15, "desc": "攻击+16 但HP-20", "cursed": True},
+    "cursed_crown":  {"name": "噩梦王冠", "icon": "🖤", "type": "accessory","w": 1, "h": 1, "rarity": "rare",   "effects": {"crit": 20, "crit_damage": 35}, "curse": {"def": -3}, "price": 16, "desc": "暴击+20% 爆伤+35% 但防御-3", "cursed": True},
+    "cursed_shield": {"name": "苦痛之盾", "icon": "🟣", "type": "shield",  "w": 2, "h": 1, "rarity": "rare",   "effects": {"def": 12}, "curse": {"atk": -4}, "price": 14, "desc": "防御+12 但攻击-4", "cursed": True},
     "cursed_ring":   {"name": "贪婪指环", "icon": "💀", "type": "accessory","w": 1, "h": 1, "rarity": "legendary","effects": {"atk": 8, "lifesteal": 15, "crit": 10}, "curse": {"max_hp": -30}, "price": 22, "desc": "全属性大幅提升 但HP-30", "cursed": True},
     "purify_stone":  {"name": "净化石",   "icon": "🔮", "type": "special",  "w": 1, "h": 1, "rarity": "rare",   "effects": {}, "adj": {}, "price": 20, "desc": "相邻诅咒物品→净化(移除负面)", "purifier": True},
     # ---- 被动技能物品 ----
     "regen_amulet":  {"name": "回春项链", "icon": "💚", "type": "accessory","w": 1, "h": 1, "rarity": "uncommon", "effects": {}, "passive": {"heal_per_turn": 5}, "price": 12, "desc": "每回合恢复5HP"},
     "thorn_mail":    {"name": "荆棘甲",   "icon": "🌵", "type": "armor",   "w": 2, "h": 2, "rarity": "rare",     "effects": {"def": 5}, "passive": {"reflect_pct": 20}, "price": 22, "desc": "防御+5 反弹20%受到的伤害"},
-    "first_strike":  {"name": "先手指环", "icon": "⚡", "type": "accessory","w": 1, "h": 1, "rarity": "uncommon", "effects": {}, "passive": {"first_hit_shield": 15}, "price": 10, "desc": "每场战斗首次受击减免15点伤害"},
+    "first_strike":  {"name": "先手指环", "icon": "💨", "type": "accessory","w": 1, "h": 1, "rarity": "uncommon", "effects": {}, "passive": {"first_hit_shield": 15}, "price": 10, "desc": "每场战斗首次受击减免15点伤害"},
     "exp_tome":      {"name": "经验宝典", "icon": "📖", "type": "special",  "w": 1, "h": 1, "rarity": "uncommon", "effects": {"exp_bonus": 10}, "passive": {"bonus_exp_pct": 10}, "price": 12, "desc": "经验+10% 击杀额外+10%EXP"},
     "lucky_clover":  {"name": "四叶草",   "icon": "🍀", "type": "accessory","w": 1, "h": 1, "rarity": "uncommon", "effects": {"crit": 5}, "passive": {"dodge_pct": 10}, "price": 10, "desc": "暴击+5% 10%概率闪避攻击"},
     # ---- 史诗级武器 ----
     "void_blade":    {"name": "虚空之刃", "icon": "🌌", "type": "weapon",  "w": 1, "h": 2, "rarity": "legendary", "effects": {"atk": 18, "crit": 8}, "passive": {"multi_strike": 20}, "adj": {"weapon": {"atk": 5}}, "price": 45, "desc": "攻+18 暴击+8% 20%概率连击"},
-    "soul_reaper":   {"name": "灵魂收割者","icon": "💀", "type": "weapon",  "w": 1, "h": 2, "rarity": "legendary", "effects": {"atk": 12, "lifesteal": 12}, "passive": {"execute_pct": 15}, "price": 42, "desc": "攻+12 吸血+12% 怪物HP<15%时斩杀", "cursed": True, "curse": {"max_hp": -25}},
+    "soul_reaper":   {"name": "灵魂收割者","icon": "☠️", "type": "weapon",  "w": 1, "h": 2, "rarity": "legendary", "effects": {"atk": 12, "lifesteal": 12}, "passive": {"execute_pct": 15}, "price": 42, "desc": "攻+12 吸血+12% 怪物HP<15%时斩杀", "cursed": True, "curse": {"max_hp": -25}},
     # ---- 史诗级护甲 ----
     "phoenix_armor": {"name": "凤凰战甲", "icon": "🦤", "type": "armor", "w": 2, "h": 2, "rarity": "legendary", "effects": {"def": 12, "max_hp": 50}, "passive": {"battle_heal": 8}, "price": 48, "desc": "防+12 HP+50 每场战斗结束回复8%HP"},
     # ---- 史诗级盾牌 ----
-    "aegis_shield":  {"name": "神盾埃吉斯","icon": "🛡️", "type": "shield", "w": 2, "h": 1, "rarity": "legendary", "effects": {"def": 10, "max_hp": 20}, "passive": {"block_chance": 15}, "adj": {"shield": {"def": 4}}, "price": 40, "desc": "防+10 HP+20 15%概率完全格挡"},
+    "aegis_shield":  {"name": "神盾埃吉斯","icon": "🏵️", "type": "shield", "w": 2, "h": 1, "rarity": "legendary", "effects": {"def": 10, "max_hp": 20}, "passive": {"block_chance": 15}, "adj": {"shield": {"def": 4}}, "price": 40, "desc": "防+10 HP+20 15%概率完全格挡"},
     # ---- 史诗级饰品 ----
     "phoenix_feather":{"name": "凤凰羽",  "icon": "🪶", "type": "accessory","w": 1, "h": 1, "rarity": "legendary", "effects": {"max_hp": 15}, "passive": {"revive": 1}, "price": 50, "desc": "HP+15 死亡时复活1次(恢复30%HP)"},
-    "chaos_orb":     {"name": "混沌宝珠", "icon": "🔮", "type": "accessory","w": 1, "h": 1, "rarity": "legendary", "effects": {"atk": 6, "crit": 6, "def": 3}, "passive": {"random_buff": 1}, "price": 38, "desc": "全属性+每回合随机增强"},
+    "chaos_orb":     {"name": "混沌宝珠", "icon": "🎱", "type": "accessory","w": 1, "h": 1, "rarity": "legendary", "effects": {"atk": 6, "crit": 6, "def": 3}, "passive": {"random_buff": 1}, "price": 38, "desc": "全属性+每回合随机增强"},
     "crit_crown":    {"name": "裁决之冠", "icon": "👑", "type": "accessory","w": 1, "h": 1, "rarity": "legendary", "effects": {"crit": 15, "crit_damage": 40}, "passive": {"crit_heal": 10}, "price": 42, "desc": "暴击+15% 爆伤+40% 暴击时回复10%伤害"},
     "blood_chalice": {"name": "血之圣杯", "icon": "🏆", "type": "accessory","w": 1, "h": 1, "rarity": "legendary", "effects": {"lifesteal": 20, "atk": 5}, "passive": {"overkill_heal": 25}, "price": 40, "desc": "吸血+20% 攻+5 击杀超额伤害25%转回HP", "cursed": True, "curse": {"def": -4}},
     # ---- 史诗级药水 ----
-    "divine_elixir":  {"name": "神泰之药", "icon": "✨", "type": "potion", "w": 1, "h": 1, "rarity": "legendary", "effects": {"heal_pct": 100, "max_hp": 20}, "consumable": True, "price": 35, "desc": "恢复全部HP并+20最大HP"},
+    "divine_elixir":  {"name": "神泰之药", "icon": "⭐", "type": "potion", "w": 1, "h": 1, "rarity": "legendary", "effects": {"heal_pct": 100, "max_hp": 20}, "consumable": True, "price": 35, "desc": "恢复全部HP并+20最大HP"},
     "nuke_bomb":     {"name": "核弹",     "icon": "☢️", "type": "potion", "w": 1, "h": 1, "rarity": "legendary", "effects": {"damage": 120}, "consumable": True, "price": 35, "desc": "对怪物造成120点伤害"},
     # ---- 史诗级特殊 ----
     "amplifier":     {"name": "增幅器",   "icon": "📡", "type": "special", "w": 1, "h": 1, "rarity": "legendary", "effects": {}, "adj": {"weapon": {"atk": 8}, "shield": {"def": 6}, "armor": {"def": 4, "max_hp": 10}}, "price": 35, "desc": "相邻武器/盾/甲大幅增强"},
@@ -308,61 +308,85 @@ BACKPACK_ITEMS = {
     "titan_leggings":  {"name": "泰坦腿铠", "icon": "🏗️", "type": "leggings", "w": 1, "h": 2, "rarity": "mythic",    "effects": {"def": 14, "max_hp": 60}, "price": 60, "desc": "防御+14 HP+60"},
     "eternal_leggings":{"name": "永恒腿甲", "icon": "🌠", "type": "leggings", "w": 1, "h": 2, "rarity": "eternal",   "effects": {"def": 20, "max_hp": 80}, "passive": {"heal_per_turn": 8}, "price": 85, "desc": "防+20 HP+80 每回合回复8HP"},
     # ==================== 神话级合成装备 (Mythic - 合成专属) ====================
-    "astral_blade":    {"name": "星辰之刃", "icon": "🌠", "type": "weapon",    "w": 1, "h": 2, "rarity": "mythic", "effects": {"atk": 24, "crit": 12, "crit_damage": 20}, "passive": {"multi_strike": 30}, "adj": {"weapon": {"atk": 6}}, "price": 65, "desc": "攻+24 暴击+12% 爆伤+20% 30%连击"},
+    "astral_blade":    {"name": "星辰之刃", "icon": "☄️", "type": "weapon",    "w": 1, "h": 2, "rarity": "mythic", "effects": {"atk": 24, "crit": 12, "crit_damage": 20}, "passive": {"multi_strike": 30}, "adj": {"weapon": {"atk": 6}}, "price": 65, "desc": "攻+24 暴击+12% 爆伤+20% 30%连击"},
     "death_scythe":    {"name": "死神之镰", "icon": "⚰️", "type": "weapon",    "w": 1, "h": 2, "rarity": "mythic", "effects": {"atk": 18, "lifesteal": 18, "crit": 10}, "passive": {"execute_pct": 25}, "price": 60, "desc": "攻+18 吸血+18% 暴击+10% 斩杀<25%", "cursed": True, "curse": {"max_hp": -35}},
-    "titan_bulwark":   {"name": "泰坦壁垒", "icon": "🏛️", "type": "shield",   "w": 2, "h": 1, "rarity": "mythic", "effects": {"def": 15, "max_hp": 35}, "passive": {"block_chance": 25}, "adj": {"shield": {"def": 5}}, "price": 58, "desc": "防+15 HP+35 25%格挡"},
-    "dragon_plate":    {"name": "龙鳞天甲", "icon": "🐉", "type": "armor",     "w": 2, "h": 2, "rarity": "mythic", "effects": {"def": 18, "max_hp": 70}, "passive": {"battle_heal": 12, "reflect_pct": 10}, "price": 68, "desc": "防+18 HP+70 战后回复12%HP 反弹10%"},
-    "miracle_elixir":  {"name": "奇迹之药", "icon": "🧪", "type": "potion",    "w": 1, "h": 1, "rarity": "mythic", "effects": {"heal_pct": 100, "max_hp": 40}, "consumable": True, "price": 50, "desc": "恢复全部HP+40最大HP"},
+    "titan_bulwark":   {"name": "泰坦壁垒", "icon": "🗿", "type": "shield",   "w": 2, "h": 1, "rarity": "mythic", "effects": {"def": 15, "max_hp": 35}, "passive": {"block_chance": 25}, "adj": {"shield": {"def": 5}}, "price": 58, "desc": "防+15 HP+35 25%格挡"},
+    "dragon_plate":    {"name": "龙鳞天甲", "icon": "🦖", "type": "armor",     "w": 2, "h": 2, "rarity": "mythic", "effects": {"def": 18, "max_hp": 70}, "passive": {"battle_heal": 12, "reflect_pct": 10}, "price": 68, "desc": "防+18 HP+70 战后回复12%HP 反弹10%"},
+    "miracle_elixir":  {"name": "奇迹之药", "icon": "🍶", "type": "potion",    "w": 1, "h": 1, "rarity": "mythic", "effects": {"heal_pct": 100, "max_hp": 40}, "consumable": True, "price": 50, "desc": "恢复全部HP+40最大HP"},
     "antimatter_bomb": {"name": "反物质弹", "icon": "⚛️", "type": "potion",    "w": 1, "h": 1, "rarity": "mythic", "effects": {"damage": 200}, "consumable": True, "price": 50, "desc": "造成200点伤害"},
-    "destiny_crown":   {"name": "命运之冠", "icon": "👑", "type": "accessory", "w": 1, "h": 1, "rarity": "mythic", "effects": {"crit": 22, "crit_damage": 55}, "passive": {"crit_heal": 15}, "price": 60, "desc": "暴击+22% 爆伤+55% 暴击回复15%"},
+    "destiny_crown":   {"name": "命运之冠", "icon": "🎇", "type": "accessory", "w": 1, "h": 1, "rarity": "mythic", "effects": {"crit": 22, "crit_damage": 55}, "passive": {"crit_heal": 15}, "price": 60, "desc": "暴击+22% 爆伤+55% 暴击回复15%"},
     "titan_core":      {"name": "泰坦之核", "icon": "💠", "type": "accessory", "w": 1, "h": 1, "rarity": "mythic", "effects": {"max_hp": 40, "lifesteal": 15, "atk": 8}, "price": 55, "desc": "HP+40 吸血+15% 攻+8"},
     "soul_chalice":    {"name": "灵魂圣杯", "icon": "🏺", "type": "accessory", "w": 1, "h": 1, "rarity": "mythic", "effects": {"lifesteal": 28, "atk": 8}, "passive": {"overkill_heal": 35}, "price": 58, "desc": "吸血+28% 攻+8 击杀超额35%回HP", "cursed": True, "curse": {"def": -6}},
     "fate_plume":      {"name": "命运之羽", "icon": "🕊️", "type": "accessory", "w": 1, "h": 1, "rarity": "mythic", "effects": {"max_hp": 25, "def": 5}, "passive": {"revive": 1, "battle_heal": 5}, "price": 65, "desc": "HP+25 防+5 复活+战后回复5%HP"},
-    "dimension_sphere":{"name": "维度球体", "icon": "🔮", "type": "accessory", "w": 1, "h": 1, "rarity": "mythic", "effects": {"atk": 10, "crit": 10, "def": 5}, "passive": {"random_buff": 2}, "price": 55, "desc": "全属性+ 每回合2次随机增强"},
-    "guardian_charm":  {"name": "守护符文", "icon": "🔰", "type": "accessory", "w": 1, "h": 1, "rarity": "rare",      "effects": {"def": 3}, "passive": {"first_hit_shield": 25, "heal_per_turn": 3}, "price": 16, "desc": "防+3 首击减伤25 回复3HP/回合"},
+    "dimension_sphere":{"name": "维度球体", "icon": "🪐", "type": "accessory", "w": 1, "h": 1, "rarity": "mythic", "effects": {"atk": 10, "crit": 10, "def": 5}, "passive": {"random_buff": 2}, "price": 55, "desc": "全属性+ 每回合2次随机增强"},
+    "guardian_charm":  {"name": "守护符文", "icon": "🧿", "type": "accessory", "w": 1, "h": 1, "rarity": "rare",      "effects": {"def": 3}, "passive": {"first_hit_shield": 25, "heal_per_turn": 3}, "price": 16, "desc": "防+3 首击减伤25 回复3HP/回合"},
     "divine_charm":    {"name": "神佑护符", "icon": "☀️", "type": "accessory", "w": 1, "h": 1, "rarity": "legendary", "effects": {"def": 5, "max_hp": 15}, "passive": {"first_hit_shield": 35, "heal_per_turn": 5}, "price": 32, "desc": "防+5 HP+15 首击减伤35 回复5HP/回合"},
-    "cosmic_charm":    {"name": "星辰护符", "icon": "🌌", "type": "accessory", "w": 1, "h": 1, "rarity": "mythic",    "effects": {"def": 8, "max_hp": 30}, "passive": {"first_hit_shield": 50, "heal_per_turn": 8}, "price": 52, "desc": "防+8 HP+30 首击减伤50 回复8HP/回合"},
+    "cosmic_charm":    {"name": "星辰护符", "icon": "💜", "type": "accessory", "w": 1, "h": 1, "rarity": "mythic",    "effects": {"def": 8, "max_hp": 30}, "passive": {"first_hit_shield": 50, "heal_per_turn": 8}, "price": 52, "desc": "防+8 HP+30 首击减伤50 回复8HP/回合"},
     # ==================== 永恒级合成装备 (Eternal - 合成专属) ====================
     "eternal_blade":   {"name": "永恒之剑", "icon": "⚔️", "type": "weapon",    "w": 1, "h": 2, "rarity": "eternal", "effects": {"atk": 32, "crit": 18, "crit_damage": 35, "lifesteal": 10}, "passive": {"multi_strike": 40}, "adj": {"weapon": {"atk": 8}}, "price": 90, "desc": "攻+32 暴击+18% 爆伤+35% 吸血+10% 40%连击"},
     "oblivion_edge":   {"name": "湮灭之刃", "icon": "🕳️", "type": "weapon",    "w": 1, "h": 2, "rarity": "eternal", "effects": {"atk": 25, "lifesteal": 25, "crit": 15}, "passive": {"execute_pct": 35}, "price": 85, "desc": "攻+25 吸血+25% 暴击+15% 斩杀<35%", "cursed": True, "curse": {"max_hp": -50}},
     "cosmos_barrier":  {"name": "宇宙屏障", "icon": "🌐", "type": "shield",    "w": 2, "h": 1, "rarity": "eternal", "effects": {"def": 22, "max_hp": 50}, "passive": {"block_chance": 35}, "adj": {"shield": {"def": 7}}, "price": 82, "desc": "防+22 HP+50 35%格挡"},
-    "celestial_plate": {"name": "天穹圣甲", "icon": "🌌", "type": "armor",     "w": 2, "h": 2, "rarity": "eternal", "effects": {"def": 25, "max_hp": 100}, "passive": {"battle_heal": 15, "reflect_pct": 15}, "price": 95, "desc": "防+25 HP+100 战后回复15%HP 反弹15%"},
+    "celestial_plate": {"name": "天穹圣甲", "icon": "🛸", "type": "armor",     "w": 2, "h": 2, "rarity": "eternal", "effects": {"def": 25, "max_hp": 100}, "passive": {"battle_heal": 15, "reflect_pct": 15}, "price": 95, "desc": "防+25 HP+100 战后回复15%HP 反弹15%"},
     "ambrosia":        {"name": "众神佳酿", "icon": "🍾", "type": "potion",    "w": 1, "h": 1, "rarity": "eternal", "effects": {"heal_pct": 100, "max_hp": 60}, "consumable": True, "price": 70, "desc": "恢复全部HP+60最大HP"},
-    "big_bang":        {"name": "创世之炸", "icon": "💫", "type": "potion",    "w": 1, "h": 1, "rarity": "eternal", "effects": {"damage": 350}, "consumable": True, "price": 70, "desc": "造成350点伤害"},
+    "big_bang":        {"name": "创世之炸", "icon": "💥", "type": "potion",    "w": 1, "h": 1, "rarity": "eternal", "effects": {"damage": 350}, "consumable": True, "price": 70, "desc": "造成350点伤害"},
     "omniscient_eye":  {"name": "全知之眼", "icon": "👁️", "type": "accessory", "w": 1, "h": 1, "rarity": "eternal", "effects": {"crit": 30, "crit_damage": 75}, "passive": {"crit_heal": 20}, "price": 85, "desc": "暴击+30% 爆伤+75% 暴击回复20%"},
-    "creation_heart":  {"name": "创世之心", "icon": "❤️‍🔥", "type": "accessory", "w": 1, "h": 1, "rarity": "eternal", "effects": {"max_hp": 60, "lifesteal": 20, "atk": 12, "def": 5}, "price": 80, "desc": "HP+60 吸血+20% 攻+12 防+5"},
-    "eternal_goblet":  {"name": "永生圣杯", "icon": "🍷", "type": "accessory", "w": 1, "h": 1, "rarity": "eternal", "effects": {"lifesteal": 35, "atk": 12}, "passive": {"overkill_heal": 50}, "price": 82, "desc": "吸血+35% 攻+12 击杀超额50%回HP", "cursed": True, "curse": {"def": -8}},
+    "creation_heart":  {"name": "创世之心", "icon": "🫀", "type": "accessory", "w": 1, "h": 1, "rarity": "eternal", "effects": {"max_hp": 60, "lifesteal": 20, "atk": 12, "def": 5}, "price": 80, "desc": "HP+60 吸血+20% 攻+12 防+5"},
+    "eternal_goblet":  {"name": "永生圣杯", "icon": "🍸", "type": "accessory", "w": 1, "h": 1, "rarity": "eternal", "effects": {"lifesteal": 35, "atk": 12}, "passive": {"overkill_heal": 50}, "price": 82, "desc": "吸血+35% 攻+12 击杀超额50%回HP", "cursed": True, "curse": {"def": -8}},
     "immortal_wing":   {"name": "不朽之翼", "icon": "🦅", "type": "accessory", "w": 1, "h": 1, "rarity": "eternal", "effects": {"max_hp": 40, "def": 8}, "passive": {"revive": 2, "battle_heal": 10}, "price": 90, "desc": "HP+40 防+8 复活2次+战后回复10%HP"},
-    "cosmos_core":     {"name": "宇宙之核", "icon": "💎", "type": "accessory", "w": 1, "h": 1, "rarity": "eternal", "effects": {"atk": 15, "crit": 15, "def": 8, "max_hp": 20}, "passive": {"random_buff": 3}, "price": 80, "desc": "全属性+ 每回合3次随机增强"},
+    "cosmos_core":     {"name": "宇宙之核", "icon": "🪩", "type": "accessory", "w": 1, "h": 1, "rarity": "eternal", "effects": {"atk": 15, "crit": 15, "def": 8, "max_hp": 20}, "passive": {"random_buff": 3}, "price": 80, "desc": "全属性+ 每回合3次随机增强"},
     "eternal_charm":   {"name": "永恒护符", "icon": "🌅", "type": "accessory", "w": 1, "h": 1, "rarity": "eternal", "effects": {"def": 12, "max_hp": 45}, "passive": {"first_hit_shield": 70, "heal_per_turn": 12}, "price": 78, "desc": "防+12 HP+45 首击减伤70 回复12HP/回合"},
     # ==================== 🔥 烈焰套装 (rare - 攻击/爆伤) ====================
-    "inferno_blade":   {"name": "烈焰长剑", "icon": "🔥", "type": "weapon",   "w": 1, "h": 2, "rarity": "rare", "effects": {"atk": 10, "crit_damage": 20},  "price": 20, "desc": "攻+10 爆伤+20%"},
-    "inferno_helm":    {"name": "烈焰头盔", "icon": "🔥", "type": "helmet",   "w": 1, "h": 1, "rarity": "rare", "effects": {"atk": 3, "max_hp": 12, "crit_damage": 10}, "price": 16, "desc": "攻+3 HP+12 爆伤+10%"},
-    "inferno_chest":   {"name": "烈焰胸甲", "icon": "🔥", "type": "armor",    "w": 2, "h": 2, "rarity": "rare", "effects": {"def": 6, "atk": 5, "max_hp": 15}, "price": 24, "desc": "防+6 攻+5 HP+15"},
-    "inferno_legs":    {"name": "烈焰护腿", "icon": "🔥", "type": "leggings", "w": 1, "h": 2, "rarity": "rare", "effects": {"def": 4, "atk": 3, "max_hp": 12}, "price": 20, "desc": "防+4 攻+3 HP+12"},
-    "inferno_bracer":  {"name": "烈焰护臂", "icon": "🔥", "type": "bracer",   "w": 1, "h": 1, "rarity": "rare", "effects": {"atk": 5, "crit_damage": 10}, "price": 16, "desc": "攻+5 爆伤+10%"},
-    "inferno_boots":   {"name": "烈焰战靴", "icon": "🔥", "type": "boots",    "w": 1, "h": 1, "rarity": "rare", "effects": {"atk": 3, "def": 2, "max_hp": 8}, "price": 16, "desc": "攻+3 防+2 HP+8"},
+    "inferno_blade":   {"name": "烈焰长剑", "icon": "⚔️", "type": "weapon",   "w": 1, "h": 2, "rarity": "rare", "effects": {"atk": 10, "crit_damage": 20},  "price": 20, "desc": "攻+10 爆伤+20%"},
+    "inferno_helm":    {"name": "烈焰头盔", "icon": "🪖", "type": "helmet",   "w": 1, "h": 1, "rarity": "rare", "effects": {"atk": 3, "max_hp": 12, "crit_damage": 10}, "price": 16, "desc": "攻+3 HP+12 爆伤+10%"},
+    "inferno_chest":   {"name": "烈焰胸甲", "icon": "🎽", "type": "armor",    "w": 2, "h": 2, "rarity": "rare", "effects": {"def": 6, "atk": 5, "max_hp": 15}, "price": 24, "desc": "防+6 攻+5 HP+15"},
+    "inferno_legs":    {"name": "烈焰护腿", "icon": "🩳", "type": "leggings", "w": 1, "h": 2, "rarity": "rare", "effects": {"def": 4, "atk": 3, "max_hp": 12}, "price": 20, "desc": "防+4 攻+3 HP+12"},
+    "inferno_bracer":  {"name": "烈焰手套", "icon": "🧤", "type": "bracer",   "w": 1, "h": 1, "rarity": "rare", "effects": {"atk": 5, "crit_damage": 10}, "price": 16, "desc": "攻+5 爆伤+10%"},
+    "inferno_boots":   {"name": "烈焰战靴", "icon": "👞", "type": "boots",    "w": 1, "h": 1, "rarity": "rare", "effects": {"atk": 3, "def": 2, "max_hp": 8}, "price": 16, "desc": "攻+3 防+2 HP+8"},
     # ==================== ❄️ 冰霜套装 (rare - 防御/生命) ====================
-    "frost_blade":     {"name": "寒冰之剑", "icon": "❄️", "type": "weapon",   "w": 1, "h": 2, "rarity": "rare", "effects": {"atk": 7, "def": 3, "max_hp": 10}, "price": 20, "desc": "攻+7 防+3 HP+10"},
-    "frost_helm":      {"name": "冰霜头盔", "icon": "❄️", "type": "helmet",   "w": 1, "h": 1, "rarity": "rare", "effects": {"def": 5, "max_hp": 18}, "price": 16, "desc": "防+5 HP+18"},
-    "frost_chest":     {"name": "冰霜胸甲", "icon": "❄️", "type": "armor",    "w": 2, "h": 2, "rarity": "rare", "effects": {"def": 10, "max_hp": 30}, "price": 24, "desc": "防+10 HP+30"},
-    "frost_legs":      {"name": "冰霜护腿", "icon": "❄️", "type": "leggings", "w": 1, "h": 2, "rarity": "rare", "effects": {"def": 7, "max_hp": 22}, "price": 20, "desc": "防+7 HP+22"},
-    "frost_bracer":    {"name": "冰霜护臂", "icon": "❄️", "type": "bracer",   "w": 1, "h": 1, "rarity": "rare", "effects": {"def": 4, "max_hp": 12}, "price": 16, "desc": "防+4 HP+12"},
-    "frost_boots":     {"name": "冰霜之靴", "icon": "❄️", "type": "boots",    "w": 1, "h": 1, "rarity": "rare", "effects": {"def": 4, "max_hp": 10}, "price": 16, "desc": "防+4 HP+10"},
+    "frost_blade":     {"name": "寒冰之剑", "icon": "⚔️", "type": "weapon",   "w": 1, "h": 2, "rarity": "rare", "effects": {"atk": 7, "def": 3, "max_hp": 10}, "price": 20, "desc": "攻+7 防+3 HP+10"},
+    "frost_helm":      {"name": "冰霜头盔", "icon": "🪖", "type": "helmet",   "w": 1, "h": 1, "rarity": "rare", "effects": {"def": 5, "max_hp": 18}, "price": 16, "desc": "防+5 HP+18"},
+    "frost_chest":     {"name": "冰霜胸甲", "icon": "🎽", "type": "armor",    "w": 2, "h": 2, "rarity": "rare", "effects": {"def": 10, "max_hp": 30}, "price": 24, "desc": "防+10 HP+30"},
+    "frost_legs":      {"name": "冰霜护腿", "icon": "🩳", "type": "leggings", "w": 1, "h": 2, "rarity": "rare", "effects": {"def": 7, "max_hp": 22}, "price": 20, "desc": "防+7 HP+22"},
+    "frost_bracer":    {"name": "冰霜手套", "icon": "🧤", "type": "bracer",   "w": 1, "h": 1, "rarity": "rare", "effects": {"def": 4, "max_hp": 12}, "price": 16, "desc": "防+4 HP+12"},
+    "frost_boots":     {"name": "冰霜之靴", "icon": "👞", "type": "boots",    "w": 1, "h": 1, "rarity": "rare", "effects": {"def": 4, "max_hp": 10}, "price": 16, "desc": "防+4 HP+10"},
     # ==================== ⚡ 雷霆套装 (legendary - 暴击) ====================
-    "storm_blade":     {"name": "雷霆之剑", "icon": "⚡", "type": "weapon",   "w": 1, "h": 2, "rarity": "legendary", "effects": {"atk": 13, "crit": 12, "crit_damage": 25}, "price": 38, "desc": "攻+13 暴击+12% 爆伤+25%"},
-    "storm_helm":      {"name": "雷霆头盔", "icon": "⚡", "type": "helmet",   "w": 1, "h": 1, "rarity": "legendary", "effects": {"def": 5, "crit": 10, "crit_damage": 15, "max_hp": 15}, "price": 32, "desc": "防+5 暴击+10% 爆伤+15% HP+15"},
-    "storm_chest":     {"name": "雷霆战甲", "icon": "⚡", "type": "armor",    "w": 2, "h": 2, "rarity": "legendary", "effects": {"def": 8, "crit": 6, "max_hp": 25}, "price": 40, "desc": "防+8 暴击+6% HP+25"},
-    "storm_legs":      {"name": "雷霆护腿", "icon": "⚡", "type": "leggings", "w": 1, "h": 2, "rarity": "legendary", "effects": {"def": 5, "crit": 5, "max_hp": 18}, "price": 35, "desc": "防+5 暴击+5% HP+18"},
-    "storm_bracer":    {"name": "雷霆护臂", "icon": "⚡", "type": "bracer",   "w": 1, "h": 1, "rarity": "legendary", "effects": {"crit": 8, "atk": 5, "crit_damage": 12}, "price": 32, "desc": "暴击+8% 攻+5 爆伤+12%"},
-    "storm_boots":     {"name": "雷霆之靴", "icon": "⚡", "type": "boots",    "w": 1, "h": 1, "rarity": "legendary", "effects": {"crit": 6, "def": 3, "max_hp": 10}, "passive": {"dodge_pct": 10}, "price": 32, "desc": "暴击+6% 防+3 HP+10 闪避10%"},
+    "storm_blade":     {"name": "雷霆之剑", "icon": "⚔️", "type": "weapon",   "w": 1, "h": 2, "rarity": "legendary", "effects": {"atk": 13, "crit": 12, "crit_damage": 25}, "price": 38, "desc": "攻+13 暴击+12% 爆伤+25%"},
+    "storm_helm":      {"name": "雷霆头盔", "icon": "🪖", "type": "helmet",   "w": 1, "h": 1, "rarity": "legendary", "effects": {"def": 5, "crit": 10, "crit_damage": 15, "max_hp": 15}, "price": 32, "desc": "防+5 暴击+10% 爆伤+15% HP+15"},
+    "storm_chest":     {"name": "雷霆战甲", "icon": "🎽", "type": "armor",    "w": 2, "h": 2, "rarity": "legendary", "effects": {"def": 8, "crit": 6, "max_hp": 25}, "price": 40, "desc": "防+8 暴击+6% HP+25"},
+    "storm_legs":      {"name": "雷霆护腿", "icon": "🩳", "type": "leggings", "w": 1, "h": 2, "rarity": "legendary", "effects": {"def": 5, "crit": 5, "max_hp": 18}, "price": 35, "desc": "防+5 暴击+5% HP+18"},
+    "storm_bracer":    {"name": "雷霆手套", "icon": "🧤", "type": "bracer",   "w": 1, "h": 1, "rarity": "legendary", "effects": {"crit": 8, "atk": 5, "crit_damage": 12}, "price": 32, "desc": "暴击+8% 攻+5 爆伤+12%"},
+    "storm_boots":     {"name": "雷霆之靴", "icon": "👞", "type": "boots",    "w": 1, "h": 1, "rarity": "legendary", "effects": {"crit": 6, "def": 3, "max_hp": 10}, "passive": {"dodge_pct": 10}, "price": 32, "desc": "暴击+6% 防+3 HP+10 闪避10%"},
     # ==================== 🌑 暗影套装 (legendary - 吸血/暗系) ====================
-    "shadow_blade":    {"name": "暗影之刃", "icon": "🌑", "type": "weapon",   "w": 1, "h": 2, "rarity": "legendary", "effects": {"atk": 15, "lifesteal": 15}, "price": 38, "desc": "攻+15 吸血+15%"},
-    "shadow_helm":     {"name": "暗影头冠", "icon": "🌑", "type": "helmet",   "w": 1, "h": 1, "rarity": "legendary", "effects": {"lifesteal": 8, "atk": 4, "max_hp": 10}, "price": 32, "desc": "吸血+8% 攻+4 HP+10"},
-    "shadow_chest":    {"name": "暗影胸甲", "icon": "🌑", "type": "armor",    "w": 2, "h": 2, "rarity": "legendary", "effects": {"def": 7, "lifesteal": 8, "max_hp": 22}, "price": 40, "desc": "防+7 吸血+8% HP+22"},
-    "shadow_legs":     {"name": "暗影护腿", "icon": "🌑", "type": "leggings", "w": 1, "h": 2, "rarity": "legendary", "effects": {"def": 5, "lifesteal": 6, "max_hp": 18}, "price": 35, "desc": "防+5 吸血+6% HP+18"},
-    "shadow_bracer":   {"name": "暗影护臂", "icon": "🌑", "type": "bracer",   "w": 1, "h": 1, "rarity": "legendary", "effects": {"lifesteal": 10, "atk": 4}, "price": 32, "desc": "吸血+10% 攻+4"},
-    "shadow_boots":    {"name": "暗影之靴", "icon": "🌑", "type": "boots",    "w": 1, "h": 1, "rarity": "legendary", "effects": {"lifesteal": 6, "def": 3, "max_hp": 8}, "price": 32, "desc": "吸血+6% 防+3 HP+8"},
+    "shadow_blade":    {"name": "暗影之刃", "icon": "⚔️", "type": "weapon",   "w": 1, "h": 2, "rarity": "legendary", "effects": {"atk": 15, "lifesteal": 15}, "price": 38, "desc": "攻+15 吸血+15%"},
+    "shadow_helm":     {"name": "暗影头冠", "icon": "🪖", "type": "helmet",   "w": 1, "h": 1, "rarity": "legendary", "effects": {"lifesteal": 8, "atk": 4, "max_hp": 10}, "price": 32, "desc": "吸血+8% 攻+4 HP+10"},
+    "shadow_chest":    {"name": "暗影胸甲", "icon": "🎽", "type": "armor",    "w": 2, "h": 2, "rarity": "legendary", "effects": {"def": 7, "lifesteal": 8, "max_hp": 22}, "price": 40, "desc": "防+7 吸血+8% HP+22"},
+    "shadow_legs":     {"name": "暗影护腿", "icon": "🩳", "type": "leggings", "w": 1, "h": 2, "rarity": "legendary", "effects": {"def": 5, "lifesteal": 6, "max_hp": 18}, "price": 35, "desc": "防+5 吸血+6% HP+18"},
+    "shadow_bracer":   {"name": "暗影手套", "icon": "🧤", "type": "bracer",   "w": 1, "h": 1, "rarity": "legendary", "effects": {"lifesteal": 10, "atk": 4}, "price": 32, "desc": "吸血+10% 攻+4"},
+    "shadow_boots":    {"name": "暗影之靴", "icon": "👞", "type": "boots",    "w": 1, "h": 1, "rarity": "legendary", "effects": {"lifesteal": 6, "def": 3, "max_hp": 8}, "price": 32, "desc": "吸血+6% 防+3 HP+8"},
+    # ==================== 套装盾牌 ====================
+    "inferno_shield":  {"name": "烈焰之盾", "icon": "🛡️", "type": "shield",  "w": 2, "h": 1, "rarity": "rare",      "effects": {"def": 5, "atk": 3},  "price": 18, "desc": "防+5 攻+3"},
+    "frost_shield":    {"name": "冰霜之盾", "icon": "🛡️", "type": "shield",  "w": 2, "h": 1, "rarity": "rare",      "effects": {"def": 8, "max_hp": 15}, "price": 18, "desc": "防+8 HP+15"},
+    "storm_shield":    {"name": "雷霆之盾", "icon": "🛡️", "type": "shield",  "w": 2, "h": 1, "rarity": "legendary", "effects": {"def": 5, "crit": 8, "crit_damage": 10}, "price": 35, "desc": "防+5 暴击+8% 爆伤+10%"},
+    "shadow_shield":   {"name": "暗影之盾", "icon": "🛡️", "type": "shield",  "w": 2, "h": 1, "rarity": "legendary", "effects": {"def": 5, "lifesteal": 8, "max_hp": 10}, "price": 35, "desc": "防+5 吸血+8% HP+10"},
+    # ==================== 套装合体 (2×2 - 七件合一) ====================
+    "inferno_set_merged": {"name": "烈焰全套", "icon": "🔥", "type": "set_merged", "w": 2, "h": 2, "rarity": "rare",      "effects": {"atk": 32, "def": 17, "max_hp": 47, "crit_damage": 40}, "merged_set": "inferno_set", "price": 0, "desc": "烈焰套装合体"},
+    "frost_set_merged":   {"name": "冰霜全套", "icon": "❄️", "type": "set_merged", "w": 2, "h": 2, "rarity": "rare",      "effects": {"atk": 7, "def": 41, "max_hp": 117},                      "merged_set": "frost_set",   "price": 0, "desc": "冰霜套装合体"},
+    "storm_set_merged":   {"name": "雷霆全套", "icon": "⚡", "type": "set_merged", "w": 2, "h": 2, "rarity": "legendary", "effects": {"atk": 18, "def": 26, "crit": 55, "crit_damage": 62, "max_hp": 68}, "merged_set": "storm_set",  "price": 0, "desc": "雷霆套装合体"},
+    "shadow_set_merged":  {"name": "暗影全套", "icon": "🌑", "type": "set_merged", "w": 2, "h": 2, "rarity": "legendary", "effects": {"atk": 23, "def": 20, "lifesteal": 61, "max_hp": 68},             "merged_set": "shadow_set",  "price": 0, "desc": "暗影套装合体"},
+    # ==================== 🌿 自然套装 (legendary - 均衡/续航) ====================
+    "nature_blade":    {"name": "自然之杖", "icon": "⚔️", "type": "weapon",   "w": 1, "h": 2, "rarity": "legendary", "effects": {"atk": 12, "max_hp": 20, "lifesteal": 8},  "price": 36, "desc": "攻+12 HP+20 吸血+8%"},
+    "nature_shield":   {"name": "自然之盾", "icon": "🛡️", "type": "shield",  "w": 2, "h": 1, "rarity": "legendary", "effects": {"def": 6, "max_hp": 15, "lifesteal": 5}, "price": 35, "desc": "防+6 HP+15 吸血+5%"},
+    "nature_helm":     {"name": "自然头冠", "icon": "🪖", "type": "helmet",  "w": 1, "h": 1, "rarity": "legendary", "effects": {"def": 5, "max_hp": 18, "crit": 6},  "price": 30, "desc": "防+5 HP+18 暴击+6%"},
+    "nature_chest":    {"name": "自然胸甲", "icon": "🎽", "type": "armor",   "w": 2, "h": 2, "rarity": "legendary", "effects": {"def": 8, "max_hp": 30, "atk": 4},   "price": 40, "desc": "防+8 HP+30 攻+4"},
+    "nature_legs":     {"name": "自然护腿", "icon": "🩳", "type": "leggings","w": 1, "h": 2, "rarity": "legendary", "effects": {"def": 6, "max_hp": 20, "lifesteal": 5}, "price": 35, "desc": "防+6 HP+20 吸血+5%"},
+    "nature_bracer":   {"name": "自然手环", "icon": "🧤", "type": "bracer",  "w": 1, "h": 1, "rarity": "legendary", "effects": {"atk": 5, "def": 3, "max_hp": 10},   "price": 30, "desc": "攻+5 防+3 HP+10"},
+    "nature_boots":    {"name": "自然之靴", "icon": "👞", "type": "boots",   "w": 1, "h": 1, "rarity": "legendary", "effects": {"def": 4, "max_hp": 12, "lifesteal": 5}, "passive": {"dodge_pct": 8}, "price": 30, "desc": "防+4 HP+12 吸血+5% 闪避8%"},
+    "nature_set_merged":{"name": "自然全套", "icon": "🌿", "type": "set_merged", "w": 2, "h": 2, "rarity": "legendary", "effects": {"atk": 21, "def": 32, "max_hp": 125, "lifesteal": 28, "crit": 6}, "merged_set": "nature_set", "price": 0, "desc": "自然套装合体"},
+    # ==================== 👑 如意金箍棒 (divine - 终极装备, 五套合一) ====================
+    "ruyi_jingu_bang":  {"name": "如意金箍棒", "icon": "👑", "type": "ultimate", "w": 2, "h": 2, "rarity": "divine",
+        "effects": {"atk": 200, "def": 100, "crit": 80, "crit_damage": 200, "lifesteal": 60, "max_hp": 500},
+        "passive": {"multi_strike": 60, "execute_pct": 40, "revive": 3, "battle_heal": 25, "block_chance": 30, "reflect_pct": 25, "dodge_pct": 20, "heal_per_turn": 20, "crit_heal": 25, "overkill_heal": 50, "first_hit_shield": 100},
+        "price": 0, "desc": "齐天大圣之兵器·毁天灭地·不受任何难度缩放", "no_scaling": True},
 }
 
 # ---- 合成升级链 ----
@@ -414,32 +438,58 @@ MERGE_CHAINS = {
     "dragon_leggings": "titan_leggings", "titan_leggings": "eternal_leggings",
 }
 
-# ---- 套装定义 (2件起激活, N件=piece_bonus×N) ----
+# ---- 套装定义 (主题7件套=major, 经典3件套=minor) ----
 ITEM_SETS = {
-    # ==================== 主题完整6件套 ====================
+    # ==================== 主题完整7件套 (major: 激活限制 + 专属加成) ====================
     "inferno_set": {
         "name": "🔥 烈焰套装",
-        "items": {"inferno_blade", "inferno_helm", "inferno_chest", "inferno_legs", "inferno_bracer", "inferno_boots"},
+        "major": True,
+        "items": {"inferno_blade", "inferno_shield", "inferno_helm", "inferno_chest", "inferno_legs", "inferno_bracer", "inferno_boots"},
         "piece_bonus": {"atk": 3, "crit_damage": 8},
         "desc": "每件: 攻+3 爆伤+8%",
+        "exclusive_bonus": {"atk": 30, "crit_damage": 60},
+        "exclusive_name": "🔥 焚天之力",
+        "exclusive_desc": "攻击+30 爆伤+60%",
     },
     "frost_set": {
         "name": "❄️ 冰霜套装",
-        "items": {"frost_blade", "frost_helm", "frost_chest", "frost_legs", "frost_bracer", "frost_boots"},
+        "major": True,
+        "items": {"frost_blade", "frost_shield", "frost_helm", "frost_chest", "frost_legs", "frost_bracer", "frost_boots"},
         "piece_bonus": {"def": 3, "max_hp": 15},
         "desc": "每件: 防+3 HP+15",
+        "exclusive_bonus": {"def": 25, "max_hp": 100},
+        "exclusive_name": "❄️ 冰封领域",
+        "exclusive_desc": "防御+25 HP+100",
     },
     "storm_set": {
         "name": "⚡ 雷霆套装",
-        "items": {"storm_blade", "storm_helm", "storm_chest", "storm_legs", "storm_bracer", "storm_boots"},
+        "major": True,
+        "items": {"storm_blade", "storm_shield", "storm_helm", "storm_chest", "storm_legs", "storm_bracer", "storm_boots"},
         "piece_bonus": {"crit": 4, "crit_damage": 10},
         "desc": "每件: 暴击+4% 爆伤+10%",
+        "exclusive_bonus": {"crit": 30, "crit_damage": 80},
+        "exclusive_name": "⚡ 雷神降临",
+        "exclusive_desc": "暴击+30% 爆伤+80%",
     },
     "shadow_set": {
         "name": "🌑 暗影套装",
-        "items": {"shadow_blade", "shadow_helm", "shadow_chest", "shadow_legs", "shadow_bracer", "shadow_boots"},
+        "major": True,
+        "items": {"shadow_blade", "shadow_shield", "shadow_helm", "shadow_chest", "shadow_legs", "shadow_bracer", "shadow_boots"},
         "piece_bonus": {"lifesteal": 5, "atk": 3},
         "desc": "每件: 吸血+5% 攻+3",
+        "exclusive_bonus": {"lifesteal": 30, "atk": 25},
+        "exclusive_name": "🌑 暗影吞噬",
+        "exclusive_desc": "吸血+30% 攻击+25",
+    },
+    "nature_set": {
+        "name": "🌿 自然套装",
+        "major": True,
+        "items": {"nature_blade", "nature_shield", "nature_helm", "nature_chest", "nature_legs", "nature_bracer", "nature_boots"},
+        "piece_bonus": {"max_hp": 12, "def": 2, "lifesteal": 3},
+        "desc": "每件: HP+12 防+2 吸血+3%",
+        "exclusive_bonus": {"max_hp": 80, "def": 20, "lifesteal": 20, "atk": 15},
+        "exclusive_name": "🌿 万物之力",
+        "exclusive_desc": "HP+80 防+20 吸血+20% 攻+15",
     },
     # ==================== 经典3件套 (保留, 改为件数加成) ====================
     "holy_set": {
@@ -491,6 +541,21 @@ ITEM_SETS = {
         "desc": "每件: 吸血+8% 攻+4",
     },
 }
+
+# ---- 套装徽标 (用于前端显示: 属性主题 + 装备类型双图标) ----
+_SET_BADGE_EMOJI = {
+    "inferno_set": "🔥", "frost_set": "❄️", "storm_set": "⚡", "shadow_set": "🌑", "nature_set": "🌿",
+}
+
+# 五套合一终极合成
+ULTIMATE_FORGE_SETS = {"inferno_set_merged", "frost_set_merged", "storm_set_merged", "shadow_set_merged", "nature_set_merged"}
+ULTIMATE_ITEM_ID = "ruyi_jingu_bang"
+_SET_BADGE: dict[str, str] = {}
+for _sid, _sdef in ITEM_SETS.items():
+    _b = _SET_BADGE_EMOJI.get(_sid)
+    if _b:
+        for _iid in _sdef["items"]:
+            _SET_BADGE[_iid] = _b
 
 # ---- 附魔词缀池 ----
 ENCHANT_AFFIXES = [
@@ -596,6 +661,46 @@ def _bp_auto_place(bp: dict, item_id: str) -> int | None:
                 if _bp_can_place(bp, item_id, r, c, rotated):
                     return _bp_place(bp, item_id, r, c, rotated)
     return None
+
+
+def _bp_check_auto_merge(bp: dict, log: list) -> bool:
+    """检查并执行自动合体: 集齐7件→合体, 5个合体→如意金箍棒. 返回是否发生了合成."""
+    changed = False
+    item_ids_in_bp = {it["id"] for it in bp["items"]}
+    # 自动套装合体
+    for sid, sdef in ITEM_SETS.items():
+        if not sdef.get("major"):
+            continue
+        if not sdef["items"].issubset(item_ids_in_bp):
+            continue
+        merged_id = sid.replace("_set", "_set_merged")
+        if merged_id not in BACKPACK_ITEMS:
+            continue
+        # 移除散件
+        to_remove = set(sdef["items"])
+        for it in list(bp["items"]):
+            if it["id"] in to_remove:
+                _bp_remove(bp, it["uid"])
+                to_remove.discard(it["id"])
+        uid = _bp_auto_place(bp, merged_id)
+        if uid is None:
+            continue  # 空间不够(理论上释放了7件,一定够放)
+        merged_defn = BACKPACK_ITEMS[merged_id]
+        log.append(f"✨ 自动合体！{sdef['name']} 七件合一 → {merged_defn['icon']}{merged_defn['name']}")
+        changed = True
+        item_ids_in_bp = {it["id"] for it in bp["items"]}
+    # 检查五套合一 → 如意金箍棒
+    if ULTIMATE_FORGE_SETS.issubset(item_ids_in_bp):
+        for mid in ULTIMATE_FORGE_SETS:
+            for it in list(bp["items"]):
+                if it["id"] == mid:
+                    _bp_remove(bp, it["uid"])
+                    break
+        uid = _bp_auto_place(bp, ULTIMATE_ITEM_ID)
+        if uid is not None:
+            log.append("🌟🌟🌟 五套合一！齐天大圣之兵器 —— 如意金箍棒 横空出世！前无古人，后无来者！🌟🌟🌟")
+            changed = True
+    return changed
 
 
 def _bp_remove(bp: dict, uid: int) -> str | None:
@@ -714,14 +819,78 @@ def _bp_expand(bp: dict) -> bool:
     return False
 
 
-def _bp_calc_stats(bp: dict) -> dict:
-    """计算背包总属性 (基础 + 相邻加成 + 诅咒 + 附魔 + 连锁 + 套装 + 特殊区域)"""
+def _bp_compute_set_info(bp: dict) -> dict:
+    """计算套装激活状态 (major套用激活限制, minor套始终激活)"""
+    item_ids_in_bp = {it["id"] for it in bp["items"]}
+    bp_id_list = [it["id"] for it in bp["items"]]
+
+    major_info = {}      # sid -> {eff_pieces, is_complete, has_merged, unique_pieces}
+    total_complete = 0
+
+    for sid, sdef in ITEM_SETS.items():
+        if not sdef.get("major"):
+            continue
+        merged_id = sid.replace("_set", "_set_merged")
+        n_merged = bp_id_list.count(merged_id)
+        unique_pieces = len(sdef["items"] & item_ids_in_bp)
+        set_size = len(sdef["items"])
+        eff_pieces = min(set_size if n_merged > 0 else unique_pieces, set_size)
+        is_complete = eff_pieces == set_size
+        n_complete = n_merged + (1 if unique_pieces == set_size else 0)
+        total_complete += n_complete
+        if eff_pieces > 0 or n_merged > 0:
+            major_info[sid] = {
+                "eff_pieces": eff_pieces,
+                "is_complete": is_complete,
+                "n_complete": n_complete,
+                "has_merged": n_merged > 0,
+                "unique_pieces": unique_pieces,
+            }
+
+    max_active = total_complete + 1
+    prev_active = set(bp.get("_prev_active_major", []))
+
+    sorted_majors = sorted(
+        major_info.items(),
+        key=lambda x: (-x[1]["eff_pieces"], 0 if x[0] in prev_active else 1, x[0])
+    )
+    active_sids = set()
+    for sid, info in sorted_majors[:max_active]:
+        if info["eff_pieces"] >= 2:
+            active_sids.add(sid)
+
+    bp["_prev_active_major"] = list(active_sids)
+
+    # Minor套
+    minor_info = {}
+    for sid, sdef in ITEM_SETS.items():
+        if sdef.get("major"):
+            continue
+        owned = sdef["items"] & item_ids_in_bp
+        count = len(owned)
+        if count >= 2:
+            minor_info[sid] = {"pieces": count, "total": len(sdef["items"])}
+
+    return {
+        "major": major_info,
+        "active_major": active_sids,
+        "minor": minor_info,
+        "max_active": max_active,
+        "total_complete": total_complete,
+    }
+
+
+def _bp_calc_stats(bp: dict, set_info: dict = None, exclude_no_scaling: bool = False) -> dict:
+    """计算背包总属性 (基础 + 相邻加成 + 诅咒 + 附魔 + 连锁 + 套装 + 特殊区域)
+    exclude_no_scaling=True 时，标记了 no_scaling 的物品不计入（用于动态难度计算）"""
     stats = {"atk": 0, "def": 0, "crit": 0, "crit_damage": 0, "lifesteal": 0, "max_hp": 0, "exp_bonus": 0}
     if not bp or not bp.get("items"):
         return stats
     # 基础属性 + 诅咒惩罚
     for it in bp["items"]:
         defn = BACKPACK_ITEMS.get(it["id"], {})
+        if exclude_no_scaling and defn.get("no_scaling"):
+            continue
         for k, v in defn.get("effects", {}).items():
             if k in stats:
                 stats[k] += v
@@ -796,15 +965,28 @@ def _bp_calc_stats(bp: dict) -> dict:
         if k in stats:
             stats[k] += v
 
-    # 套装加成 (2件起激活, N件=piece_bonus×N)
-    item_ids_in_bp = {it["id"] for it in bp["items"]}
-    for sid, sdef in ITEM_SETS.items():
-        owned = sdef["items"] & item_ids_in_bp
-        count = len(owned)
-        if count >= 2:
-            for k, v in sdef["piece_bonus"].items():
+    # 套装加成 (major套: 激活限制 + 专属加成; minor套: 始终激活)
+    if set_info is None:
+        set_info = _bp_compute_set_info(bp)
+    # Major套 (仅激活的套装获得加成)
+    for sid in set_info["active_major"]:
+        sdef = ITEM_SETS[sid]
+        info = set_info["major"][sid]
+        count = info["eff_pieces"]
+        for k, v in sdef["piece_bonus"].items():
+            if k in stats:
+                stats[k] += v * count
+        # 专属加成 (集齐7件)
+        if info["is_complete"] and sdef.get("exclusive_bonus"):
+            for k, v in sdef["exclusive_bonus"].items():
                 if k in stats:
-                    stats[k] += v * count
+                    stats[k] += v
+    # Minor套 (始终激活)
+    for sid, minfo in set_info["minor"].items():
+        sdef = ITEM_SETS[sid]
+        for k, v in sdef["piece_bonus"].items():
+            if k in stats:
+                stats[k] += v * minfo["pieces"]
 
     # 特殊区域加成: 物品占据bonus zone格子时，该物品的基础effects×0.5额外加成
     bonus_cells = set(BP_BONUS_ZONES.get((bp["rows"], bp["cols"]), []))
@@ -888,6 +1070,8 @@ def _bp_generate_shop(floor: int) -> list:
     """生成商店物品列表 (3-4个随机物品)"""
     by_rarity = {}
     for iid, defn in BACKPACK_ITEMS.items():
+        if defn.get("type") in ("set_merged", "ultimate"):
+            continue  # 合体/终极物品不出现在商店
         by_rarity.setdefault(defn["rarity"], []).append(iid)
     rarities = ["common", "uncommon", "rare", "legendary"]
     weights = [RARITY_SHOP_WEIGHTS[r](floor) for r in rarities]
@@ -922,7 +1106,8 @@ def _hint(session: dict, key: str, msg: str):
 def _bp_sanitize(bp: dict) -> dict:
     """返回前端需要的背包数据"""
     items = []
-    bp_stats = _bp_calc_stats(bp)
+    set_info = _bp_compute_set_info(bp)
+    bp_stats = _bp_calc_stats(bp, set_info)
     item_ids_in_bp = {it["id"] for it in bp["items"]}
     for it in bp["items"]:
         defn = BACKPACK_ITEMS.get(it["id"], {})
@@ -944,18 +1129,49 @@ def _bp_sanitize(bp: dict) -> dict:
             "can_merge": it["id"] in MERGE_CHAINS,
             "merge_target": MERGE_CHAINS.get(it["id"]),
             "sell_price": max(1, defn.get("price", 5) // 2),
+            "set_badge": _SET_BADGE.get(it["id"]),
+            "is_merged": defn.get("type") in ("set_merged", "ultimate"),
         }
         items.append(entry)
     expand_cost = _bp_expand_cost(bp)
-    # 套装 (2件起激活, 件数越多加成越高)
+    # 套装信息 (major + minor)
     _stat_cn = {"atk": "攻", "def": "防", "crit": "暴击", "crit_damage": "爆伤", "lifesteal": "吸血", "max_hp": "HP"}
-    active_sets = []
+    major_sets = []
     for sid, sdef in ITEM_SETS.items():
-        owned = sdef["items"] & item_ids_in_bp
-        count = len(owned)
-        if count >= 2:
-            bonus_desc = " ".join(f"{_stat_cn.get(k, k)}+{v * count}" for k, v in sdef["piece_bonus"].items())
-            active_sets.append({"id": sid, "name": sdef["name"], "desc": f"({count}/{len(sdef['items'])}件) {bonus_desc}", "pieces": count, "total": len(sdef["items"])})
+        if not sdef.get("major"):
+            continue
+        info = set_info["major"].get(sid)
+        if not info and sid not in set_info["active_major"]:
+            # 没有任何散件也没合体 → 完全不显示
+            continue
+        eff = info["eff_pieces"] if info else 0
+        set_size = len(sdef["items"])
+        is_active = sid in set_info["active_major"]
+        is_complete = info["is_complete"] if info else False
+        has_merged = info["has_merged"] if info else False
+        unique_pieces = info["unique_pieces"] if info else 0
+        bonus_desc = " ".join(f"{_stat_cn.get(k, k)}+{v * eff}" for k, v in sdef["piece_bonus"].items()) if eff >= 2 else sdef["desc"]
+        entry = {
+            "id": sid, "name": sdef["name"],
+            "pieces": eff, "total": set_size,
+            "active": is_active,
+            "complete": is_complete,
+            "bonus_desc": bonus_desc,
+            "can_merge": is_complete and not has_merged and unique_pieces == set_size,
+        }
+        if sdef.get("exclusive_bonus"):
+            entry["exclusive"] = {
+                "name": sdef.get("exclusive_name", ""),
+                "desc": sdef.get("exclusive_desc", ""),
+                "active": is_complete and is_active,
+            }
+        major_sets.append(entry)
+    # minor套(保持原格式)
+    active_sets = []
+    for sid, minfo in set_info["minor"].items():
+        sdef = ITEM_SETS[sid]
+        bonus_desc = " ".join(f"{_stat_cn.get(k, k)}+{v * minfo['pieces']}" for k, v in sdef["piece_bonus"].items())
+        active_sets.append({"id": sid, "name": sdef["name"], "desc": f"({minfo['pieces']}/{minfo['total']}件) {bonus_desc}", "pieces": minfo["pieces"], "total": minfo["total"]})
     # 连锁
     chain_bonus = _bp_calc_chain_bonus(bp)
     has_chain = any(v > 0 for v in chain_bonus.values())
@@ -966,7 +1182,9 @@ def _bp_sanitize(bp: dict) -> dict:
     return {
         "rows": bp["rows"], "cols": bp["cols"], "items": items, "stats": bp_stats,
         "expand_cost": expand_cost,
+        "major_sets": major_sets,
         "active_sets": active_sets,
+        "max_active_major": set_info["max_active"],
         "chain_bonus": chain_bonus if has_chain else None,
         "passives": passives if passives else None,
         "bonus_cells": bonus_cells,
@@ -1566,6 +1784,7 @@ def sanitize_adventure_state(session: dict) -> dict:
                         "w": d.get("w", 1), "h": d.get("h", 1),
                         "cursed": d.get("cursed", False),
                         "passive": bool(d.get("passive")),
+                        "set_badge": _SET_BADGE.get(si.get("item_id", "")),
                     })
                 safe_enc["shop_items"] = enriched
             elif enc["type"] == "blessing":
@@ -1611,7 +1830,7 @@ def process_adventure_action(session: dict, action: dict) -> dict:
     log = session["log"]
 
     # 遭遇已解决 → 允许进入下一层或撤退 (背包管理动作放行到下面统一处理)
-    _bp_actions = {"use_item", "discard_item", "move_item", "rotate_item", "expand_backpack", "sell_item", "enchant_item", "merge_items"}
+    _bp_actions = {"use_item", "discard_item", "move_item", "rotate_item", "expand_backpack", "sell_item", "enchant_item", "merge_items", "merge_set"}
     if session.get("encounter_resolved"):
         if act == "retreat":
             is_endless = session.get("endless", False)
@@ -1644,8 +1863,8 @@ def process_adventure_action(session: dict, action: dict) -> dict:
             p_crit_dmg = session.get("crit_damage", 180)
             p_lifesteal = session.get("lifesteal", 0)
             p_def = session.get("defense", 0)
-            # 背包属性
-            bp_s = _bp_calc_stats(session.get("backpack")) if session.get("backpack") else {}
+            # 背包属性 (排除不受缩放影响的物品)
+            bp_s = _bp_calc_stats(session.get("backpack"), exclude_no_scaling=True) if session.get("backpack") else {}
             bp_atk = bp_s.get("atk", 0)
             bp_crit = bp_s.get("crit", 0)
             bp_crit_dmg = bp_s.get("crit_damage", 0)
@@ -1909,6 +2128,36 @@ def process_adventure_action(session: dict, action: dict) -> dict:
             raise HTTPException(status_code=400, detail="背包空间不足，无法放置合成物品")
         src_defn = BACKPACK_ITEMS.get(it1["id"], {})
         log.append(f"🔨 合成成功！2×{src_defn.get('icon', '')}{src_defn.get('name', '?')} → {target_defn['icon']}{target_defn['name']}")
+        _bp_check_auto_merge(bp, log)
+        return {"completed": False, "exp_earned": 0}
+
+    # 套装合体 (7件 → 1个2×2合体物品) - 已由自动合体处理，保留手动触发入口
+    if act == "merge_set":
+        set_id = action.get("set_id")
+        if not bp or not set_id:
+            raise HTTPException(status_code=400, detail="无效的套装")
+        sdef = ITEM_SETS.get(set_id)
+        if not sdef or not sdef.get("major"):
+            raise HTTPException(status_code=400, detail="无效的套装")
+        item_ids_in_bp = {it["id"] for it in bp["items"]}
+        if not sdef["items"].issubset(item_ids_in_bp):
+            raise HTTPException(status_code=400, detail="套装未集齐，无法合体")
+        merged_item_id = set_id.replace("_set", "_set_merged")
+        if merged_item_id not in BACKPACK_ITEMS:
+            raise HTTPException(status_code=400, detail="合体物品不存在")
+        # 移除每个套装散件 (每种只移除1个)
+        to_remove = set(sdef["items"])
+        for it in list(bp["items"]):
+            if it["id"] in to_remove:
+                _bp_remove(bp, it["uid"])
+                to_remove.discard(it["id"])
+        # 放置合体物品
+        uid = _bp_auto_place(bp, merged_item_id)
+        if uid is None:
+            raise HTTPException(status_code=400, detail="背包空间不足，无法放置合体物品")
+        merged_defn = BACKPACK_ITEMS[merged_item_id]
+        log.append(f"✨ 套装合体！{sdef['name']} 七件合一 → {merged_defn['icon']}{merged_defn['name']}")
+        _hint(session, "set_merge", "套装合体将7件散装合并为1个2×2物品，保留全部属性和套装加成，大幅节省背包空间！")
         return {"completed": False, "exp_earned": 0}
 
     if enc_type in ("monster", "boss"):
@@ -1926,7 +2175,7 @@ def process_adventure_action(session: dict, action: dict) -> dict:
                 _ids = {it["id"] for it in bp["items"]}
                 for sdef in ITEM_SETS.values():
                     if len(sdef["items"] & _ids) >= 2:
-                        _hint(session, "set", f"套装激活！拥有同套装2件以上即可获得加成，件数越多加成越高！查看背包上方金色标签了解详情。")
+                        _hint(session, "set", f"套装激活！拥有同套装2件以上即可获得加成。主题套装(7件)受激活限制，集齐全套可获得史诗级专属加成，还能合体节省空间！")
                         break
             monster_def = enc.get("monster_defense", 0)
             elite_ability = enc.get("ability", {}).get("id") if enc.get("elite") else None
@@ -2224,6 +2473,7 @@ def process_adventure_action(session: dict, action: dict) -> dict:
                         _hint(session, "cursed", "诅咒物品属性强力但有负面效果（红框💀标记）。将🔮净化石放在旁边可抵消诅咒！")
                     if dd.get("passive"):
                         _hint(session, "passive", "带⚡被动技能的物品放入背包即自动生效，无需手动激活。战斗中自动触发！")
+                    _bp_check_auto_merge(bp, log)
                 else:
                     dd = BACKPACK_ITEMS[drop_id]
                     log.append(f"💔 宝箱中有{dd['icon']}{dd['name']}但背包已满")
@@ -2308,6 +2558,7 @@ def process_adventure_action(session: dict, action: dict) -> dict:
                 same_count = sum(1 for it in bp["items"] if it["id"] == item_id)
                 if same_count >= 2:
                     _hint(session, "merge", "背包中有2个相同物品可以合成升级！选中物品后点击🔨合成按钮。")
+            _bp_check_auto_merge(bp, log)
             return {"completed": False, "exp_earned": 0}
         elif act == "skip":
             session["encounter_resolved"] = True

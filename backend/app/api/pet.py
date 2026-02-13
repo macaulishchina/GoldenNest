@@ -609,13 +609,19 @@ def get_game_sessions(pet: FamilyPet) -> dict:
 
 
 def get_active_session(pet: FamilyPet, game_type: str) -> dict | None:
-    """获取指定游戏的活跃会话（30分钟超时）"""
+    """获取指定游戏的活跃会话（基于最后活跃时间超时）"""
     sessions = get_game_sessions(pet)
     session = sessions.get(game_type)
     if not session:
         return None
-    started_at = datetime.fromisoformat(session["started_at"])
-    if (datetime.utcnow() - started_at).total_seconds() > 1800:
+    # 优先使用 last_active_at，兼容旧会话回退到 started_at
+    ts = session.get("last_active_at") or session.get("started_at")
+    if not ts:
+        return None
+    last_active = datetime.fromisoformat(ts)
+    # 冒险模式(尤其是无尽)允许更长的空闲时间
+    timeout = 14400 if game_type == "adventure" else 1800  # 4小时 / 30分钟
+    if (datetime.utcnow() - last_active).total_seconds() > timeout:
         del sessions[game_type]
         pet.game_sessions = json.dumps(sessions) if sessions else None
         return None
@@ -978,6 +984,7 @@ async def game_action(
         current_happiness = calculate_current_happiness(pet)
         pet.happiness = min(100, current_happiness + 3)
     else:
+        session["last_active_at"] = datetime.utcnow().isoformat()
         save_game_session(pet, data.game_type, session)
 
     pet.last_interaction_at = datetime.utcnow()
