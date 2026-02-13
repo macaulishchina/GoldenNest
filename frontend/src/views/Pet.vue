@@ -327,6 +327,7 @@
             <div class="diff-label">{{ diff.label }}</div>
             <div class="diff-desc">{{ diff.desc }}</div>
             <div class="diff-exp">奖励: {{ diff.exp }}</div>
+            <div v-if="diff.hasBest && endlessBestFloor > 0" class="diff-best">🏆 历史最高: 第 {{ endlessBestFloor }} 层</div>
             <div v-if="diff.rules" class="diff-rules">{{ diff.rules }}</div>
           </div>
         </div>
@@ -426,6 +427,7 @@ import StockGame from '@/components/games/StockGame.vue'
 import AdventureGame from '@/components/games/AdventureGame.vue'
 import MinesweeperGame from '@/components/games/MinesweeperGame.vue'
 import { toggleMute, isMuted, warmUp, adventureBGM } from '@/utils/gameSound'
+import { fetchUnshownAchievements } from '@/utils/achievement'
 
 const userStore = useUserStore()
 const message = useMessage()
@@ -495,7 +497,7 @@ const GAME_DIFFICULTIES = {
       { key: 'medium', label: '普通', desc: '8层 中难度', exp: '50~100 EXP' },
       { key: 'hard', label: '困难', desc: '12层 高难度', exp: '115~250 EXP' },
       { key: 'expert', label: '地狱', desc: '18层 极高难度', exp: '500~1000 EXP' },
-      { key: 'endless', label: '无尽', desc: '无限层 难度递增', exp: '无上限', rules: '层数越高怪物越强，偶有难度波动。可随时撤退保留经验，死亡也保留经验。每10层有Boss' },
+      { key: 'endless', label: '无尽', desc: '无限层 难度递增', exp: '无上限', rules: '层数越高怪物越强，偶有难度波动。可随时撤退保留经验，死亡也保留经验。每10层有Boss', hasBest: true },
     ]
   },
   minesweeper: {
@@ -520,6 +522,9 @@ const difficultyModalTitle = computed(() => {
   if (!pendingGameType.value) return '选择难度'
   return GAME_DIFFICULTIES[pendingGameType.value]?.name || '选择难度'
 })
+
+// 无尽模式历史最高层数
+const endlessBestFloor = computed(() => pet.value?.game_records?.endless_best_floor || 0)
 
 // 经验记录相关状态
 const showExpLogs = ref(false)
@@ -755,6 +760,13 @@ const gameAction = async (action) => {
         message.success(`游戏完成！+${res.data.exp_gained} EXP`)
       }
       handleExpResult(res, oldLevel)
+    }
+    // 探险游戏成就刷新：通关或无尽模式进入新层时
+    if (activeGame.value === 'adventure') {
+      const r = res.data.result || {}
+      if (r.adventure_cleared || r.adventure_endless_floor) {
+        fetchUnshownAchievements()
+      }
     }
   } catch (err) {
     const detail = err.response?.data?.detail || '操作失败'
@@ -1591,7 +1603,10 @@ onMounted(() => {
   border-radius: 0;
   margin: 0;
   padding: 12px;
+  padding-top: max(12px, env(safe-area-inset-top, 12px));
   padding-bottom: env(safe-area-inset-bottom, 8px);
+  padding-left: env(safe-area-inset-left, 12px);
+  padding-right: env(safe-area-inset-right, 12px);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -2656,6 +2671,17 @@ onMounted(() => {
 
 .difficulty-card.endless .diff-rules {
   color: var(--theme-text-tertiary, #999);
+}
+
+.diff-best {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e6a800;
+  margin-top: 4px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(255, 193, 7, .12);
+  display: inline-block;
 }
 
 @media (max-width: 480px) {

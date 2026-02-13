@@ -153,7 +153,7 @@
       </div>
       <!-- 套装 / 连锁 / 被动 提示栏 -->
       <div v-if="state.backpack.active_sets?.length || state.backpack.chain_bonus || state.backpack.passives" class="bp-bonus-bar">
-        <span v-for="s in (state.backpack.active_sets || [])" :key="s.id" class="bp-bonus-tag set" @click.stop="showTip(s.name + ': ' + s.desc)">{{ s.name }}</span>
+        <span v-for="s in (state.backpack.active_sets || [])" :key="s.id" class="bp-bonus-tag set" @click.stop="showTip(s.name + ' ' + s.desc)">{{ s.name }}({{ s.pieces }}/{{ s.total }})</span>
         <span v-if="state.backpack.chain_bonus" class="bp-bonus-tag chain" @click.stop="showTip('🔗 连锁加成: 同一行或列放置3个以上同类型物品可获得额外属性加成')">🔗 连锁加成</span>
         <span v-if="state.backpack.passives?.heal_per_turn" class="bp-bonus-tag passive" @click.stop="showTip('💚 回春: 每回合攻击后自动恢复' + state.backpack.passives.heal_per_turn + 'HP')">💚 回春+{{ state.backpack.passives.heal_per_turn }}/回合</span>
         <span v-if="state.backpack.passives?.reflect_pct" class="bp-bonus-tag passive" @click.stop="showTip('🌵 反弹: 受到伤害时自动反弹' + state.backpack.passives.reflect_pct + '%给怪物')">🌵 反弹{{ state.backpack.passives.reflect_pct }}%</span>
@@ -993,6 +993,16 @@ function rerollBlessing() {
   border-color: #ffa726; animation: lglow 2s ease-in-out infinite alternate;
 }
 @keyframes lglow { from { box-shadow: 0 0 3px rgba(255,152,0,.3) } to { box-shadow: 0 0 8px rgba(255,152,0,.5) } }
+.bp-item.rarity-mythic {
+  background: linear-gradient(135deg, rgba(156,39,176,.18), rgba(233,30,99,.15));
+  border-color: #ab47bc; animation: mglow 2s ease-in-out infinite alternate;
+}
+@keyframes mglow { from { box-shadow: 0 0 4px rgba(156,39,176,.4) } to { box-shadow: 0 0 10px rgba(233,30,99,.5) } }
+.bp-item.rarity-eternal {
+  background: linear-gradient(135deg, rgba(255,215,0,.2), rgba(255,69,0,.12));
+  border-color: #ffd700; animation: eglow 1.5s ease-in-out infinite alternate;
+}
+@keyframes eglow { from { box-shadow: 0 0 5px rgba(255,215,0,.5) } to { box-shadow: 0 0 14px rgba(255,69,0,.6) } }
 
 /* 物品操作条 */
 .bp-toolbar {
@@ -1004,7 +1014,7 @@ function rerollBlessing() {
   display: flex; flex-wrap: wrap; gap: 3px 6px; align-items: center; font-size: 11px;
 }
 .bp-tb-name { font-size: 12px; font-weight: bold; }
-.rt-common { color: #757575; } .rt-uncommon { color: #43a047; } .rt-rare { color: #1e88e5; } .rt-legendary { color: #f57c00; }
+.rt-common { color: #757575; } .rt-uncommon { color: #43a047; } .rt-rare { color: #1e88e5; } .rt-legendary { color: #f57c00; } .rt-mythic { color: #9c27b0; } .rt-eternal { color: #ff6f00; text-shadow: 0 0 4px rgba(255,215,0,.5); }
 .bp-tb-desc { color: var(--theme-text-secondary, #666); }
 .bp-tb-adj { font-size: 10px; color: var(--theme-purple, #7c4dff); }
 .bp-tb-curse { font-size: 10px; color: #b71c1c; font-weight: 600; }
@@ -1069,6 +1079,8 @@ function rerollBlessing() {
 .shop-card.rarity-uncommon { border-color: #4caf50; }
 .shop-card.rarity-rare { border-color: #2196f3; }
 .shop-card.rarity-legendary { border-color: #ff9800; background: linear-gradient(135deg, rgba(255,152,0,.05), rgba(255,193,7,.08)); }
+.shop-card.rarity-mythic { border-color: #ab47bc; background: linear-gradient(135deg, rgba(156,39,176,.06), rgba(233,30,99,.06)); }
+.shop-card.rarity-eternal { border-color: #ffd700; background: linear-gradient(135deg, rgba(255,215,0,.08), rgba(255,69,0,.05)); }
 .si-icon { font-size: 22px; display: block; }
 .si-name { font-size: 12px; font-weight: bold; }
 .si-tag {

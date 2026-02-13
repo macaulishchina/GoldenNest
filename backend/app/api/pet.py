@@ -464,7 +464,8 @@ def build_pet_response(pet: FamilyPet, user: User = None) -> dict:
         "daily_game_limit": DAILY_GAME_LIMIT,
         "total_games_used": total_games_used,
         "available_milestones": available_milestones,
-        "created_at": pet.created_at.isoformat() if pet.created_at else None
+        "created_at": pet.created_at.isoformat() if pet.created_at else None,
+        "game_records": get_game_sessions(pet).get("_records", {}),
     }
 
 
@@ -960,6 +961,16 @@ async def game_action(
         game_counts[data.game_type] = game_counts.get(data.game_type, 0) + 1
         current_user.pet_daily_game_counts = json.dumps(game_counts)
 
+        # 更新游戏记录（例如无尽模式最高层数）
+        if data.game_type == "adventure" and session.get("endless"):
+            reached_floor = session.get("floor", 1)
+            all_sessions = get_game_sessions(pet)
+            records = all_sessions.get("_records", {})
+            if reached_floor > records.get("endless_best_floor", 0):
+                records["endless_best_floor"] = reached_floor
+                all_sessions["_records"] = records
+                pet.game_sessions = json.dumps(all_sessions, ensure_ascii=False)
+
         # 清除会话
         clear_game_session(pet, data.game_type)
 
@@ -971,6 +982,26 @@ async def game_action(
 
     pet.last_interaction_at = datetime.utcnow()
     await db.commit()
+
+    # 探险游戏成就检测
+    achievement_context = {}
+    if data.game_type == "adventure":
+        # 难度通关
+        if result.get("adventure_cleared"):
+            achievement_context["adventure_cleared"] = result["adventure_cleared"]
+        # 无尽模式到达新层
+        if result.get("adventure_endless_floor"):
+            achievement_context["adventure_endless_floor"] = result["adventure_endless_floor"]
+    if achievement_context:
+        try:
+            from app.services.achievement import AchievementService
+            ach_service = AchievementService(db)
+            await ach_service.check_and_unlock(current_user.id, achievement_context)
+            await db.commit()
+        except Exception as e:
+            import traceback
+            print(f"[ACHIEVEMENT ERROR] context={achievement_context}, error={e}")
+            traceback.print_exc()
 
     response = {
         "success": True,

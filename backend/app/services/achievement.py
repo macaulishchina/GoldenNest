@@ -521,6 +521,20 @@ ACHIEVEMENT_DEFINITIONS = [
     {"code": "pet_dragon", "name": "龙腾四海", "description": "宠物进化为金龙（达到 Lv.100）", "category": "special", "icon": "🐉", "rarity": "legendary", "points": 500, "is_hidden": False, "trigger_type": "pet_level", "trigger_value": "100"},
     # 陪伴时长
     {"code": "pet_companion_365", "name": "忠实伙伴", "description": "宠物陪伴满 365 天", "category": "special", "icon": "💛", "rarity": "epic", "points": 200, "is_hidden": False, "trigger_type": "pet_age", "trigger_value": "365"},
+
+    # ==================== 探险游戏成就 (ADVENTURE) ====================
+    # --- 难度通关成就 ---
+    {"code": "adventure_clear_easy", "name": "初出茅庐", "description": "通关入门难度探险", "category": "adventure", "icon": "🏕️", "rarity": "common", "points": 15, "is_hidden": False, "trigger_type": "adventure_clear", "trigger_value": "easy"},
+    {"code": "adventure_clear_medium", "name": "勇往直前", "description": "通关中等难度探险", "category": "adventure", "icon": "⚔️", "rarity": "rare", "points": 30, "is_hidden": False, "trigger_type": "adventure_clear", "trigger_value": "medium"},
+    {"code": "adventure_clear_hard", "name": "身经百战", "description": "通关困难难度探险", "category": "adventure", "icon": "🛡️", "rarity": "epic", "points": 60, "is_hidden": False, "trigger_type": "adventure_clear", "trigger_value": "hard"},
+    {"code": "adventure_clear_expert", "name": "绝世高手", "description": "通关专家难度探险", "category": "adventure", "icon": "👑", "rarity": "legendary", "points": 120, "is_hidden": False, "trigger_type": "adventure_clear", "trigger_value": "expert"},
+    # --- 无尽模式里程碑 ---
+    {"code": "adventure_endless_10", "name": "深入地下", "description": "无尽模式到达第 10 层", "category": "adventure", "icon": "🔟", "rarity": "common", "points": 20, "is_hidden": False, "trigger_type": "adventure_endless_floor", "trigger_value": "10"},
+    {"code": "adventure_endless_50", "name": "地下探索者", "description": "无尽模式到达第 50 层", "category": "adventure", "icon": "🗺️", "rarity": "rare", "points": 50, "is_hidden": False, "trigger_type": "adventure_endless_floor", "trigger_value": "50"},
+    {"code": "adventure_endless_100", "name": "百层勇者", "description": "无尽模式到达第 100 层", "category": "adventure", "icon": "🏔️", "rarity": "epic", "points": 100, "is_hidden": False, "trigger_type": "adventure_endless_floor", "trigger_value": "100"},
+    {"code": "adventure_endless_200", "name": "深渊行者", "description": "无尽模式到达第 200 层", "category": "adventure", "icon": "🌋", "rarity": "epic", "points": 200, "is_hidden": False, "trigger_type": "adventure_endless_floor", "trigger_value": "200"},
+    {"code": "adventure_endless_500", "name": "传说冒险家", "description": "无尽模式到达第 500 层", "category": "adventure", "icon": "🌌", "rarity": "legendary", "points": 500, "is_hidden": False, "trigger_type": "adventure_endless_floor", "trigger_value": "500"},
+    {"code": "adventure_endless_1000", "name": "永恒征服者", "description": "无尽模式到达第 1000 层", "category": "adventure", "icon": "✨", "rarity": "mythic", "points": 1000, "is_hidden": False, "trigger_type": "adventure_endless_floor", "trigger_value": "1000"},
 ]
 
 
@@ -536,6 +550,7 @@ CATEGORY_NAMES = {
     "vote": "投票类",
     "todo": "待办任务",
     "calendar": "共享日历",
+    "adventure": "探险游戏",
     "hidden": "隐藏彩蛋",
     "special": "特殊成就",
 }
@@ -1428,6 +1443,21 @@ class AchievementService:
                 return False
             age_days = (datetime.now() - created_at).days
             return age_days >= int(trigger_value)
+
+        # ==================== 探险游戏成就检测 ====================
+        # 难度通关：context 需要传入 adventure_cleared=<difficulty>
+        elif trigger_type == "adventure_clear":
+            cleared = context.get("adventure_cleared")
+            if cleared:
+                return cleared == trigger_value
+            return False
+
+        # 无尽模式层数：context 需要传入 adventure_endless_floor=<当前层数>
+        elif trigger_type == "adventure_endless_floor":
+            floor = context.get("adventure_endless_floor")
+            if floor is not None:
+                return int(floor) >= int(trigger_value)
+            return False
 
         return False
     

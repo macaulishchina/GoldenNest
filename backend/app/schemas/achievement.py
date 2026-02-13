@@ -20,6 +20,7 @@ class AchievementCategory(str, Enum):
     CALENDAR = "calendar"
     HIDDEN = "hidden"
     SPECIAL = "special"
+    ADVENTURE = "adventure"
 
 
 class AchievementRarity(str, Enum):
