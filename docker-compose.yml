@@ -1,5 +1,87 @@
 services:
-  # 后端服务
+  # ========================
+  # 入口网关 (Level 1 - 超稳定, 永远不被迭代影响)
+  # ========================
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    container_name: golden-nest-gateway
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8088}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./ssl:/etc/nginx/ssl:ro
+      - studio-uploads:/data/studio-uploads:ro
+    environment:
+      - HTTPS_PORT=${HTTPS_PORT:-8443}
+    depends_on:
+      - frontend
+      - studio
+      - openclaw
+    networks:
+      - golden-nest-network
+
+  # ========================
+  # OpenClaw AI Gateway (Level 1 - AI 助手控制面)
+  # ========================
+  openclaw:
+    image: openclaw:local
+    container_name: golden-nest-openclaw
+    restart: unless-stopped
+    environment:
+      - HOME=/home/node
+      - TERM=xterm-256color
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
+    volumes:
+      - ./data/openclaw/config:/home/node/.openclaw
+      - ./data/openclaw/workspace:/home/node/.openclaw/workspace
+    init: true
+    command:
+      [
+        "node",
+        "dist/index.js",
+        "gateway",
+        "--bind",
+        "lan",
+        "--port",
+        "18789",
+        "--allow-unconfigured",
+      ]
+    networks:
+      - golden-nest-network
+
+  # ========================
+  # 设计院后端 (Level 1 - 超稳定, AI 驱动的迭代平台)
+  # ========================
+  studio:
+    build: ./studio
+    container_name: golden-nest-studio
+    restart: unless-stopped
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_REPO=${GITHUB_REPO:-macaulishchina/GoldenNest}
+      - COPILOT_API_KEY=${COPILOT_API_KEY:-}
+      - STUDIO_DATA_PATH=/data
+      - STUDIO_ADMIN_PASS=${STUDIO_ADMIN_PASS:-}
+      - STUDIO_SECRET_KEY=${STUDIO_SECRET_KEY:-}
+    volumes:
+      - studio-data:/data
+      - studio-uploads:/data/uploads
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/workspace:ro
+    networks:
+      - golden-nest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/studio-api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ========================
+  # 主项目后端 (Level 2 - 可被设计院迭代)
+  # ========================
   backend:
     build: ./backend
     container_name: golden-nest-backend
@@ -20,16 +102,15 @@ services:
       timeout: 10s
       retries: 3
 
-  # 前端服务
+  # ========================
+  # 主项目前端 (Level 2 - 不再直接暴露端口, 由网关代理)
+  # SSL 由网关负责, 前端只需 HTTP 模式
+  # ========================
   frontend:
     build: ./frontend
     container_name: golden-nest-frontend
     restart: unless-stopped
-    ports:
-      - "${HTTP_PORT:-8088}:80"
-      - "${HTTPS_PORT:-8443}:443"
     volumes:
-      - ./ssl:/etc/nginx/ssl:ro
       - ./data/uploads/site:/usr/share/nginx/pwa-icons:ro
     environment:
       - HTTPS_PORT=${HTTPS_PORT:-8443}
@@ -44,3 +125,7 @@ networks:
 
 volumes:
   golden-nest-data:
+  studio-data:
+  studio-uploads:
+  openclaw-config:
+  openclaw-workspace:

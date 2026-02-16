@@ -60,6 +60,8 @@ htmlcov/
 
 # 构建产物
 frontend/dist/
+studio/frontend/dist/
+studio/frontend/node_modules/
 *.egg
 *.whl
 

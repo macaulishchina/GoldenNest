@@ -1,0 +1,169 @@
+import axios from 'axios'
+import type { AxiosInstance } from 'axios'
+
+const api: AxiosInstance = axios.create({
+  baseURL: '/studio-api',
+  timeout: 300000,
+})
+
+// 请求拦截: 自动带上 Studio token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('studio_token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+// 响应拦截: 401 → 清除 token (但不自动跳转, 由调用方处理)
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('studio_token')
+      // 仅在非 XHR 类请求或确实需要强制登录时才重定向
+      // 大部分 401 由各组件自行处理 (显示提示而非崩溃跳转)
+    }
+    return Promise.reject(error)
+  },
+)
+
+// ==================== 认证 ====================
+export const studioAuthApi = {
+  check: () => api.get('/auth/check'),
+  login: (username: string, password: string) =>
+    api.post('/auth/login', { username, password }),
+  verifyMainToken: (token: string) =>
+    api.post('/auth/verify-main-token', { token }),
+  me: () => api.get('/auth/me'),
+}
+
+// ==================== 项目 ====================
+export const projectApi = {
+  list: (params?: any) => api.get('/projects', { params }),
+  get: (id: number) => api.get(`/projects/${id}`),
+  create: (data: any) => api.post('/projects', data),
+  update: (id: number, data: any) => api.patch(`/projects/${id}`, data),
+  delete: (id: number) => api.delete(`/projects/${id}`),
+}
+
+// ==================== 讨论 ====================
+export const discussionApi = {
+  getMessages: (projectId: number) => api.get(`/projects/${projectId}/messages`),
+  uploadImage: (projectId: number, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`/projects/${projectId}/upload-image`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  deleteMessage: (projectId: number, messageId: number) =>
+    api.delete(`/projects/${projectId}/messages/${messageId}`),
+  deleteMessageAndAfter: (projectId: number, messageId: number) =>
+    api.delete(`/projects/${projectId}/messages/${messageId}/and-after`),
+  // Plan 版本
+  getPlanVersions: (projectId: number) => api.get(`/projects/${projectId}/plan-versions`),
+  getPlanVersion: (projectId: number, version: number) =>
+    api.get(`/projects/${projectId}/plan-versions/${version}`),
+  // SSE 讨论 (特殊处理, 不用 axios)
+  discussUrl: (projectId: number) => `/studio-api/projects/${projectId}/discuss`,
+  finalizePlanUrl: (projectId: number) => `/studio-api/projects/${projectId}/finalize-plan`,
+  // AI 禁言控制
+  getAiMuteStatus: (projectId: number) => api.get(`/projects/${projectId}/ai-mute`),
+  toggleAiMute: (projectId: number) => api.post(`/projects/${projectId}/ai-mute`),
+  getStreamingStatus: (projectId: number) => api.get(`/projects/${projectId}/streaming-status`),
+  // 切换模型时上下文检查
+  checkContext: (projectId: number, model: string) => api.post(`/projects/${projectId}/context-check`, { model }),
+}
+
+// ==================== 实施 ====================
+export const implementationApi = {
+  start: (projectId: number, data: any) => api.post(`/projects/${projectId}/implement`, data),
+  getStatus: (projectId: number) => api.get(`/projects/${projectId}/implementation`),
+  getDiff: (projectId: number) => api.get(`/projects/${projectId}/pr-diff`),
+  approvePR: (projectId: number) => api.post(`/projects/${projectId}/pr/approve`),
+}
+
+// ==================== 部署 ====================
+export const deploymentApi = {
+  deploy: (projectId: number, data: any) => api.post(`/projects/${projectId}/deploy`, data),
+  list: (projectId: number) => api.get(`/projects/${projectId}/deployments`),
+  // WebSocket URL
+  wsUrl: (projectId: number, deploymentId: number) => {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${location.host}/studio-api/projects/${projectId}/deploy-ws/${deploymentId}`
+  },
+}
+
+// ==================== 快照 ====================
+export const snapshotApi = {
+  list: (params?: any) => api.get('/snapshots', { params }),
+  get: (id: number) => api.get(`/snapshots/${id}`),
+  create: (data: any) => api.post('/snapshots', data),
+  rollback: (id: number, data?: any) => api.post(`/snapshots/${id}/rollback`, data || {}),
+}
+
+// ==================== 模型 ====================
+export const modelApi = {
+  list: (params?: { category?: string; vision_only?: boolean; api_backend?: string; refresh?: boolean; custom_models?: boolean }) =>
+    api.get('/models', { params }),
+  get: (id: string) => api.get(`/models/${id}`),
+  refresh: () => api.post('/models/refresh'),
+  cacheStatus: () => api.get('/models/cache-status'),
+  getAllCapabilities: () => api.get('/models/capabilities/all'),
+  updateCapability: (modelId: string, data: { max_input_tokens?: number; max_output_tokens?: number }) =>
+    api.patch(`/models/capabilities/${encodeURIComponent(modelId)}`, data),
+  // 定价刷新
+  refreshPricing: () => api.post('/models/pricing/refresh', null, { timeout: 30000 }),
+  applyPricing: (scraped: Record<string, any>) => api.post('/models/pricing/apply', { scraped }),
+  currentPricing: () => api.get('/models/pricing/current'),
+}
+
+// ==================== 模型配置管理 ====================
+export const modelConfigApi = {
+  // 自定义模型 CRUD
+  listModels: (params?: { api_backend?: string; search?: string; enabled_only?: boolean }) =>
+    api.get('/model-config/models', { params }),
+  createModel: (data: any) => api.post('/model-config/models', data),
+  updateModel: (id: number, data: any) => api.put(`/model-config/models/${id}`, data),
+  deleteModel: (id: number) => api.delete(`/model-config/models/${id}`),
+  resetModels: () => api.post('/model-config/models/reset'),
+  // 能力覆盖 CRUD
+  listCapabilities: (params?: { search?: string }) =>
+    api.get('/model-config/capabilities', { params }),
+  upsertCapability: (modelName: string, data: any) =>
+    api.put(`/model-config/capabilities/${encodeURIComponent(modelName)}`, data),
+  deleteCapability: (modelName: string) =>
+    api.delete(`/model-config/capabilities/${encodeURIComponent(modelName)}`),
+  resetAllCapabilities: () => api.post('/model-config/capabilities/reset-all'),
+  // 合并视图
+  getMerged: (params?: { search?: string }) =>
+    api.get('/model-config/merged', { params }),
+}
+
+// ==================== Copilot OAuth ====================
+export const copilotAuthApi = {
+  status: () => api.get('/copilot-auth/status'),
+  startDeviceFlow: () => api.post('/copilot-auth/device-flow/start'),
+  pollDeviceFlow: () => api.post('/copilot-auth/device-flow/poll'),
+  logout: () => api.post('/copilot-auth/logout'),
+  test: () => api.post('/copilot-auth/test'),
+  usage: () => api.get('/copilot-auth/usage'),
+}
+
+// ==================== 系统 ====================
+export const systemApi = {
+  health: () => api.get('/health'),
+  status: () => api.get('/system/status'),
+}
+
+// ==================== 端点探测 ====================
+export const endpointProbeApi = {
+  listEndpoints: () => api.get('/endpoint-probe/endpoints'),
+  testAll: (timeout?: number) =>
+    api.post('/endpoint-probe/test-all', null, { params: timeout ? { timeout } : {}, timeout: 120000 }),
+  testOne: (endpointId: string, timeout?: number) =>
+    api.post(`/endpoint-probe/test-one/${endpointId}`, null, { params: timeout ? { timeout } : {}, timeout: 60000 }),
+}
+
+export default api
