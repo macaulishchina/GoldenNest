@@ -166,9 +166,11 @@ router.beforeEach(async (to, _from, next) => {
   
   // 如果需要认证
   if (to.meta.requiresAuth) {
-    // 游客模式：允许访问仪表盘，其他页面需要登录
+    // 游客模式：检查是否允许游客访问（检查当前路由及其父路由的meta）
     if (userStore.isGuest) {
-      if (to.meta.allowGuest) {
+      // 检查路由或其匹配的任何父路由是否允许游客访问
+      const allowGuest = to.matched.some(record => record.meta.allowGuest)
+      if (allowGuest) {
         next()
         return
       } else {
