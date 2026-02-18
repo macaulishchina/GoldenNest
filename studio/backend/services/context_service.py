@@ -6,6 +6,8 @@
   - 极小 (<16K):  仅包含角色定义 + 项目概况 + plan 格式
   - 中等 (16K-128K): + 目录结构 + 关键目录列表 + 少量代码摘要
   - 大型 (>128K):  + 完整关键文件内容 (原始行为)
+
+通用设计 — 不包含任何特定项目的硬编码，通过自动发现和 Skill 配置适配不同项目。
 """
 import os
 import logging
@@ -16,25 +18,67 @@ from studio.backend.core.token_utils import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
-# 需要摘要的关键文件
-KEY_FILES = [
+# ======================== 自动发现关键文件和目录 ========================
+
+# 常见项目说明文件 (按优先级排序, 存在则读取)
+_CANDIDATE_KEY_FILES = [
     "CLAUDE.md",
-    "backend/app/models/models.py",
-    "backend/app/main.py",
-    "frontend/src/router/index.ts",
-    "frontend/src/api/index.ts",
+    "COPILOT.md",
+    "README.md",
+    "CONTRIBUTING.md",
     "docker-compose.yml",
+    "docker-compose.yaml",
+    "package.json",
+    "pyproject.toml",
+    "Cargo.toml",
+    "go.mod",
+    "pom.xml",
+    "build.gradle",
+    "Makefile",
 ]
 
-# 需要列出内容的目录
-KEY_DIRS = [
-    "backend/app/api",
-    "backend/app/services",
-    "backend/app/schemas",
-    "frontend/src/views",
-    "frontend/src/components",
-    "frontend/src/stores",
+# 常见源码目录 (按优先级, 存在则列出内容)
+_CANDIDATE_KEY_DIRS = [
+    # Python
+    "app/api", "app/services", "app/models", "app/schemas",
+    "backend/app/api", "backend/app/services", "backend/app/schemas",
+    "src",
+    # JS/TS
+    "frontend/src/views", "frontend/src/components", "frontend/src/stores",
+    "src/views", "src/components", "src/stores", "src/pages",
+    # Go
+    "cmd", "internal", "pkg",
+    # Java
+    "src/main/java", "src/main/resources",
+    # Rust
+    "src/bin",
 ]
+
+# 自动发现的最大文件/目录数
+_MAX_KEY_FILES = 8
+_MAX_KEY_DIRS = 8
+
+
+def discover_key_files(workspace: str) -> List[str]:
+    """自动发现工作区中的关键文件 (存在 → 纳入)"""
+    found = []
+    for f in _CANDIDATE_KEY_FILES:
+        if os.path.isfile(os.path.join(workspace, f)):
+            found.append(f)
+            if len(found) >= _MAX_KEY_FILES:
+                break
+    return found
+
+
+def discover_key_dirs(workspace: str) -> List[str]:
+    """自动发现工作区中的关键目录 (存在 → 纳入)"""
+    found = []
+    for d in _CANDIDATE_KEY_DIRS:
+        if os.path.isdir(os.path.join(workspace, d)):
+            found.append(d)
+            if len(found) >= _MAX_KEY_DIRS:
+                break
+    return found
 
 # ======================== Legacy 硬编码 Prompts ========================
 # 兼容 skill_id=NULL 的旧项目, 新项目应通过 Skill 配置
@@ -52,6 +96,11 @@ LEGACY_ROLE_PROMPT = """你是一位资深产品经理和需求分析师，正�
 4. **总结确认** — 每轮问答后，简要总结你对需求的理解，让用户确认或纠正。
 5. **循循善诱** — 帮助用户发现他们没想到的需求场景，如：异常流程、权限控制、数据一致性、并发场景。
 
+### ⚠️ 绝对禁止的行为
+- **禁止"预告式回复"**：不要说"好的，让我问几个问题："、"让我继续问…"然后就停止。如果你想提问，必须在**同一次回复中直接调用 `ask_user` 工具**。
+- **禁止等待用户许可才提问**：不要说"需要我继续问吗？"——直接调用 `ask_user` 提问。
+- **禁止无工具的纯确认回复**：不要用纯文字说"让我确认一下"然后停下来等用户回复。
+
 ### 什么时候讨论技术
 - ✅ 用户主动问"这个用什么技术实现"时
 - ✅ 需要查看代码来理解现有功能时
@@ -60,7 +109,7 @@ LEGACY_ROLE_PROMPT = """你是一位资深产品经理和需求分析师，正�
 - ❌ 不要在用户只描述了大概想法时就给出完整技术方案
 
 ## 项目概况
-这是一个家庭财富管理 Web 应用 (GoldenNest / 小金库)，使用 Vue 3 + TypeScript + Naive UI (前端) + FastAPI + SQLAlchemy 2.0 + SQLite (后端)"""
+此信息将根据工作区内容自动提供。请参考下方「项目结构」和「关键文件摘要」了解项目技术栈和架构。"""
 
 LEGACY_FINALIZATION_PROMPT = """## 关于敲定方案
 当用户说"敲定"时，系统会自动基于讨论历史生成需求规格书（Plan）。
@@ -109,11 +158,14 @@ LEGACY_OUTPUT_GENERATION_PROMPT = """基于以下讨论内容，生成一份结�
 DEFAULT_TOOL_STRATEGY = """## 工具使用策略
 
 ### 重要原则
-- **直接调用工具，不要描述意图**。不要说"让我查看一下…"然后停止——直接调用对应工具。
+- **直接调用工具，不要描述意图**。不要说"让我查看一下…"、"让我问几个问题…"然后停止——直接调用对应工具。
 - 每次回复中，要么调用工具，要么输出有实际内容的文本。**不要输出空响应。**
+- **禁止"预告式"回复**：绝对不要输出类似"好的，让我继续问几个问题："这样的纯文本然后就停止。如果你想提问，必须在同一次回复中直接调用 `ask_user` 工具。
 
 ### ask_user — 主动提问澄清（最重要的工具）
 - 用户描述内容后，**立即**用 `ask_user` 提出澄清问题
+- **永远直接调用工具提问**：想问问题时，直接调用 `ask_user`。不要先用文字说"我来问几个问题"或"让我确认一下"然后等用户回复——这会浪费一轮对话
+- 你可以在调用 `ask_user` 的同时附带简短的文字内容（如总结、说明），但**文字和工具调用必须在同一次回复中**
 - 每个问题附带 2-5 个选项（对象格式：label + 可选 description + recommended 标记）
 - **按推荐度排序**: 最推荐的选项放在最前面，设置 `recommended: true`
 - **单选/多选**: 通过 `type: "single"` 或 `type: "multi"` 控制
@@ -221,6 +273,10 @@ def build_project_context(
     elif 0 < budget_tokens <= 32000:
         level = "medium"
 
+    # 自动发现关键文件和目录
+    key_files = discover_key_files(ws)
+    key_dirs = discover_key_dirs(ws)
+
     # 项目结构 (medium + full)
     tree = ""
     if level != "minimal":
@@ -229,22 +285,26 @@ def build_project_context(
     # 关键文件 (full only)
     key_file_contents = []
     if level == "full":
-        for f in KEY_FILES:
+        for f in key_files:
             fp = os.path.join(ws, f)
             if os.path.exists(fp):
-                content = read_file_safe(fp, max_lines=100 if f != "CLAUDE.md" else 300)
+                # 项目说明文件给更多行数
+                max_lines = 300 if f.upper().endswith(".md") else 100
+                content = read_file_safe(fp, max_lines=max_lines)
                 key_file_contents.append((f, content, f"### {f}\n```\n{content}\n```"))
     elif level == "medium":
-        for f in ["CLAUDE.md", "docker-compose.yml"]:
-            fp = os.path.join(ws, f)
-            if os.path.exists(fp):
-                content = read_file_safe(fp, max_lines=50)
-                key_file_contents.append((f, content, f"### {f}\n```\n{content}\n```"))
+        # medium 只读 .md 说明文件和配置文件
+        for f in key_files:
+            if f.upper().endswith(".md") or f in ("docker-compose.yml", "docker-compose.yaml", "package.json"):
+                fp = os.path.join(ws, f)
+                if os.path.exists(fp):
+                    content = read_file_safe(fp, max_lines=50)
+                    key_file_contents.append((f, content, f"### {f}\n```\n{content}\n```"))
 
     # 关键目录 (medium + full)
     key_dir_contents = []
     if level != "minimal":
-        for d in KEY_DIRS:
+        for d in key_dirs:
             dp = os.path.join(ws, d)
             if os.path.isdir(dp):
                 key_dir_contents.append(f"- `{d}/`: {list_dir_files(dp)}")

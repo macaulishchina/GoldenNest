@@ -75,7 +75,41 @@ class AiTaskType(str, enum.Enum):
     auto_review = "auto_review"
 
 
+class UserStatus(str, enum.Enum):
+    """Studio 用户状态"""
+    pending = "pending"        # 待审批
+    active = "active"          # 已激活
+    disabled = "disabled"      # 已禁用
+
+
+class UserRole(str, enum.Enum):
+    """Studio 用户角色"""
+    admin = "admin"            # 管理员 (全部权限)
+    developer = "developer"    # 开发者 (项目相关权限)
+    viewer = "viewer"          # 观察者 (只读)
+
+
 # ======================== Models ========================
+
+class StudioUser(Base):
+    """设计院用户 (DB 注册用户)"""
+    __tablename__ = "studio_users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    password_hash = Column(String(200), nullable=False)
+    nickname = Column(String(100), nullable=False, default="")
+    role = Column(Enum(UserRole), nullable=False, default=UserRole.viewer)
+    status = Column(Enum(UserStatus), nullable=False, default=UserStatus.pending)
+    # 细分权限 JSON, 如 ["project.create", "project.edit", "ai.chat", "settings.view"]
+    permissions = Column(JSON, default=list)
+    # 元数据
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    approved_by = Column(String(100), nullable=True)       # 审批人用户名
+    approved_at = Column(DateTime, nullable=True)
+    last_login_at = Column(DateTime, nullable=True)
+
 
 class Skill(Base):
     """AI 技能定义 — 数据驱动的工作流配置"""
@@ -100,6 +134,31 @@ class Skill(Base):
 
     # UI 文案配置 {"project_noun": "需求", "create_title": "...", ...}
     ui_labels = Column(JSON, default=lambda: {})
+
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ToolDefinition(Base):
+    """AI 工具定义 — 数据驱动的工具配置"""
+    __tablename__ = "tool_definitions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)        # 工具函数名 (如 read_file)
+    display_name = Column(String(100), nullable=False)             # 显示名称 (如 "读取文件")
+    icon = Column(String(10), default="🔧")
+    description = Column(Text, default="")                         # 管理员可见的描述
+    permission_key = Column(String(50), nullable=False)            # 权限标识 (如 read_source)
+    is_builtin = Column(Boolean, default=False)
+    is_enabled = Column(Boolean, default=True)
+
+    # OpenAI Function Calling 定义 (JSON)
+    function_def = Column(JSON, nullable=False, default=dict)      # {"name":"...", "description":"...", "parameters":{...}}
+
+    # 执行器类型: builtin (内部executor), command (shell), http (webhook)
+    executor_type = Column(String(20), default="builtin")
+    executor_config = Column(JSON, default=dict)                   # 执行器参数 (对 builtin 工具为空)
 
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -313,6 +372,113 @@ class AIProvider(Base):
     default_models = Column(JSON, default=list)                  # 预设模型列表 [{name, friendly_name, ...}]
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class WorkflowModule(Base):
+    """
+    工作流功能模块 — 可复用的流水线构建块
+
+    每个模块对应一种功能面板 (如 AI 对话、代码实施、部署等)，
+    通过 component_key 映射到前端 Vue 组件。
+    工作流通过引用模块进行组装。
+    """
+    __tablename__ = "workflow_modules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)       # 唯一标识 (如 "ai_chat")
+    display_name = Column(String(100), nullable=False)            # 显示名 (如 "AI 对话")
+    icon = Column(String(10), default="📦")
+    description = Column(Text, default="")
+    component_key = Column(String(100), nullable=False)           # Vue 组件 key: "ChatPanel", "ImplementPanel" 等
+    default_config = Column(JSON, default=dict)                   # 默认配置 (可被 workflow 覆盖)
+    is_builtin = Column(Boolean, default=False)
+    is_enabled = Column(Boolean, default=True)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Workflow(Base):
+    """
+    工作流定义 — 由功能模块组装而成的流水线
+
+    每个工作流定义了:
+    - stages: 状态步骤条 (项目生命周期)
+    - modules: 有序的功能模块列表 (每个引用 WorkflowModule, 含 tab 配置)
+    - ui_labels: 界面文案
+    Project.project_type → Workflow.name
+    """
+    __tablename__ = "workflows"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)       # 唯一标识 (如 "requirement")
+    display_name = Column(String(100), nullable=False)            # 显示名 (如 "需求迭代")
+    icon = Column(String(10), default="🔄")
+    description = Column(Text, default="")
+    is_builtin = Column(Boolean, default=False)
+    is_enabled = Column(Boolean, default=True)
+
+    # 阶段定义 (步骤条)
+    # [{"key":"draft","label":"草稿","status":"draft","skill":"..."}, ...]
+    stages = Column(JSON, nullable=False, default=list)
+
+    # 模块组装 (有序 tab 列表, 引用 WorkflowModule.name)
+    # [{"module_name":"ai_chat","tab_key":"discuss","tab_label":"💬 讨论",
+    #   "stage_statuses":["draft","discussing"],"skill_name":"需求分析",
+    #   "config":{"mode":"discuss","plan_panel":true,...}}, ...]
+    modules = Column(JSON, nullable=False, default=list)
+
+    # UI 文案 (project_noun, create_title, output_noun 等)
+    ui_labels = Column(JSON, default=dict)
+
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ======================== 命令授权管理 ========================
+
+class CommandAuthRule(Base):
+    """
+    命令授权规则 — 预配置的命令自动审批/拒绝规则
+
+    支持多种匹配方式 (精确/前缀/包含/正则), 可作用于全局或特定项目。
+    scope=project 时挂靠具体 project_id; scope=global 时 project_id=null。
+    """
+    __tablename__ = "command_auth_rules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pattern = Column(String(500), nullable=False)                  # 命令匹配模式
+    pattern_type = Column(String(20), nullable=False, default="prefix")  # prefix | exact | contains | regex
+    scope = Column(String(20), nullable=False, default="global")   # global | project
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
+    action = Column(String(10), nullable=False, default="allow")   # allow | deny
+    created_by = Column(String(100), default="")
+    note = Column(String(500), default="")
+    is_enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    project = relationship("Project", foreign_keys=[project_id])
+
+
+class CommandAuditLog(Base):
+    """
+    命令执行审计日志 — 记录每次写命令的审批/执行结果
+
+    method 字段记录审批来源: manual (用户手动), rule:N (规则N匹配),
+    project_auto (项目级自动批准), session_cache (会话缓存命中)
+    """
+    __tablename__ = "command_audit_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
+    project_title = Column(String(200), default="")                # 冗余, 方便展示
+    command = Column(Text, nullable=False)
+    action = Column(String(20), nullable=False)                    # approved | rejected | timeout
+    method = Column(String(100), default="manual")                 # manual | rule:123 | project_auto | session_cache
+    scope = Column(String(20), default="once")                     # once | session | project | permanent
+    operator = Column(String(100), default="")                     # 操作者 (用户名或 auto)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class AiTask(Base):

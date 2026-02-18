@@ -520,7 +520,7 @@ async def _fetch_copilot_api_models() -> List[Dict[str, Any]]:
             "editor-version": "vscode/1.96.0",
             "editor-plugin-version": "copilot-chat/0.24.0",
             "copilot-integration-id": "vscode-chat",
-            "user-agent": "GoldenNest-Studio/1.0",
+            "user-agent": "Studio/1.0",
         }
 
         async with httpx.AsyncClient(timeout=15) as client:
@@ -1372,7 +1372,7 @@ async def _scrape_github_pricing() -> Dict[str, Dict[str, Any]]:
     async with httpx.AsyncClient(timeout=20) as client:
         resp = await client.get(_PRICING_DOC_URL, headers={
             "Accept": "text/html",
-            "User-Agent": "GoldenNest-Studio/1.0",
+            "User-Agent": "Studio/1.0",
         })
         if resp.status_code != 200:
             raise RuntimeError(f"获取文档失败: HTTP {resp.status_code}")

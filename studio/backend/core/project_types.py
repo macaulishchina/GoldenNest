@@ -1,20 +1,18 @@
 """
 项目类型定义
 
-项目类型定义了项目的完整生命周期:
-- stages: 状态流转 (每阶段可绑定一个 skill)
-- ui_labels: 界面文案
-- skill_phases: 哪些阶段使用哪个 skill (按 skill name 引用)
+优先从 DB 工作流缓存读取, 回退到硬编码默认值。
+所有外部代码继续通过 get_project_type() / get_skill_for_status() 等函数访问,
+内部数据源已透明切换为 DB-backed 工作流。
 
-关系: Project → project_type → stages → skill (at each phase)
-Skill 只负责 AI 能力 (prompts), 不再定义 stages 和 ui_labels.
+关系: Project.project_type → Workflow.name → stages + modules + ui_labels
 """
 
 from typing import Dict, Any, List, Optional
 
-# ======================== 项目类型定义 ========================
+# ======================== 硬编码 Fallback (DB 不可用时使用) ========================
 
-PROJECT_TYPES: Dict[str, Dict[str, Any]] = {
+_FALLBACK_PROJECT_TYPES: Dict[str, Dict[str, Any]] = {
     "requirement": {
         "name": "需求",
         "icon": "📋",
@@ -76,45 +74,69 @@ PROJECT_TYPES: Dict[str, Dict[str, Any]] = {
 # 默认项目类型
 DEFAULT_PROJECT_TYPE = "requirement"
 
+# 向后兼容: 外部代码可能直接 import PROJECT_TYPES
+PROJECT_TYPES = _FALLBACK_PROJECT_TYPES
+
+
+def _get_effective_types() -> Dict[str, Dict[str, Any]]:
+    """优先从 DB 工作流缓存获取, 回退到硬编码"""
+    try:
+        from studio.backend.api.workflows import get_workflow_cache
+        cache = get_workflow_cache()
+        if cache:
+            return cache
+    except Exception:
+        pass
+    return _FALLBACK_PROJECT_TYPES
+
 
 def get_project_type(type_key: str) -> Optional[Dict[str, Any]]:
-    """获取项目类型配置"""
-    return PROJECT_TYPES.get(type_key)
+    """获取项目类型配置 (优先 DB, 回退 hardcoded)"""
+    return _get_effective_types().get(type_key)
 
 
 def get_all_project_types() -> List[Dict[str, Any]]:
     """获取所有项目类型 (带 key)"""
+    types = _get_effective_types()
     return [
         {"key": k, **v}
-        for k, v in PROJECT_TYPES.items()
+        for k, v in types.items()
     ]
 
 
 def get_skill_for_status(type_key: str, status: str) -> Optional[str]:
     """根据项目类型和当前状态, 返回该阶段对应的 skill 名称 (无则返回 None)"""
-    pt = PROJECT_TYPES.get(type_key)
+    pt = _get_effective_types().get(type_key)
     if not pt:
         return None
-    for stage in pt["stages"]:
-        if stage["status"] == status:
+    for stage in pt.get("stages", []):
+        if stage.get("status") == status:
             return stage.get("skill")
     return None
 
 
 def get_stages(type_key: str) -> List[Dict[str, Any]]:
     """获取项目类型的阶段列表"""
-    pt = PROJECT_TYPES.get(type_key)
+    pt = _get_effective_types().get(type_key)
     if not pt:
         return []
-    return pt["stages"]
+    return pt.get("stages", [])
 
 
 def get_ui_labels(type_key: str) -> Dict[str, str]:
     """获取项目类型的 UI 文案"""
-    pt = PROJECT_TYPES.get(type_key)
+    pt = _get_effective_types().get(type_key)
     if not pt:
         return {}
     return pt.get("ui_labels", {})
+
+
+def get_modules(type_key: str) -> List[Dict[str, Any]]:
+    """获取项目类型的模块列表 (仅 DB-backed 工作流有)"""
+    pt = _get_effective_types().get(type_key)
+    if not pt:
+        return []
+    return pt.get("modules", [])
 
 
 def validate_stage_transition(type_key: str, current_status: str, new_status: str) -> tuple:

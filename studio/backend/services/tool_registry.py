@@ -297,10 +297,52 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     },
 ]
 
+# ==================== DB 工具缓存 ====================
+
+# 从 DB 加载的工具定义缓存 (启动时 + API 更新时刷新)
+_db_tool_cache: Optional[List[Dict[str, Any]]] = None
+_db_perm_map_cache: Optional[Dict[str, Set[str]]] = None
+
+
+async def load_tools_from_db():
+    """从 DB 加载工具定义到内存缓存 (启动时调用)"""
+    global _db_tool_cache, _db_perm_map_cache
+    try:
+        from studio.backend.core.database import async_session_maker
+        from studio.backend.models import ToolDefinition
+        from sqlalchemy import select
+
+        async with async_session_maker() as db:
+            result = await db.execute(
+                select(ToolDefinition)
+                .where(ToolDefinition.is_enabled.is_(True))
+                .order_by(ToolDefinition.sort_order, ToolDefinition.id)
+            )
+            tools = result.scalars().all()
+
+        _db_tool_cache = []
+        _db_perm_map_cache = {}
+        for t in tools:
+            func_def = t.function_def or {}
+            tool_name = func_def.get("name", t.name)
+            _db_tool_cache.append({
+                "type": "function",
+                "function": func_def,
+            })
+            _db_perm_map_cache[tool_name] = {t.permission_key}
+
+        logger.info(f"✅ 从 DB 加载了 {len(_db_tool_cache)} 个工具定义到缓存")
+    except Exception as e:
+        logger.warning(f"⚠️ 从 DB 加载工具定义失败, 使用硬编码 fallback: {e}")
+        _db_tool_cache = None
+        _db_perm_map_cache = None
+
 
 def get_tool_definitions(permissions: Optional[Set[str]] = None) -> list:
     """
     获取当前可用的工具定义列表 (根据权限过滤)
+
+    优先使用 DB 缓存, 回退到硬编码 TOOL_DEFINITIONS
 
     Args:
         permissions: 允许的权限集合，None 表示使用默认权限 (全部开启)
@@ -309,11 +351,15 @@ def get_tool_definitions(permissions: Optional[Set[str]] = None) -> list:
         OpenAI tools format 列表
     """
     perms = permissions or DEFAULT_PERMISSIONS
-    tools = []
 
-    for tool_def in TOOL_DEFINITIONS:
+    # 使用 DB 缓存
+    tool_defs = _db_tool_cache if _db_tool_cache is not None else TOOL_DEFINITIONS
+    perm_map = _db_perm_map_cache if _db_perm_map_cache is not None else _TOOL_PERMISSION_MAP
+
+    tools = []
+    for tool_def in tool_defs:
         name = tool_def["function"]["name"]
-        required_perm = _TOOL_PERMISSION_MAP.get(name)
+        required_perm = perm_map.get(name)
         if required_perm and required_perm.issubset(perms):
             tools.append(tool_def)
 
@@ -413,25 +459,21 @@ async def execute_tool(
     if required_perm and not required_perm.issubset(perms):
         return f"⚠️ 工具 '{name}' 已被项目管理员禁用"
 
-    # run_command 特殊处理: 非只读命令需要 execute_command 权限
+    # run_command 特殊处理: 非只读命令需要 execute_command 权限 + 用户审批
     if name == "run_command":
         command = arguments.get("command", "")
         if not _is_readonly_command(command):
-            if "execute_command" in perms:
-                # 已有永久写权限, 使用不受限版本
-                try:
-                    result = await asyncio.wait_for(
-                        _tool_run_command_unrestricted(arguments, workspace),
-                        timeout=COMMAND_TIMEOUT_SECONDS * 2,
-                    )
-                    return result
-                except asyncio.TimeoutError:
-                    return f"⚠️ 命令执行超时"
-                except Exception as e:
-                    logger.exception(f"命令执行失败")
-                    return f"⚠️ 命令执行失败: {str(e)}"
-            elif command_approval_fn:
-                # 请求用户实时审批
+            if "execute_command" not in perms:
+                # 写命令权限未开启 — 完全阻止
+                return (
+                    f"⚠️ 此命令不在只读白名单中，且项目未开启「执行写入命令」权限。\n"
+                    f"命令: {command}\n\n"
+                    f"只读命令示例: git log, git diff, ls, cat, grep, find, python3 -c 等\n"
+                    f"如需执行此命令，请让用户在工具面板中开启「⚠️ 执行写入命令」权限。"
+                )
+            # 写命令权限已开启 — 仍需通过审批流程
+            if command_approval_fn:
+                # 请求用户实时审批 (回调内部处理 session/project 级缓存)
                 approval = await command_approval_fn(command, "")
                 if approval.get("approved"):
                     try:
@@ -439,8 +481,10 @@ async def execute_tool(
                             _tool_run_command_unrestricted(arguments, workspace),
                             timeout=COMMAND_TIMEOUT_SECONDS * 2,
                         )
-                        scope_label = {"once": "本次", "session": "本会话", "project": "本项目"}.get(approval.get("scope", ""), "")
-                        return f"✅ 用户已授权执行 ({scope_label})\n\n{result}"
+                        scope_label = {"once": "本次", "session": "本会话", "project": "本项目", "permanent": "永久", "rule": "规则匹配"}.get(approval.get("scope", ""), "")
+                        if scope_label:
+                            return f"✅ 用户已授权执行 ({scope_label})\n\n{result}"
+                        return result
                     except asyncio.TimeoutError:
                         return f"⚠️ 命令执行超时"
                     except Exception as e:
@@ -455,8 +499,18 @@ async def execute_tool(
                         f"请改用只读命令获取信息，或向用户解释为什么需要执行此命令后再次尝试。"
                     )
             else:
-                # 无审批回调, 使用受限版本 (返回权限不足提示)
-                pass  # _tool_run_command 内部会检查并返回提示
+                # 无审批回调 (非任务上下文, 如直接 API 调用) — 直接执行
+                try:
+                    result = await asyncio.wait_for(
+                        _tool_run_command_unrestricted(arguments, workspace),
+                        timeout=COMMAND_TIMEOUT_SECONDS * 2,
+                    )
+                    return result
+                except asyncio.TimeoutError:
+                    return f"⚠️ 命令执行超时"
+                except Exception as e:
+                    logger.exception(f"命令执行失败")
+                    return f"⚠️ 命令执行失败: {str(e)}"
 
     # 执行工具 (带超时)
     executor = _TOOL_EXECUTORS.get(name)

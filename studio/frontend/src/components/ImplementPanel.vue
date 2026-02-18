@@ -59,7 +59,7 @@
         <n-descriptions-item label="状态">
           <n-tag :type="implStatusType" size="small">{{ implStatusText }}</n-tag>
         </n-descriptions-item>
-        <n-descriptions-item label="Issue" v-if="implStatus.github_issue_number">
+        <n-descriptions-item label="Issue" v-if="implStatus.github_issue_number && repoName">
           <n-button text tag="a" :href="`https://github.com/${repoName}/issues/${implStatus.github_issue_number}`" target="_blank">
             #{{ implStatus.github_issue_number }}
           </n-button>
@@ -141,7 +141,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useMessage } from 'naive-ui'
-import { implementationApi } from '@/api'
+import { implementationApi, studioAuthApi } from '@/api'
 import type { Project } from '@/stores/project'
 
 const props = defineProps<{ project: Project }>()
@@ -157,7 +157,7 @@ const loadingDiff = ref(false)
 const diffData = ref<any>(null)
 let pollTimer: any = null
 
-const repoName = 'macaulishchina/GoldenNest'
+const repoName = ref('')
 
 // ── 状态计算 ──────────────────────────────────────────────────
 
@@ -309,6 +309,12 @@ function stopPolling() {
 }
 
 onMounted(async () => {
+  // 从后端获取工作区配置 (GitHub repo 等)
+  try {
+    const { data } = await studioAuthApi.workspaceConfig()
+    repoName.value = data.github_repo || ''
+  } catch { /* ignore */ }
+
   await refreshStatus()
   const s = implStatus.value?.status
   if (s === 'agent_working' || s === 'task_created') {

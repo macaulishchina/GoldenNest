@@ -18,23 +18,24 @@
       </div>
       <div class="project-header-right">
         <n-button
+          v-if="discussModule"
           size="tiny"
           :quaternary="!showPlanPanel"
           :type="showPlanPanel ? 'info' : 'default'"
           @click="showPlanPanel = !showPlanPanel"
           style="font-size: 11px"
         >
-          {{ outputTabLabel }}
+          {{ getModuleLabel(discussModule, 'plan_tab_label', outputTabLabel) }}
         </n-button>
         <n-button
-          v-if="hasReviewStage && activeTab === 'review'"
+          v-if="reviewModule && activeTab === reviewModule.tab_key"
           size="tiny"
           :quaternary="!showReviewPanel"
           :type="showReviewPanel ? 'info' : 'default'"
           @click="showReviewPanel = !showReviewPanel"
           style="font-size: 11px"
         >
-          {{ reviewOutputNoun }}
+          {{ getModuleLabel(reviewModule, 'plan_output_noun', reviewOutputNoun) }}
         </n-button>
         <n-button size="tiny" quaternary :type="project.is_archived ? 'warning' : 'default'" @click="toggleArchive">
           {{ project.is_archived ? '取消归档' : '归档项目' }}
@@ -44,96 +45,118 @@
       </div>
     </div>
 
-    <!-- 主内容 Tabs -->
+    <!-- 主内容 Tabs — 动态工作流模块渲染 -->
     <n-tabs type="line" animated v-model:value="activeTab" size="small" style="--n-tab-padding: 6px 12px">
-      <n-tab-pane name="discuss" :tab="discussTabLabel" :disabled="isTabLocked('discuss')">
-        <!-- 工作区信息条 -->
-        <div v-if="project.workspace_dir && project.iteration_count > 0" class="workspace-info-bar">
-          <n-tag size="small" :bordered="false" type="info">
-            🔄 迭代 #{{ project.iteration_count }}
-          </n-tag>
-          <n-tag size="small" :bordered="false">
-            📁 {{ project.workspace_dir }}
-          </n-tag>
-        </div>
-        <!-- 只读提示 -->
-        <n-alert v-if="isStageReadonly('discussing')" type="info" style="margin-bottom: 8px" :bordered="false">
-          讨论阶段已完成，当前为只读模式。如需修改，请在审查阶段点击「继续迭代」。
-        </n-alert>
-        <div class="discuss-layout">
-          <!-- 左: 聊天区 -->
-          <div class="discuss-chat">
-            <ChatPanel :key="'discuss-' + project.id" :project="project" :readonly="isStageReadonly('discussing')" @plan-finalized="onPlanFinalized" />
-          </div>
-          <!-- 右: 设计稿面板 -->
-          <div v-if="showPlanPanel" class="discuss-plan">
-            <div class="plan-panel-header">
-              <n-button size="tiny" quaternary circle @click="showPlanPanel = false" style="flex-shrink: 0">✕</n-button>
-            </div>
-            <div class="plan-panel-body">
-              <PlanEditor :project="project" :output-noun="outputNoun" :finalize-action="finalizeAction" @updated="refreshProject" />
-            </div>
-          </div>
-        </div>
-      </n-tab-pane>
+      <template v-for="mod in visibleModules" :key="mod.tab_key">
 
-      <n-tab-pane v-if="hasImplementStage" name="implement" tab="🔨 实施" :disabled="isTabLocked('implement')">
-        <ImplementPanel :project="project" @status-changed="refreshProject" @go-review="goToReview" />
-      </n-tab-pane>
-
-      <n-tab-pane v-if="hasReviewStage" name="review" :tab="reviewDiscussTabLabel" :disabled="isTabLocked('review')">
-        <!-- 审查准备 (未准备时显示按钮) -->
-        <div v-if="!reviewPrepared" style="padding: 40px 0; text-align: center;">
-          <n-result status="info" title="准备审查环境" description="克隆实施分支、获取变更信息、加载需求文档到 AI 上下文">
-            <template #footer>
-              <n-space vertical align="center" :size="16">
-                <n-button type="primary" size="large" @click="handlePrepareReview" :loading="preparingReview">
-                  🔍 开始审查
-                </n-button>
-                <n-text v-if="project.branch_name" depth="3" style="font-size: 12px">
-                  将基于分支 <n-tag size="small" :bordered="false">{{ project.branch_name }}</n-tag> 创建审查工作区
-                </n-text>
-              </n-space>
-            </template>
-          </n-result>
-        </div>
-        <!-- 审查已准备: 工作区信息 + 聊天 -->
-        <div v-else>
-          <!-- 审查工作区信息条 -->
-          <div class="workspace-info-bar">
-            <n-tag size="small" :bordered="false" type="success">✅ 审查环境就绪</n-tag>
-            <n-tag v-if="reviewInfo.branch" size="small" :bordered="false">🌿 {{ reviewInfo.branch }}</n-tag>
-            <n-tag v-if="reviewInfo.diff_stat" size="small" :bordered="false">📊 {{ reviewInfo.diff_stat }}</n-tag>
-            <n-tag v-if="reviewInfo.changed_files.length" size="small" :bordered="false">
-              📝 {{ reviewInfo.changed_files.length }} 个文件变更
-            </n-tag>
-            <n-button size="tiny" quaternary @click="handleStartIteration" :loading="startingIteration" v-if="project.status === 'reviewing'">
-              🔄 继续迭代
-            </n-button>
+        <!-- ═══ ChatPanel: discuss 模式 ═══ -->
+        <n-tab-pane
+          v-if="getComponentKey(mod) === 'ChatPanel' && mod.config?.mode === 'discuss'"
+          :name="mod.tab_key"
+          :tab="mod.tab_label"
+          :disabled="isTabLocked(mod.tab_key)"
+        >
+          <div v-if="project.workspace_dir && project.iteration_count > 0" class="workspace-info-bar">
+            <n-tag size="small" :bordered="false" type="info">🔄 迭代 #{{ project.iteration_count }}</n-tag>
+            <n-tag size="small" :bordered="false">📁 {{ project.workspace_dir }}</n-tag>
           </div>
+          <n-alert v-if="isStageReadonly('discussing')" type="info" style="margin-bottom: 8px" :bordered="false">
+            讨论阶段已完成，当前为只读模式。如需修改，请在审查阶段点击「继续迭代」。
+          </n-alert>
           <div class="discuss-layout">
             <div class="discuss-chat">
-              <ChatPanel :key="'review-' + project.id" :project="project" @plan-finalized="onReviewFinalized" />
+              <ChatPanel :key="'discuss-' + project.id" :project="project" :readonly="isStageReadonly('discussing')" @plan-finalized="onPlanFinalized" />
             </div>
-            <div v-if="showReviewPanel" class="discuss-plan">
+            <div v-if="showPlanPanel" class="discuss-plan">
               <div class="plan-panel-header">
-                <n-button size="tiny" quaternary circle @click="showReviewPanel = false" style="flex-shrink: 0">✕</n-button>
+                <n-button size="tiny" quaternary circle @click="showPlanPanel = false" style="flex-shrink: 0">✕</n-button>
               </div>
               <div class="plan-panel-body">
-                <PlanEditor :project="project" :output-noun="reviewOutputNoun" :finalize-action="reviewFinalizeAction" @updated="refreshProject" />
+                <PlanEditor :project="project" :output-noun="getModuleLabel(mod, 'plan_output_noun', outputNoun)" :finalize-action="getModuleLabel(mod, 'finalize_action', finalizeAction)" @updated="refreshProject" />
               </div>
             </div>
           </div>
-        </div>
-      </n-tab-pane>
+        </n-tab-pane>
 
-      <n-tab-pane v-if="hasDeployStage" name="deploy" tab="🚀 部署" :disabled="isTabLocked('deploy')">
-        <DeployPanel :project="project" @deployed="refreshProject" />
-      </n-tab-pane>
+        <!-- ═══ ChatPanel: review 模式 ═══ -->
+        <n-tab-pane
+          v-else-if="getComponentKey(mod) === 'ChatPanel' && mod.config?.mode === 'review'"
+          :name="mod.tab_key"
+          :tab="mod.tab_label"
+          :disabled="isTabLocked(mod.tab_key)"
+        >
+          <div v-if="!reviewPrepared" style="padding: 40px 0; text-align: center;">
+            <n-result status="info" title="准备审查环境" description="克隆实施分支、获取变更信息、加载需求文档到 AI 上下文">
+              <template #footer>
+                <n-space vertical align="center" :size="16">
+                  <n-button type="primary" size="large" @click="handlePrepareReview" :loading="preparingReview">
+                    🔍 开始审查
+                  </n-button>
+                  <n-text v-if="project.branch_name" depth="3" style="font-size: 12px">
+                    将基于分支 <n-tag size="small" :bordered="false">{{ project.branch_name }}</n-tag> 创建审查工作区
+                  </n-text>
+                </n-space>
+              </template>
+            </n-result>
+          </div>
+          <div v-else>
+            <div class="workspace-info-bar">
+              <n-tag size="small" :bordered="false" type="success">✅ 审查环境就绪</n-tag>
+              <n-tag v-if="reviewInfo.branch" size="small" :bordered="false">🌿 {{ reviewInfo.branch }}</n-tag>
+              <n-tag v-if="reviewInfo.diff_stat" size="small" :bordered="false">📊 {{ reviewInfo.diff_stat }}</n-tag>
+              <n-tag v-if="reviewInfo.changed_files.length" size="small" :bordered="false">
+                📝 {{ reviewInfo.changed_files.length }} 个文件变更
+              </n-tag>
+              <n-button size="tiny" quaternary @click="handleStartIteration" :loading="startingIteration" v-if="project.status === 'reviewing'">
+                🔄 继续迭代
+              </n-button>
+            </div>
+            <div class="discuss-layout">
+              <div class="discuss-chat">
+                <ChatPanel :key="'review-' + project.id" :project="project" @plan-finalized="onReviewFinalized" />
+              </div>
+              <div v-if="showReviewPanel" class="discuss-plan">
+                <div class="plan-panel-header">
+                  <n-button size="tiny" quaternary circle @click="showReviewPanel = false" style="flex-shrink: 0">✕</n-button>
+                </div>
+                <div class="plan-panel-body">
+                  <PlanEditor :project="project" :output-noun="getModuleLabel(mod, 'plan_output_noun', reviewOutputNoun)" :finalize-action="getModuleLabel(mod, 'finalize_action', reviewFinalizeAction)" @updated="refreshProject" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </n-tab-pane>
 
-      <n-tab-pane name="snapshots" tab="📸 快照">
-        <SnapshotPanel :project-id="project.id" />
-      </n-tab-pane>
+        <!-- ═══ ImplementPanel ═══ -->
+        <n-tab-pane
+          v-else-if="getComponentKey(mod) === 'ImplementPanel'"
+          :name="mod.tab_key"
+          :tab="mod.tab_label"
+          :disabled="isTabLocked(mod.tab_key)"
+        >
+          <ImplementPanel :project="project" @status-changed="refreshProject" @go-review="goToReview" />
+        </n-tab-pane>
+
+        <!-- ═══ DeployPanel ═══ -->
+        <n-tab-pane
+          v-else-if="getComponentKey(mod) === 'DeployPanel'"
+          :name="mod.tab_key"
+          :tab="mod.tab_label"
+          :disabled="isTabLocked(mod.tab_key)"
+        >
+          <DeployPanel :project="project" @deployed="refreshProject" />
+        </n-tab-pane>
+
+        <!-- ═══ SnapshotPanel ═══ -->
+        <n-tab-pane
+          v-else-if="getComponentKey(mod) === 'SnapshotPanel'"
+          :name="mod.tab_key"
+          :tab="mod.tab_label"
+        >
+          <SnapshotPanel :project-id="project.id" />
+        </n-tab-pane>
+
+      </template>
     </n-tabs>
   </div>
   <n-spin v-else :show="true" style="margin-top: 100px" />
@@ -173,32 +196,65 @@ const project = computed(() => store.currentProject)
 const DEFAULT_STEP_LABELS = ['草稿', '讨论', '定稿', '实施', '审核', '部署', '完成']
 const DEFAULT_STATUS_ORDER = ['draft', 'discussing', 'planned', 'implementing', 'reviewing', 'deploying', 'deployed']
 
+// ---- 模块名 → 组件 Key 映射 (Fallback, 优先从 type_info.modules 的 component_key 读取) ----
+const MODULE_COMPONENT_MAP: Record<string, string> = {
+  ai_chat: 'ChatPanel',
+  implement: 'ImplementPanel',
+  deploy: 'DeployPanel',
+  snapshot: 'SnapshotPanel',
+}
+
+// ---- 默认工作流模块 (当 type_info.modules 为空时使用) ----
+function buildDefaultModules(labels: any) {
+  return [
+    { module_name: 'ai_chat', tab_key: 'discuss', tab_label: labels?.discuss_tab_label || '💬 讨论 & 设计', component_key: 'ChatPanel', stage_statuses: ['draft', 'discussing', 'planned'], config: { mode: 'discuss', plan_panel: true, plan_output_noun: labels?.output_noun || '设计稿', plan_tab_label: labels?.output_tab_label || '📋 设计稿', finalize_action: labels?.finalize_action || '敲定方案' } },
+    { module_name: 'implement', tab_key: 'implement', tab_label: '🔨 实施', component_key: 'ImplementPanel', stage_statuses: ['implementing'], config: {} },
+    { module_name: 'ai_chat', tab_key: 'review', tab_label: labels?.review_discuss_tab_label || '💬 审查', component_key: 'ChatPanel', stage_statuses: ['reviewing'], config: { mode: 'review', plan_panel: true, plan_output_noun: labels?.review_output_noun || '审查报告', plan_tab_label: labels?.review_tab_label || '📋 审查报告', finalize_action: labels?.review_finalize_action || '生成报告' } },
+    { module_name: 'deploy', tab_key: 'deploy', tab_label: '🚀 部署', component_key: 'DeployPanel', stage_statuses: ['deploying', 'deployed'], config: {} },
+    { module_name: 'snapshot', tab_key: 'snapshots', tab_label: '📸 快照', component_key: 'SnapshotPanel', stage_statuses: [], config: { always_visible: true } },
+  ]
+}
+
+// ---- 工作流模块 (驱动动态 Tab 渲染) ----
+const workflowModules = computed(() => {
+  const mods = project.value?.type_info?.modules
+  if (mods && mods.length > 0) return mods
+  return buildDefaultModules(project.value?.type_info?.ui_labels)
+})
+
+// 可见模块 (过滤掉阶段不存在的模块)
+const visibleModules = computed(() => {
+  const allStatuses = stageStatusOrder.value
+  return workflowModules.value.filter((mod: any) => {
+    if (mod.config?.always_visible) return true
+    if (!mod.stage_statuses || mod.stage_statuses.length === 0) return true
+    return mod.stage_statuses.some((s: string) => allStatuses.includes(s))
+  })
+})
+
+// 快捷引用: discuss 和 review 模块
+const discussModule = computed(() => workflowModules.value.find((m: any) => m.config?.mode === 'discuss'))
+const reviewModule = computed(() => workflowModules.value.find((m: any) => m.config?.mode === 'review'))
+
+// 获取模块的 component_key (优先 module 自带, 回退到映射表)
+function getComponentKey(mod: any): string {
+  return mod.component_key || MODULE_COMPONENT_MAP[mod.module_name] || ''
+}
+
+// 从模块 config 获取文案 (带 fallback)
+function getModuleLabel(mod: any, configKey: string, fallback: string): string {
+  return mod?.config?.[configKey] || fallback
+}
+
+// 兼容旧代码的 UI 文案 computed (从 ui_labels 读取)
 const outputNoun = computed(() => project.value?.type_info?.ui_labels?.output_noun || '设计稿')
 const outputTabLabel = computed(() => project.value?.type_info?.ui_labels?.output_tab_label || `📋 ${outputNoun.value}`)
 const finalizeAction = computed(() => project.value?.type_info?.ui_labels?.finalize_action || '敲定方案')
-const discussTabLabel = computed(() => project.value?.type_info?.ui_labels?.discuss_tab_label || '💬 讨论 & 设计')
-const reviewDiscussTabLabel = computed(() => project.value?.type_info?.ui_labels?.review_discuss_tab_label || '💬 审查/验证')
 const reviewOutputNoun = computed(() => project.value?.type_info?.ui_labels?.review_output_noun || '审查报告')
 const reviewFinalizeAction = computed(() => project.value?.type_info?.ui_labels?.review_finalize_action || '生成报告')
 
-// 根据项目类型定义的阶段决定是否显示对应 Tab
-const hasImplementStage = computed(() => {
-  const stages = project.value?.type_info?.stages
-  if (!stages || stages.length === 0) return true  // 无类型信息时显示所有 tab
-  return stages.some((s: any) => s.status === 'implementing')
-})
-
-const hasReviewStage = computed(() => {
-  const stages = project.value?.type_info?.stages
-  if (!stages || stages.length === 0) return false  // 没有类型信息时不显示审查 tab
-  return stages.some((s: any) => s.status === 'reviewing')
-})
-
-const hasDeployStage = computed(() => {
-  const stages = project.value?.type_info?.stages
-  if (!stages || stages.length === 0) return true
-  return stages.some((s: any) => ['deploying', 'deployed'].includes(s.status))
-})
+// 兼容: hasReviewStage (头部按钮仍需要)
+const hasReviewStage = computed(() => !!reviewModule.value)
 
 const stepLabels = computed(() => {
   const stages = project.value?.type_info?.stages
@@ -260,29 +316,29 @@ async function refreshProject() {
   if (id) await store.fetchProject(id)
 }
 
-// ---- 状态 → 默认 Tab 映射 ----
-const STATUS_TAB_MAP: Record<string, string> = {
-  draft: 'discuss',
-  discussing: 'discuss',
-  planned: 'discuss',
-  implementing: 'implement',
-  reviewing: 'review',
-  deploying: 'deploy',
-  deployed: 'deploy',
-  rolled_back: 'deploy',
-}
+// ---- 状态 → 默认 Tab 映射 (动态, 从工作流模块构建) ----
+const statusTabMap = computed(() => {
+  const map: Record<string, string> = {}
+  for (const mod of workflowModules.value) {
+    for (const status of (mod.stage_statuses || [])) {
+      if (!map[status]) map[status] = mod.tab_key
+    }
+  }
+  // rolled_back 特殊处理: 映射到 deploy tab (如果存在)
+  const deployMod = workflowModules.value.find((m: any) => getComponentKey(m) === 'DeployPanel')
+  if (deployMod && !map['rolled_back']) map['rolled_back'] = deployMod.tab_key
+  return map
+})
 
 function getDefaultTab(status: string): string {
-  return STATUS_TAB_MAP[status] || 'discuss'
+  return statusTabMap.value[status] || (visibleModules.value[0]?.tab_key || 'discuss')
 }
 
 function syncActiveTab() {
   if (!project.value) return
   const targetTab = getDefaultTab(project.value.status)
-  // 检查目标 tab 是否存在
-  if (targetTab === 'implement' && !hasImplementStage.value) return
-  if (targetTab === 'review' && !hasReviewStage.value) return
-  if (targetTab === 'deploy' && !hasDeployStage.value) return
+  // 检查目标 tab 是否在可见模块中
+  if (!visibleModules.value.some((m: any) => m.tab_key === targetTab)) return
   activeTab.value = targetTab
 }
 
@@ -297,31 +353,29 @@ function isStageReadonly(stageStatus: string): boolean {
   return stageIdx < currentIdx
 }
 
-function isTabLocked(tabName: string): boolean {
+function isTabLocked(tabKey: string): boolean {
   if (!project.value) return false
   const order = stageStatusOrder.value
   const currentStatus = project.value.status
   const currentIdx = order.indexOf(currentStatus)
   if (currentIdx < 0) return false
 
-  // 每个 tab 对应的最早阶段状态
-  const TAB_FIRST_STATUS: Record<string, string> = {
-    discuss: 'discussing',
-    implement: 'implementing',
-    review: 'reviewing',
-    deploy: 'deploying',
-  }
-  const firstStatus = TAB_FIRST_STATUS[tabName]
-  if (!firstStatus) return false
+  // 查找对应的模块定义
+  const mod = workflowModules.value.find((m: any) => m.tab_key === tabKey)
+  if (!mod) return false
+  if (mod.config?.always_visible) return false
 
+  // 包含 draft 或 discussing 的 tab 永不锁 (初始阶段)
+  const modStatuses = mod.stage_statuses || []
+  if (modStatuses.includes('draft') || modStatuses.includes('discussing')) return false
+  if (modStatuses.length === 0) return false
+
+  // 找到该模块最早的阶段 index
+  const firstStatus = modStatuses[0]
   const tabIdx = order.indexOf(firstStatus)
   if (tabIdx < 0) return false
 
-  // 允许当前阶段和下一阶段，其余锁定
-  // discuss (idx 1) 对应 draft (0) + discussing (1)，所以 discuss tab 用 tabIdx - 1
-  // draft 可以进 discuss，所以 discuss 永不锁
-  if (tabName === 'discuss') return false
-
+  // 允许当前阶段和下一阶段
   return tabIdx > currentIdx + 1
 }
 
@@ -384,7 +438,8 @@ function onReviewFinalized() {
 }
 
 function goToReview() {
-  activeTab.value = 'review'
+  const rm = reviewModule.value
+  activeTab.value = rm?.tab_key || 'review'
   refreshProject()
 }
 

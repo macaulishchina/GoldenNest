@@ -214,7 +214,7 @@ class CopilotAuth:
                         "Authorization": f"token {self.oauth_token}",
                         "editor-version": "vscode/1.96.0",
                         "editor-plugin-version": "copilot-chat/0.24.0",
-                        "user-agent": "GoldenNest-Studio/1.0",
+                        "user-agent": "Studio/1.0",
                     },
                 )
 

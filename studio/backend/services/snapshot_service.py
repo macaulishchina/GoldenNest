@@ -51,24 +51,41 @@ async def create_snapshot(
     # 2. 创建 git tag
     await _run_cmd(f'git tag -a {tag_name} -m "Snapshot: {description or tag_name}"')
 
-    # 3. 备份数据库
-    db_src = os.path.join(settings.workspace_path, "data", "golden_nest.db")
-    db_backup_filename = f"golden_nest-{timestamp}.db"
-    db_backup_path = os.path.join(settings.db_backups_path, db_backup_filename)
-    if os.path.exists(db_src):
-        shutil.copy2(db_src, db_backup_path)
-        logger.info(f"数据库备份: {db_backup_path}")
-    else:
-        db_backup_path = ""
-        logger.warning("主项目数据库文件不存在, 跳过备份")
+    # 3. 备份数据库 (根据配置发现需要备份的 DB 文件)
+    db_backup_paths = []
+    db_files = settings.snapshot_db_paths
+    if not db_files:
+        # 自动发现: 查找 data/ 下的 .db 文件
+        data_dir = os.path.join(settings.workspace_path, "data")
+        if os.path.isdir(data_dir):
+            db_files = [
+                os.path.join("data", f)
+                for f in os.listdir(data_dir) if f.endswith(".db")
+            ]
 
-    # 4. 标记 Docker 镜像
+    for db_rel_path in db_files:
+        db_src = os.path.join(settings.workspace_path, db_rel_path)
+        if os.path.exists(db_src):
+            db_name = os.path.basename(db_rel_path).replace(".db", "")
+            db_backup_filename = f"{db_name}-{timestamp}.db"
+            bp = os.path.join(settings.db_backups_path, db_backup_filename)
+            shutil.copy2(db_src, bp)
+            db_backup_paths.append(bp)
+            logger.info(f"数据库备份: {bp}")
+
+    db_backup_path = ";".join(db_backup_paths) if db_backup_paths else ""
+    if not db_backup_paths:
+        logger.info("未发现数据库文件, 跳过备份")
+
+    # 4. 标记 Docker 镜像 (根据配置的部署服务和镜像前缀)
     docker_tags = {}
-    for service in ["frontend", "backend"]:
-        image_name = f"goldennest-{service}"
-        tag_cmd = f"docker tag {image_name}:latest {image_name}:{tag_name} 2>/dev/null || true"
-        await _run_cmd(tag_cmd)
-        docker_tags[service] = tag_name
+    image_prefix = settings.docker_image_prefix
+    if image_prefix:
+        for service in settings.deploy_services:
+            image_name = f"{image_prefix}-{service}"
+            tag_cmd = f"docker tag {image_name}:latest {image_name}:{tag_name} 2>/dev/null || true"
+            await _run_cmd(tag_cmd)
+            docker_tags[service] = tag_name
 
     # 5. 保存快照记录
     snapshot = Snapshot(
@@ -112,17 +129,26 @@ async def rollback_to_snapshot(
         rc, stdout, stderr = await _run_cmd(f"git checkout {tag}")
         logs.append(f"git checkout {tag}: {'OK' if rc == 0 else stderr}")
 
-        # 2. 可选恢复数据库
-        if restore_db and snapshot.db_backup_path and os.path.exists(snapshot.db_backup_path):
-            db_target = os.path.join(settings.workspace_path, "data", "golden_nest.db")
-            shutil.copy2(snapshot.db_backup_path, db_target)
-            logs.append(f"数据库已恢复: {snapshot.db_backup_path}")
+        # 2. 可选恢复数据库 (支持多个 DB 备份, 用分号分隔)
+        if restore_db and snapshot.db_backup_path:
+            for bp in snapshot.db_backup_path.split(";"):
+                bp = bp.strip()
+                if bp and os.path.exists(bp):
+                    # 推断原始目标路径: backup 文件名去掉时间戳
+                    # e.g. "mydb-20240101-120000.db" → "data/mydb.db"
+                    import re
+                    db_basename = re.sub(r'-\d{8}-\d{6}\.db$', '.db', os.path.basename(bp))
+                    db_target = os.path.join(settings.workspace_path, "data", db_basename)
+                    shutil.copy2(bp, db_target)
+                    logs.append(f"数据库已恢复: {bp} → {db_target}")
 
         # 3. 尝试用已标记的镜像直接启动（更快）
         image_tags = snapshot.docker_image_tags or {}
-        if image_tags:
+        image_prefix = settings.docker_image_prefix
+        services_str = " ".join(settings.deploy_services)
+        if image_tags and image_prefix:
             for service, tag_val in image_tags.items():
-                image_name = f"goldennest-{service}"
+                image_name = f"{image_prefix}-{service}"
                 retag_cmd = f"docker tag {image_name}:{tag_val} {image_name}:latest 2>/dev/null"
                 rc, _, _ = await _run_cmd(retag_cmd)
                 if rc == 0:
@@ -130,14 +156,14 @@ async def rollback_to_snapshot(
 
             # 重启容器
             rc, stdout, stderr = await _run_cmd(
-                "docker compose up -d frontend backend",
+                f"docker compose up -d {services_str}",
                 cwd=settings.workspace_path,
             )
             logs.append(f"容器重启: {'OK' if rc == 0 else stderr}")
         else:
             # 没有镜像标记, 重新构建
             rc, stdout, stderr = await _run_cmd(
-                "docker compose up -d --build frontend backend",
+                f"docker compose up -d --build {services_str}",
                 cwd=settings.workspace_path,
             )
             logs.append(f"容器重建: {'OK' if rc == 0 else stderr}")
@@ -159,25 +185,29 @@ async def rollback_to_snapshot(
 
 
 async def _health_check() -> bool:
-    """检查主项目是否健康"""
+    """检查主项目是否健康 (根据 settings.deploy_health_checks 配置)"""
+    checks = settings.deploy_health_checks
+    if not checks:
+        logger.info("未配置健康检查端点, 跳过")
+        return True
+
     for attempt in range(settings.health_check_retries):
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                # 检查后端
-                resp = await client.get("http://backend:8000/api/health")
-                if resp.status_code != 200:
-                    logger.warning(f"后端健康检查失败 (尝试 {attempt + 1})")
-                    await asyncio.sleep(settings.health_check_interval)
-                    continue
+                all_ok = True
+                for check in checks:
+                    url = check.get("url", "")
+                    name = check.get("name", url)
+                    resp = await client.get(url)
+                    if resp.status_code != 200:
+                        logger.warning(f"{name} 健康检查失败 (尝试 {attempt + 1})")
+                        all_ok = False
+                        break
 
-                # 检查前端
-                resp = await client.get("http://frontend:80")
-                if resp.status_code != 200:
-                    logger.warning(f"前端健康检查失败 (尝试 {attempt + 1})")
-                    await asyncio.sleep(settings.health_check_interval)
-                    continue
+                if all_ok:
+                    return True
 
-                return True
+                await asyncio.sleep(settings.health_check_interval)
         except Exception as e:
             logger.warning(f"健康检查异常 (尝试 {attempt + 1}): {e}")
             await asyncio.sleep(settings.health_check_interval)

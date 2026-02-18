@@ -36,6 +36,39 @@ export const studioAuthApi = {
   verifyMainToken: (token: string) =>
     api.post('/auth/verify-main-token', { token }),
   me: () => api.get('/auth/me'),
+  workspaceConfig: () => api.get('/auth/workspace-config'),
+}
+
+// ==================== 用户管理 ====================
+export const userApi = {
+  register: (data: { username: string; password: string; nickname?: string }) =>
+    api.post('/users/register', data),
+  login: (username: string, password: string) =>
+    api.post('/users/login', { username, password }),
+  list: (params?: any) => api.get('/users', { params }),
+  approve: (id: number, data: { role: string; permissions: string[] }) =>
+    api.post(`/users/${id}/approve`, data),
+  reject: (id: number) => api.post(`/users/${id}/reject`),
+  update: (id: number, data: any) => api.put(`/users/${id}`, data),
+  delete: (id: number) => api.delete(`/users/${id}`),
+  resetPassword: (id: number) => api.post(`/users/${id}/reset-password`),
+  pendingCount: () => api.get('/users/pending-count'),
+  permissionDefs: () => api.get('/users/permissions/definitions'),
+}
+
+// ==================== 命令授权管理 ====================
+export const commandAuthApi = {
+  // 规则
+  listRules: (params?: any) => api.get('/command-auth/rules', { params }),
+  createRule: (data: any) => api.post('/command-auth/rules', data),
+  updateRule: (id: number, data: any) => api.put(`/command-auth/rules/${id}`, data),
+  deleteRule: (id: number) => api.delete(`/command-auth/rules/${id}`),
+  // 项目级自动批准
+  listProjectOverrides: () => api.get('/command-auth/project-overrides'),
+  revokeProjectOverride: (projectId: number) => api.delete(`/command-auth/project-overrides/${projectId}`),
+  // 审计日志
+  listAuditLog: (params?: any) => api.get('/command-auth/audit-log', { params }),
+  auditLogStats: () => api.get('/command-auth/audit-log/stats'),
 }
 
 // ==================== 项目 ====================
@@ -193,6 +226,34 @@ export const skillApi = {
   update: (id: number, data: any) => api.put(`/skills/${id}`, data),
   delete: (id: number) => api.delete(`/skills/${id}`),
   duplicate: (id: number) => api.post(`/skills/${id}/duplicate`),
+}
+
+// ==================== 工具管理 ====================
+export const toolApi = {
+  list: (params?: { enabled_only?: boolean }) => api.get('/tools', { params }),
+  get: (id: number) => api.get(`/tools/${id}`),
+  create: (data: any) => api.post('/tools', data),
+  update: (id: number, data: any) => api.put(`/tools/${id}`, data),
+  delete: (id: number) => api.delete(`/tools/${id}`),
+  duplicate: (id: number) => api.post(`/tools/${id}/duplicate`),
+  permissions: () => api.get('/tools/permissions'),
+}
+
+// ==================== 工作流管理 ====================
+export const workflowModuleApi = {
+  list: () => api.get('/workflow-modules'),
+  create: (data: any) => api.post('/workflow-modules', data),
+  update: (id: number, data: any) => api.put(`/workflow-modules/${id}`, data),
+  delete: (id: number) => api.delete(`/workflow-modules/${id}`),
+}
+
+export const workflowApi = {
+  list: () => api.get('/workflows'),
+  get: (id: number) => api.get(`/workflows/${id}`),
+  create: (data: any) => api.post('/workflows', data),
+  update: (id: number, data: any) => api.put(`/workflows/${id}`, data),
+  delete: (id: number) => api.delete(`/workflows/${id}`),
+  duplicate: (id: number) => api.post(`/workflows/${id}/duplicate`),
 }
 
 // ==================== AI 任务 ====================

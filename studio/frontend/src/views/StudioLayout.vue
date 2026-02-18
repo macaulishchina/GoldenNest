@@ -31,7 +31,7 @@
 
       <div v-if="!collapsed" style="position: absolute; bottom: 16px; left: 16px; right: 16px">
         <n-text depth="3" style="font-size: 12px">
-          GoldenNest Studio v1.0
+          设计院 Studio v1.0
         </n-text>
       </div>
     </n-layout-sider>

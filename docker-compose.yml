@@ -66,6 +66,14 @@ services:
       - STUDIO_DATA_PATH=/data
       - STUDIO_ADMIN_PASS=${STUDIO_ADMIN_PASS:-}
       - STUDIO_SECRET_KEY=${STUDIO_SECRET_KEY:-}
+      # 主项目 SSO (可选)
+      - MAIN_API_URL=${MAIN_API_URL:-http://golden-nest-backend:8000}
+      # 部署流水线配置
+      - DEPLOY_SERVICES=${DEPLOY_SERVICES:-frontend,backend}
+      - DEPLOY_GIT_BRANCH=${DEPLOY_GIT_BRANCH:-master}
+      - DEPLOY_HEALTH_CHECKS=${DEPLOY_HEALTH_CHECKS:-backend=http://backend:8000/api/health;frontend=http://frontend:80}
+      - DOCKER_IMAGE_PREFIX=${DOCKER_IMAGE_PREFIX:-goldennest}
+      - SNAPSHOT_DB_PATHS=${SNAPSHOT_DB_PATHS:-data/golden_nest.db}
     volumes:
       - studio-data:/data
       - studio-uploads:/data/uploads

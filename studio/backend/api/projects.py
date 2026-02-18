@@ -15,7 +15,7 @@ from studio.backend.core.database import get_db
 from studio.backend.core.security import get_optional_studio_user
 from studio.backend.core.project_types import (
     get_project_type, get_all_project_types, get_stages, get_ui_labels,
-    DEFAULT_PROJECT_TYPE,
+    get_modules, DEFAULT_PROJECT_TYPE,
 )
 from studio.backend.models import Project, ProjectStatus, Message, Skill
 
@@ -32,6 +32,7 @@ class ProjectTypeInfo(BaseModel):
     icon: str
     stages: list
     ui_labels: dict
+    modules: list = []
 
 
 def _build_project_type_info(project) -> Optional[ProjectTypeInfo]:
@@ -44,8 +45,9 @@ def _build_project_type_info(project) -> Optional[ProjectTypeInfo]:
         key=type_key,
         name=pt["name"],
         icon=pt["icon"],
-        stages=pt["stages"],
+        stages=pt.get("stages", []),
         ui_labels=pt.get("ui_labels", {}),
+        modules=pt.get("modules", []),
     )
 
 

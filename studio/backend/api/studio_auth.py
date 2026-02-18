@@ -41,6 +41,8 @@ class TokenResponse(BaseModel):
     username: str
     nickname: str
     source: str
+    role: str = "admin"
+    permissions: list = []
 
 
 class UserInfoResponse(BaseModel):
@@ -48,6 +50,9 @@ class UserInfoResponse(BaseModel):
     nickname: str
     source: str
     main_user_id: int | None = None
+    db_user_id: int | None = None
+    role: str | None = None
+    permissions: list = []
 
 
 # ==================== 认证状态检查 ====================
@@ -65,6 +70,7 @@ async def auth_check():
         "admin_configured": bool(settings.studio_admin_pass),
         "main_project_available": bool(settings.main_api_url),
         "admin_username": settings.studio_admin_user,
+        "registration_enabled": True,
     }
 
 
@@ -123,4 +129,33 @@ async def verify_main_token(data: MainTokenRequest):
 @router.get("/me", response_model=UserInfoResponse)
 async def get_me(user: dict = Depends(get_studio_user)):
     """获取当前登录用户信息"""
-    return UserInfoResponse(**user)
+    return UserInfoResponse(
+        username=user.get("username", "unknown"),
+        nickname=user.get("nickname", "unknown"),
+        source=user.get("source", "admin"),
+        main_user_id=user.get("main_user_id"),
+        db_user_id=user.get("db_user_id"),
+        role=user.get("role"),
+        permissions=user.get("permissions", []),
+    )
+
+
+# ==================== 工作区配置 (公开, 前端获取) ====================
+
+@router.get("/workspace-config")
+async def get_workspace_config():
+    """
+    返回工作区级别的公共配置信息
+
+    前端用来:
+      - 获取 github_repo 构造 Issue/PR 链接
+      - 判断是否启用了 GitHub 集成
+      - 获取部署相关配置
+    """
+    return {
+        "github_repo": settings.github_repo,            # e.g. "owner/repo" or ""
+        "github_enabled": bool(settings.github_repo and settings.github_token),
+        "deploy_services": settings.deploy_services,
+        "deploy_git_branch": settings.deploy_git_branch,
+        "has_health_checks": bool(settings.deploy_health_checks),
+    }

@@ -79,12 +79,13 @@
         <!-- ask_user 回答: 紧凑指示器 (不重复显示已在卡片中展示的内容) -->
         <div
           v-else-if="msg.role === 'user' && msg.content?.startsWith('<!-- ask_user_response -->')"
-          style="display: flex; justify-content: flex-end"
+          :style="{ display: 'flex', justifyContent: isMyMessage(msg) ? 'flex-end' : 'flex-start' }"
           @mouseenter="hoveredMessageId = msg.id"
           @mouseleave="hoveredMessageId = null"
         >
           <div class="ask-user-reply-indicator">
             <span style="opacity: 0.5">💬</span>
+            <n-text v-if="!isMyMessage(msg)" :style="{ color: getUserColor(msg.sender_name), fontSize: '12px', marginRight: '4px' }">{{ msg.sender_name }}</n-text>
             <span>已提交回答</span>
             <n-popover trigger="click" placement="bottom" style="max-width: 400px">
               <template #trigger>
@@ -96,10 +97,10 @@
           </div>
         </div>
 
-        <!-- 用户/AI 消息 -->
+        <!-- 用户/AI 消息 (跳过完全空的 assistant 消息) -->
         <div
-          v-else
-          :style="{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }"
+          v-else-if="!isEmptyAssistantMessage(msg)"
+          :style="{ display: 'flex', justifyContent: (msg.role === 'user' && isMyMessage(msg)) ? 'flex-end' : 'flex-start' }"
           @mouseenter="hoveredMessageId = msg.id"
           @mouseleave="hoveredMessageId = null"
         >
@@ -107,9 +108,9 @@
             <n-card
               size="small"
               :style="{
-                background: msg.role === 'user' ? '#1a3a5c' : '#1a2a3e',
-                borderLeft: msg.role === 'assistant' ? '2px solid #e94560' : 'none',
-                borderRight: msg.role === 'user' ? '2px solid #0ea5e9' : 'none',
+                background: (msg.role === 'user' && isMyMessage(msg)) ? '#1a3a5c' : '#1a2a3e',
+                borderLeft: (msg.role === 'assistant' || (msg.role === 'user' && !isMyMessage(msg))) ? '2px solid ' + (msg.role === 'assistant' ? '#e94560' : '#f0a020') : 'none',
+                borderRight: (msg.role === 'user' && isMyMessage(msg)) ? '2px solid #0ea5e9' : 'none',
                 '--n-padding-top': '6px',
                 '--n-padding-bottom': '6px',
                 '--n-padding-left': '10px',
@@ -190,7 +191,7 @@
             <div class="markdown-body" v-html="renderMarkdown(msg.content)" />
 
             <!-- ask_user 问题卡片 (渲染在文本内容之后, 符合对话直觉) -->
-            <template v-for="tc in (msg.tool_calls || []).filter(t => t.name === 'ask_user' && parseQuestions(t.arguments).length > 0)" :key="tc.id">
+            <template v-for="tc in (msg.tool_calls || []).filter((t: any) => t.name === 'ask_user' && parseQuestions(t.arguments).length > 0)" :key="tc.id">
               <div class="question-card" style="margin-top: 6px">
                 <template v-if="getCardState(tc.id).submitted || isAskUserAnswered(msg, tc)">
                   <!-- 已提交/已回答: 紧凑回显 -->
@@ -198,21 +199,21 @@
                     <span class="question-card-icon">{{ isAskUserAutoDecided(msg, tc) ? '🤖' : '✅' }}</span>
                     <span class="question-card-title" style="color: #8a8a8a">{{ isAskUserAutoDecided(msg, tc) ? 'AI 自行决定' : '已回答' }}</span>
                   </div>
-                  <!-- 本地 cardState 或 DB 跳过: 逐题显示 (含 AI 推荐回显) -->
-                  <template v-if="getCardState(tc.id).submitted || isAskUserAutoDecided(msg, tc)">
-                    <div v-for="(q, qi) in parseQuestions(tc.arguments)" :key="qi" class="question-summary-row">
-                      <span class="question-summary-q">{{ q.question }}</span>
-                      <span v-if="getCardState(tc.id).answers[qi]?.length || getCardState(tc.id).customTexts[qi]?.trim()" class="question-summary-a">
-                        {{ getCardState(tc.id).customTexts[qi]?.trim() || getCardState(tc.id).answers[qi]?.join('、') }}
-                      </span>
-                      <span v-else-if="getRecommendedLabels(q)" class="question-summary-a question-summary-a-auto">
-                        🤖 {{ getRecommendedLabels(q) }}
-                      </span>
-                    </div>
-                  </template>
-                  <!-- 从 DB 加载的历史: 显示后续用户回答 -->
-                  <div v-else class="question-result-text">
-                    <div class="markdown-body" v-html="renderMarkdown(getAskUserAnswer(msg))" />
+                  <!-- 逐题回显 (本地提交 或 DB 历史统一逻辑, 含 AI 推荐回显) -->
+                  <div v-for="(q, qi) in parseQuestions(tc.arguments)" :key="qi" class="question-summary-row">
+                    <span class="question-summary-q">{{ q.question }}</span>
+                    <!-- 本地 cardState: 优先用本地选择 -->
+                    <span v-if="getCardState(tc.id).submitted && (getCardState(tc.id).answers[qi]?.length || getCardState(tc.id).customTexts[qi]?.trim())" class="question-summary-a">
+                      {{ getCardState(tc.id).customTexts[qi]?.trim() || getCardState(tc.id).answers[qi]?.join('、') }}
+                    </span>
+                    <!-- DB 历史: 从回答文本解析 -->
+                    <span v-else-if="!getCardState(tc.id).submitted && getDbAnswerForQuestion(msg, q.question)" class="question-summary-a">
+                      {{ getDbAnswerForQuestion(msg, q.question) }}
+                    </span>
+                    <!-- 未回答: 显示 AI 推荐 -->
+                    <span v-else-if="getRecommendedLabels(q)" class="question-summary-a question-summary-a-auto">
+                      🤖 {{ getRecommendedLabels(q) }}
+                    </span>
                   </div>
                 </template>
                 <template v-else>
@@ -466,29 +467,28 @@
         <n-button v-if="currentModelCaps.supports_vision" size="small" quaternary :disabled="finalizingPlan" @click="fileInputRef?.click()">📷 图片</n-button>
         <n-popover v-if="currentModelCaps.supports_tools" trigger="click" placement="bottom" style="max-width: 320px">
           <template #trigger>
-            <n-button size="small" quaternary :type="toolPermissions.length ? 'info' : 'default'">🛠️ 工具</n-button>
+            <n-button size="small" quaternary :type="toolCheckboxValues.length ? 'info' : 'default'">🛠️ 工具</n-button>
           </template>
           <div style="padding: 4px 0">
             <n-text strong style="font-size: 13px">AI 工具权限</n-text>
             <n-text depth="3" style="font-size: 11px; display: block; margin: 4px 0 8px">
               开启后 AI 可查看项目源码（可在设置页配置工具轮次上限）
             </n-text>
-            <n-checkbox-group v-model:value="toolPermissions" @update:value="saveToolPermissions">
+            <n-checkbox-group :value="toolCheckboxValues" @update:value="onToolPermChange">
               <n-space vertical :size="4">
-                <n-checkbox value="execute_readonly_command" label="🖥️ 执行只读命令" />
-                <n-checkbox value="execute_command" label="⚠️ 执行写入命令">
+                <n-checkbox v-for="perm in permDefs" :key="perm.key" :value="perm.key">
                   <template #default>
-                    <span>⚠️ 执行写入命令</span>
-                    <n-text depth="3" style="font-size: 10px; margin-left: 4px">(危险)</n-text>
+                    <span>{{ perm.icon }} {{ perm.label }}</span>
+                    <n-text v-if="perm.key === 'execute_command'" depth="3" style="font-size: 10px; margin-left: 4px">(每次需审批)</n-text>
                   </template>
                 </n-checkbox>
-                <n-checkbox value="ask_user" label="❓ 主动提问澄清" />
-                <n-checkbox value="read_source" label="📖 读取源码文件" />
-                <n-checkbox value="read_config" label="📄 读取配置文件" />
-                <n-checkbox value="search" label="🔍 搜索代码内容" />
-                <n-checkbox value="tree" label="🌳 浏览目录结构" />
               </n-space>
             </n-checkbox-group>
+            <div v-if="toolPermissions.includes('auto_approve_commands')" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #333; display: flex; align-items: center; gap: 6px">
+              <n-tag size="tiny" type="warning" :bordered="false" round>自动批准</n-tag>
+              <n-text depth="2" style="font-size: 11px; flex: 1">写命令已设为自动批准</n-text>
+              <n-button size="tiny" quaternary type="error" @click="revokeAutoApprove">撤销</n-button>
+            </div>
           </div>
         </n-popover>
         <n-tag v-if="streamingTasks.size > 0 && !streaming" type="warning" size="small" :bordered="false" round>⏳ AI 回复中 ({{ streamingTasks.size }})</n-tag>
@@ -662,7 +662,7 @@
     <n-space vertical :size="8" style="margin-bottom: 16px">
       <n-text depth="2" style="font-size: 12px">授权范围：</n-text>
       <n-radio-group v-model:value="commandApproval.scope" size="small">
-        <n-space :size="12">
+        <n-space :size="12" :wrap="true">
           <n-radio value="once">仅本次</n-radio>
           <n-radio value="session">
             <n-tooltip trigger="hover">
@@ -672,8 +672,14 @@
           </n-radio>
           <n-radio value="project">
             <n-tooltip trigger="hover">
-              <template #trigger>本项目 (永久)</template>
-              永久开启写命令权限（等同勾选 execute_command）
+              <template #trigger>本项目</template>
+              此项目所有写命令自动批准（可在设置中撤销）
+            </n-tooltip>
+          </n-radio>
+          <n-radio value="permanent">
+            <n-tooltip trigger="hover">
+              <template #trigger>永久</template>
+              所有项目中的同类命令永久自动批准（可在设置 → 命令授权中管理）
             </n-tooltip>
           </n-radio>
         </n-space>
@@ -704,11 +710,12 @@
  *   useSSEFinalize      — 敲定方案流式处理
  *   useAskUser          — ask_user 问题卡片状态
  */
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import { discussionApi, projectApi, tasksApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useStudioConfigStore } from '@/stores/studioConfig'
+import { useToolStore, type PermissionInfo } from '@/stores/tool'
 import type { Project } from '@/stores/project'
 
 // ---- Composables ----
@@ -819,9 +826,9 @@ async function handleCommandApproval(approved: boolean) {
   commandApproval.value.loading = true
   try {
     await tasksApi.approveCommand(taskId, { approved, scope })
-    // scope=project 时同步本地权限状态
-    if (approved && scope === 'project' && !toolPermissions.value.includes('execute_command')) {
-      toolPermissions.value = [...toolPermissions.value, 'execute_command']
+    // scope=project 时同步本地权限状态: 添加 auto_approve_commands 标志
+    if (approved && scope === 'project' && !toolPermissions.value.includes('auto_approve_commands')) {
+      toolPermissions.value = [...toolPermissions.value, 'auto_approve_commands']
     }
   } catch (e: any) {
     message.error(e.response?.data?.detail || '审批请求失败')
@@ -887,8 +894,26 @@ const activeStreamCards = computed(() => {
 const {
   getCardState, toggleOption, submitQuestionCard,
   isAskUserAnswered, getAskUserAnswer, isAskUserAutoDecided,
-  getRegularToolCalls,
+  getDbAnswerForQuestion, getRegularToolCalls,
 } = useAskUser(messages, (content: string) => sendMessage(content))
+
+const currentUserName = computed(() => authStore.user?.nickname || authStore.user?.username || 'user')
+function isMyMessage(msg: any): boolean {
+  return msg.sender_name === currentUserName.value
+}
+
+/** 检测完全空的 assistant 消息 (内容为空且没有可渲染的工具调用) */
+function isEmptyAssistantMessage(msg: any): boolean {
+  if (msg.role !== 'assistant') return false
+  if (msg.content?.trim()) return false
+  if (msg.thinking_content?.trim()) return false
+  // 有可渲染的 ask_user 卡片?
+  const askUserTcs = (msg.tool_calls || []).filter((t: any) => t.name === 'ask_user')
+  if (askUserTcs.some((tc: any) => parseQuestions(tc.arguments).length > 0)) return false
+  // 有常规工具调用?
+  if (getRegularToolCalls(msg.tool_calls).length > 0) return false
+  return true
+}
 
 // ==================== Project Info Edit ====================
 
@@ -924,15 +949,57 @@ async function saveProjectInfo() {
 
 // ==================== Tool Permissions ====================
 
-// 默认全开 (除 execute_command 需显式授权)，除非项目有自定义保存
-const ALL_DEFAULT_PERMS = ['ask_user', 'read_source', 'read_config', 'search', 'tree', 'execute_readonly_command']
-const toolPermissions = ref<string[]>(
-  props.project.tool_permissions?.length ? props.project.tool_permissions : [...ALL_DEFAULT_PERMS]
+const toolStore = useToolStore()
+
+// 从 store 加载权限定义 (启动时加载一次)
+if (!toolStore.permissions.length) {
+  toolStore.fetchPermissions().catch(() => {/* fallback 到空列表 */})
+}
+
+// 动态权限定义: 非元权限 (用于 checkbox 渲染)
+const permDefs = computed(() => toolStore.permissions.filter(p => !p.is_meta))
+// 元标志列表 (不在 checkbox 里显示, 通过审批流写入)
+const metaPermKeys = computed(() => toolStore.permissions.filter(p => p.is_meta).map(p => p.key))
+
+// 默认权限: 所有非元权限中排除 execute_command
+const ALL_DEFAULT_PERMS_COMPUTED = computed(() =>
+  permDefs.value.length
+    ? permDefs.value.map(p => p.key).filter(k => k !== 'execute_command')
+    : ['ask_user', 'read_source', 'read_config', 'search', 'tree', 'execute_readonly_command']  // fallback
 )
 
-async function saveToolPermissions(val: string[]) {
+const toolPermissions = ref<string[]>(
+  props.project.tool_permissions?.length ? props.project.tool_permissions : []
+)
+// 确保默认值在权限加载后同步
+watch(ALL_DEFAULT_PERMS_COMPUTED, (defaults) => {
+  if (!props.project.tool_permissions?.length && toolPermissions.value.length === 0) {
+    toolPermissions.value = [...defaults]
+  }
+}, { immediate: true })
+
+// checkbox 绑定值: 过滤掉元标志
+const toolCheckboxValues = computed(() =>
+  toolPermissions.value.filter(p => !metaPermKeys.value.includes(p))
+)
+function onToolPermChange(val: string[]) {
+  // 保留元标志
+  const meta = toolPermissions.value.filter(p => metaPermKeys.value.includes(p))
+  // 如果关闭了 execute_command, 也移除 auto_approve_commands
+  const finalMeta = val.includes('execute_command') ? meta : meta.filter(m => m !== 'auto_approve_commands')
+  const newPerms = [...val, ...finalMeta]
+  toolPermissions.value = newPerms
+  saveToolPermissions(newPerms)
+}
+function revokeAutoApprove() {
+  const newPerms = toolPermissions.value.filter(p => p !== 'auto_approve_commands')
+  toolPermissions.value = newPerms
+  saveToolPermissions(newPerms)
+  message.success('已撤销写命令自动批准')
+}
+async function saveToolPermissions(perms: string[]) {
   try {
-    await projectApi.update(props.project.id, { tool_permissions: val })
+    await projectApi.update(props.project.id, { tool_permissions: perms })
   } catch {
     message.error('保存工具权限失败')
   }
@@ -1066,6 +1133,7 @@ async function sendMessage(overrideContent?: string, overrideAttachments?: any[]
       content: text,
       attachments,
       created_at: new Date().toISOString(),
+      _pending: true,  // 标记为待确认的本地消息, SSE 去重用
     })
     scrollToBottom()
   }
@@ -1187,7 +1255,8 @@ watch(() => props.project.id, async (newId, oldId) => {
   try {
     const { data } = await discussionApi.getMessages(newId)
     messages.value = data
-    scrollToTop()
+    await nextTick()
+    scrollToBottom()
   } catch {}
   try {
     const { data } = await discussionApi.getAiMuteStatus(newId)
@@ -1196,7 +1265,7 @@ watch(() => props.project.id, async (newId, oldId) => {
   // 刷新工具权限
   toolPermissions.value = props.project.tool_permissions?.length
     ? props.project.tool_permissions
-    : [...ALL_DEFAULT_PERMS]
+    : [...ALL_DEFAULT_PERMS_COMPUTED.value]
   refreshContextInfo()
 }, { immediate: true })
 

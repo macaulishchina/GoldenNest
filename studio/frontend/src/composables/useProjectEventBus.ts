@@ -81,14 +81,17 @@ export function useProjectEventBus(options: EventBusOptions) {
 
     try {
       let eventCount = 0
+      let buffer = ''  // SSE 行缓冲: 跨 chunk 拼接不完整的行
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split('\n')
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n')
+        // 最后一段可能是不完整的行, 留到下一次 read 拼接
+        buffer = parts.pop() || ''
 
-        for (const line of lines) {
+        for (const line of parts) {
           if (!line.startsWith('data: ')) continue
           try {
             const event = JSON.parse(line.slice(6))
@@ -100,6 +103,13 @@ export function useProjectEventBus(options: EventBusOptions) {
             }
           } catch {}
         }
+      }
+      // 处理残余缓冲
+      if (buffer.startsWith('data: ')) {
+        try {
+          const event = JSON.parse(buffer.slice(6))
+          handleEvent(event)
+        } catch {}
       }
     } catch (e: any) {
       if (e.name === 'AbortError') return
@@ -117,10 +127,21 @@ export function useProjectEventBus(options: EventBusOptions) {
 
     if (type === 'new_message') {
       const msg = event.message
-      if (msg?.id && !options.messages.value.find((m: any) => m.id === msg.id)) {
-        options.messages.value.push(msg)
-        options.scrollToBottom()
+      if (!msg?.id) return
+      // 已存在完全相同 id 的消息 → 跳过
+      if (options.messages.value.find((m: any) => m.id === msg.id)) return
+      // 查找本地 _pending 的同内容用户消息 (sendMessage 乐观插入), 用真实 id 替换
+      if (msg.role === 'user') {
+        const pendingIdx = options.messages.value.findIndex(
+          (m: any) => m._pending && m.role === 'user' && m.content === msg.content
+        )
+        if (pendingIdx >= 0) {
+          options.messages.value[pendingIdx] = { ...msg }
+          return
+        }
       }
+      options.messages.value.push(msg)
+      options.scrollToBottom()
       return
     }
 

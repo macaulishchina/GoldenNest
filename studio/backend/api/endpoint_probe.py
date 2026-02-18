@@ -224,7 +224,7 @@ async def _probe_one(ep: EndpointDef, timeout: int = 15) -> Dict[str, Any]:
     # 构建请求头
     headers: Dict[str, str] = {
         "Accept": "application/json",
-        "User-Agent": "GoldenNest-Studio/1.0",
+        "User-Agent": "Studio/1.0",
     }
 
     # 根据 auth_type 添加认证

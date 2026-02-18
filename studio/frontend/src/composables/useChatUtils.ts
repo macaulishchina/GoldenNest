@@ -197,9 +197,16 @@ export interface ParsedQuestion {
 }
 
 export function parseQuestions(args: any): ParsedQuestion[] {
-  if (!args?.questions) return []
+  // Handle _raw format: when backend json.loads fails, arguments get wrapped as {"_raw": "<json string>"}
+  let effectiveArgs = args
+  if (args?._raw && !args?.questions) {
+    try {
+      effectiveArgs = typeof args._raw === 'string' ? JSON.parse(args._raw) : args._raw
+    } catch { return [] }
+  }
+  if (!effectiveArgs?.questions) return []
   try {
-    const qs = typeof args.questions === 'string' ? JSON.parse(args.questions) : args.questions
+    const qs = typeof effectiveArgs.questions === 'string' ? JSON.parse(effectiveArgs.questions) : effectiveArgs.questions
     if (!Array.isArray(qs)) return []
     return qs.map((q: any) => ({
       question: q.question || '',

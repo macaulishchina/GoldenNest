@@ -1,17 +1,18 @@
 """
 设计院 (Studio) - 全局配置
+通用项目设计院，不绑定任何具体项目
 """
 import os
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Dict
 
 
 @dataclass
 class StudioSettings:
     """设计院配置"""
-    # GitHub
+    # GitHub (可选 — 如果项目使用 GitHub)
     github_token: str = os.environ.get("GITHUB_TOKEN", "")
-    github_repo: str = os.environ.get("GITHUB_REPO", "macaulishchina/GoldenNest")
+    github_repo: str = os.environ.get("GITHUB_REPO", "")  # e.g. "owner/repo"
 
     # 工作区路径
     workspace_path: str = os.environ.get("WORKSPACE_PATH", "/workspace")
@@ -25,22 +26,47 @@ class StudioSettings:
     # GitHub Models API
     github_models_endpoint: str = "https://models.inference.ai.azure.com"
 
-    # 部署配置
+    # ── 部署配置 ──
     health_check_timeout: int = 60
     health_check_retries: int = 3
     health_check_interval: int = 5
 
-    # 受保护的服务 (永远不会被部署流水线触碰)
+    # 受保护的服务 (部署流水线永远不触碰)
     protected_services: List[str] = field(default_factory=lambda: ["gateway", "studio"])
 
-    # 设计院认证
+    # 部署目标服务 (docker compose build/up 的服务列表)
+    deploy_services: List[str] = field(
+        default_factory=lambda: os.environ.get(
+            "DEPLOY_SERVICES", "frontend,backend"
+        ).split(",")
+    )
+
+    # 健康检查端点 [{url, name}]  — 空列表则跳过
+    deploy_health_checks: List[Dict[str, str]] = field(
+        default_factory=lambda: _parse_health_checks(
+            os.environ.get("DEPLOY_HEALTH_CHECKS", "")
+        )
+    )
+
+    # git 主分支名
+    deploy_git_branch: str = os.environ.get("DEPLOY_GIT_BRANCH", "master")
+
+    # 快照相关
+    snapshot_db_paths: List[str] = field(
+        default_factory=lambda: [
+            p.strip() for p in os.environ.get("SNAPSHOT_DB_PATHS", "").split(",") if p.strip()
+        ]
+    )
+    docker_image_prefix: str = os.environ.get("DOCKER_IMAGE_PREFIX", "")  # e.g. "goldennest"
+
+    # ── 设计院认证 ──
     studio_admin_user: str = os.environ.get("STUDIO_ADMIN_USER", "admin")
     studio_admin_pass: str = os.environ.get("STUDIO_ADMIN_PASS", "")
     studio_secret_key: str = os.environ.get("STUDIO_SECRET_KEY", "")
     studio_token_expire_days: int = int(os.environ.get("STUDIO_TOKEN_EXPIRE_DAYS", "7"))
 
-    # 主项目 API (用于验证主项目 token)
-    main_api_url: str = os.environ.get("MAIN_API_URL", "http://golden-nest-backend:8000")
+    # 主项目 API (可选 — 用于 SSO token 验证，留空禁用)
+    main_api_url: str = os.environ.get("MAIN_API_URL", "")
 
     def __post_init__(self):
         self.plans_path = os.path.join(self.data_path, "plans")
@@ -69,6 +95,23 @@ class StudioSettings:
             )
             # 也输出到 stdout 确保 docker logs 可见
             print(f"\n⚠️  Studio Admin: {self.studio_admin_user} / {self.studio_admin_pass}\n", flush=True)
+
+
+def _parse_health_checks(env_val: str) -> list:
+    """
+    解析 DEPLOY_HEALTH_CHECKS 环境变量
+    格式: "name=url;name=url" 如 "backend=http://backend:8000/api/health;frontend=http://frontend:80"
+    空字符串 → 空列表 (跳过健康检查)
+    """
+    if not env_val.strip():
+        return []
+    checks = []
+    for item in env_val.split(";"):
+        item = item.strip()
+        if "=" in item:
+            name, url = item.split("=", 1)
+            checks.append({"name": name.strip(), "url": url.strip()})
+    return checks
 
 
 settings = StudioSettings()

@@ -303,7 +303,7 @@ async def cancel_task(
 
 class CommandApprovalRequest(BaseModel):
     approved: bool
-    scope: str = "once"  # once | session | project
+    scope: str = "once"  # once | session | project | permanent
 
 @task_router.post("/{task_id}/approve-command")
 async def approve_command(
@@ -315,9 +315,10 @@ async def approve_command(
     用户批准/拒绝 AI 请求执行的写命令.
 
     scope 授权范围:
-    - once:    仅本次命令
-    - session: 本次 AI 回复内的同类命令自动批准
-    - project: 永久开启 execute_command 权限 (写入项目配置)
+    - once:      仅本次命令
+    - session:   本次 AI 回复内的同类命令自动批准
+    - project:   本项目内所有写命令自动批准 (写入项目配置)
+    - permanent: 创建全局永久授权规则 (所有项目的同类命令自动批准)
     """
     rt = TaskManager.get_running_task(task_id)
     if not rt:

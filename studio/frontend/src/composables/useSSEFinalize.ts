@@ -69,14 +69,17 @@ export function useSSEFinalize(options: FinalizeOptions) {
     streamSegments.value = []
     let totalEventsProcessed = 0
 
+    let sseBuffer = ''  // SSE 行缓冲: 跨 chunk 拼接不完整的行
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
 
-      const chunk = decoder.decode(value, { stream: true })
-      const lines = chunk.split('\n')
+      sseBuffer += decoder.decode(value, { stream: true })
+      const parts = sseBuffer.split('\n')
+      // 最后一段可能是不完整的行, 留到下一次 read 拼接
+      sseBuffer = parts.pop() || ''
 
-      for (const line of lines) {
+      for (const line of parts) {
         if (!line.startsWith('data: ')) continue
         totalEventsProcessed++
         try {

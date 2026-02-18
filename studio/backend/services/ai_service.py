@@ -165,7 +165,7 @@ async def _get_copilot_headers(request_id: str = "") -> Dict[str, str]:
         "editor-plugin-version": "copilot-chat/0.24.0",
         "copilot-integration-id": "vscode-chat",
         "openai-intent": "conversation-panel",
-        "user-agent": "GoldenNest-Studio/1.0",
+        "user-agent": "Studio/1.0",
         # 计费归集头 — 同一 request_id 的工具调用轮次合并计费
         "x-request-id": request_id or str(uuid.uuid4()),
         "vscode-sessionid": _STUDIO_SESSION_ID,

@@ -92,6 +92,33 @@ export function useAskUser(
     return answer.includes('以上问题由你来决定')
   }
 
+  /**
+   * 解析 DB 中存储的回答文本, 返回 { questionText → answerText } 映射
+   * 格式: **问题文本**\n回答内容
+   */
+  function parseAnswerTextMap(answerText: string): Record<string, string> {
+    const map: Record<string, string> = {}
+    if (!answerText) return map
+    // 按 **问题** 分段
+    const blocks = answerText.split(/\n\n/).filter(Boolean)
+    for (const block of blocks) {
+      const match = block.match(/^\*\*(.+?)\*\*\n(.+)$/s)
+      if (match) {
+        map[match[1].trim()] = match[2].trim()
+      }
+    }
+    return map
+  }
+
+  /**
+   * 获取 DB 中回答里某个问题的答案 (用于逐题回显)
+   */
+  function getDbAnswerForQuestion(currentMsg: any, questionText: string): string {
+    const raw = getAskUserAnswer(currentMsg)
+    const map = parseAnswerTextMap(raw)
+    return map[questionText] || ''
+  }
+
   function getRegularToolCalls(toolCalls: any[] | undefined) {
     return (toolCalls || []).filter((tc: any) => tc.name !== 'ask_user')
   }
@@ -104,6 +131,7 @@ export function useAskUser(
     isAskUserAnswered,
     getAskUserAnswer,
     isAskUserAutoDecided,
+    getDbAnswerForQuestion,
     getRegularToolCalls,
   }
 }

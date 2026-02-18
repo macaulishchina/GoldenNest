@@ -52,9 +52,9 @@ async def deploy_main_project(
     主项目部署流水线:
     1. 创建部署前快照
     2. git pull
-    3. docker compose build
-    4. docker compose up -d (仅 frontend + backend)
-    5. 健康检查
+    3. docker compose build (配置的服务列表)
+    4. docker compose up -d (配置的服务列表)
+    5. 健康检查 (配置的端点)
     6. 失败则自动回滚
     """
     # 创建部署记录
@@ -77,18 +77,20 @@ async def deploy_main_project(
         await _log(deployment, f"   快照已创建: {snapshot_before.git_tag}", log_callback)
 
         # ===== Step 2: Git Pull =====
-        await _log(deployment, "📥 拉取最新代码 (git pull)...", log_callback)
-        rc, stdout, stderr = await _run_cmd("git pull origin master")
+        await _log(deployment, f"📥 拉取最新代码 (git pull origin {settings.deploy_git_branch})...", log_callback)
+        rc, stdout, stderr = await _run_cmd(f"git pull origin {settings.deploy_git_branch}")
         if rc != 0:
             await _log(deployment, f"   ⚠️ git pull 警告: {stderr.strip()}", log_callback)
         else:
             await _log(deployment, f"   ✅ {stdout.strip()}", log_callback)
 
         # ===== Step 3: Docker Build =====
-        await _log(deployment, "🔨 构建 Docker 镜像 (frontend + backend)...", log_callback)
+        services = settings.deploy_services
+        services_str = " ".join(services)
+        await _log(deployment, f"🔨 构建 Docker 镜像 ({services_str})...", log_callback)
         deployment.status = DeployStatus.building
 
-        for service in ["frontend", "backend"]:
+        for service in services:
             await _log(deployment, f"   构建 {service}...", log_callback)
             rc, stdout, stderr = await _run_cmd(
                 f"docker compose build {service}",
@@ -102,9 +104,9 @@ async def deploy_main_project(
         await _log(deployment, "🚀 启动容器...", log_callback)
         deployment.status = DeployStatus.deploying
 
-        # 安全约束: 只操作 frontend 和 backend
+        # 安全约束: 只操作配置的部署服务
         rc, stdout, stderr = await _run_cmd(
-            "docker compose up -d frontend backend",
+            f"docker compose up -d {services_str}",
             cwd=settings.workspace_path,
         )
         if rc != 0:
@@ -176,26 +178,37 @@ async def deploy_main_project(
 
 
 async def _health_check_with_retry(log_callback: LogCallback = None) -> bool:
-    """带重试的健康检查"""
+    """带重试的健康检查 (根据 settings.deploy_health_checks 配置)"""
     import httpx
+
+    checks = settings.deploy_health_checks
+    if not checks:
+        # 未配置健康检查 → 默认视为成功
+        if log_callback:
+            await log_callback("   ℹ️ 未配置健康检查端点, 跳过")
+        return True
 
     for attempt in range(settings.health_check_retries):
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                # 后端
-                backend_resp = await client.get("http://backend:8000/api/health")
-                backend_ok = backend_resp.status_code == 200
+                all_ok = True
+                status_parts = []
 
-                # 前端
-                frontend_resp = await client.get("http://frontend:80")
-                frontend_ok = frontend_resp.status_code == 200
+                for check in checks:
+                    url = check.get("url", "")
+                    name = check.get("name", url)
+                    try:
+                        resp = await client.get(url)
+                        ok = resp.status_code == 200
+                    except Exception:
+                        ok = False
+                    all_ok = all_ok and ok
+                    status_parts.append(f"{name}={'✅' if ok else '❌'}")
 
-                if backend_ok and frontend_ok:
+                if all_ok:
                     return True
 
-                msg = f"   尝试 {attempt + 1}/{settings.health_check_retries}: "
-                msg += f"后端={'✅' if backend_ok else '❌'} "
-                msg += f"前端={'✅' if frontend_ok else '❌'}"
+                msg = f"   尝试 {attempt + 1}/{settings.health_check_retries}: {' '.join(status_parts)}"
                 if log_callback:
                     await log_callback(msg)
 

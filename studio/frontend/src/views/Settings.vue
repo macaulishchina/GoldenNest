@@ -29,18 +29,36 @@
       <n-tab-pane name="skills" tab="🎯 技能管理">
         <SkillSettings />
       </n-tab-pane>
+      <n-tab-pane name="tools" tab="🔧 工具管理">
+        <ToolSettings />
+      </n-tab-pane>
+      <n-tab-pane name="command-auth" tab="🔒 命令授权">
+        <CommandAuthSettings />
+      </n-tab-pane>
+      <n-tab-pane name="workflows" tab="🔄 工作流">
+        <WorkflowSettings />
+      </n-tab-pane>
+      <n-tab-pane v-if="authStore.isAdmin" name="users" tab="👥 用户管理">
+        <UserManagement />
+      </n-tab-pane>
     </n-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import AIServiceSettings from './settings/AIServiceSettings.vue'
 import AIPreferences from './settings/AIPreferences.vue'
 import ModelSettings from './settings/ModelSettings.vue'
 import SystemSettings from './settings/SystemSettings.vue'
 import SkillSettings from './settings/SkillSettings.vue'
+import ToolSettings from './settings/ToolSettings.vue'
+import WorkflowSettings from './settings/WorkflowSettings.vue'
+import CommandAuthSettings from './settings/CommandAuthSettings.vue'
+import UserManagement from './settings/UserManagement.vue'
 
+const authStore = useAuthStore()
 const activeTab = ref('ai')
 const aiSubTab = ref('providers')
 </script>

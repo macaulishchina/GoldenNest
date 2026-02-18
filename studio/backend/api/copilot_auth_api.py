@@ -128,7 +128,7 @@ async def get_copilot_usage():
                     "Accept": "application/json",
                     "editor-version": "vscode/1.96.0",
                     "editor-plugin-version": "copilot-chat/0.24.0",
-                    "user-agent": "GoldenNest-Studio/1.0",
+                    "user-agent": "Studio/1.0",
                 },
             )
 

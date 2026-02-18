@@ -21,8 +21,12 @@ from studio.backend.api.studio_auth import router as studio_auth_router
 from studio.backend.api.endpoint_probe import router as endpoint_probe_router
 from studio.backend.api.provider_api import router as provider_router, seed_providers
 from studio.backend.api.skills import router as skills_router
+from studio.backend.api.tools import router as tools_router
+from studio.backend.api.workflows import module_router as workflow_module_router, workflow_router as workflow_router
 from studio.backend.api.tasks import project_router as tasks_project_router, task_router as tasks_router
 from studio.backend.api.ws import router as ws_router
+from studio.backend.api.users import router as users_router
+from studio.backend.api.command_auth import router as command_auth_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,6 +60,20 @@ async def lifespan(app: FastAPI):
     # 种子数据: 内置技能
     from studio.backend.api.skills import seed_skills
     await seed_skills()
+
+    # 种子数据: 内置工具定义
+    from studio.backend.api.tools import seed_tools
+    await seed_tools()
+
+    # 加载工具定义到内存缓存 (必须在 seed_tools 之后)
+    from studio.backend.services.tool_registry import load_tools_from_db
+    await load_tools_from_db()
+
+    # 种子数据: 工作流模块 + 工作流
+    from studio.backend.api.workflows import seed_workflow_modules, seed_workflows, load_workflows_to_cache
+    await seed_workflow_modules()
+    await seed_workflows()
+    await load_workflows_to_cache()
 
     # 一次性迁移: 为 skill_id=NULL 的旧项目设置默认技能
     await _migrate_null_skill_projects()
@@ -229,7 +247,7 @@ async def _migrate_null_skill_projects():
 
 app = FastAPI(
     title="设计院 (Studio)",
-    description="GoldenNest 设计院 - AI 驱动的需求迭代平台",
+    description="AI 驱动的通用项目设计与需求迭代平台",
     version="1.0.0",
     docs_url="/studio-api/docs",
     redoc_url="/studio-api/redoc",
@@ -290,9 +308,14 @@ app.include_router(studio_auth_router)
 app.include_router(endpoint_probe_router)
 app.include_router(provider_router)
 app.include_router(skills_router)
+app.include_router(tools_router)
+app.include_router(workflow_module_router)
+app.include_router(workflow_router)
 app.include_router(tasks_project_router)
 app.include_router(tasks_router)
 app.include_router(ws_router)
+app.include_router(users_router)
+app.include_router(command_auth_router)
 
 
 @app.get("/studio-api/health")
