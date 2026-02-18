@@ -18,14 +18,21 @@ const router = createRouter({
       meta: { requiresAuth: false }
     },
     {
+      path: '/guest',
+      name: 'GuestHome',
+      component: () => import('@/views/GuestHome.vue'),
+      meta: { requiresAuth: false, isGuestEntry: true }
+    },
+    {
       path: '/',
       component: () => import('@/views/Layout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, allowGuest: true },
       children: [
         {
           path: '',
           name: 'Dashboard',
-          component: () => import('@/views/Dashboard.vue')
+          component: () => import('@/views/Dashboard.vue'),
+          meta: { allowGuest: true }
         },
         {
           path: 'equity',
@@ -150,8 +157,29 @@ const router = createRouter({
 router.beforeEach(async (to, _from, next) => {
   const userStore = useUserStore()
   
+  // 如果是游客入口，设置游客模式
+  if (to.meta.isGuestEntry) {
+    userStore.enterGuestMode()
+    next()
+    return
+  }
+  
   // 如果需要认证
   if (to.meta.requiresAuth) {
+    // 游客模式：检查是否允许游客访问（检查当前路由及其父路由的meta）
+    if (userStore.isGuest) {
+      // 检查路由或其匹配的任何父路由是否允许游客访问
+      const allowGuest = to.matched.some(record => record.meta.allowGuest)
+      if (allowGuest) {
+        next()
+        return
+      } else {
+        // 游客尝试访问受限页面，重定向到游客首页
+        next('/guest')
+        return
+      }
+    }
+    
     if (!userStore.isLoggedIn) {
       // 未登录，跳转到登录页并保存原始路径
       next({

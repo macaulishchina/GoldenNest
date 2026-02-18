@@ -21,13 +21,29 @@ interface User {
 export const useUserStore = defineStore('user', () => {
   const token = ref<string | null>(localStorage.getItem('token'))
   const user = ref<User | null>(null)
+  const isGuest = ref<boolean>(localStorage.getItem('isGuest') === 'true')
   
-  const isLoggedIn = computed(() => !!token.value)
+  const isLoggedIn = computed(() => !!token.value && !isGuest.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
   
   function setToken(newToken: string) {
     token.value = newToken
     localStorage.setItem('token', newToken)
+    // 登录时清除游客状态
+    isGuest.value = false
+    localStorage.removeItem('isGuest')
+  }
+  
+  function enterGuestMode() {
+    isGuest.value = true
+    localStorage.setItem('isGuest', 'true')
+    token.value = null
+    user.value = null
+  }
+  
+  function exitGuestMode() {
+    isGuest.value = false
+    localStorage.removeItem('isGuest')
   }
   
   async function fetchUser() {
@@ -45,7 +61,9 @@ export const useUserStore = defineStore('user', () => {
   function logout() {
     token.value = null
     user.value = null
+    isGuest.value = false
     localStorage.removeItem('token')
+    localStorage.removeItem('isGuest')
   }
   
   // 初始化时获取用户信息
@@ -56,10 +74,13 @@ export const useUserStore = defineStore('user', () => {
   return {
     token,
     user,
+    isGuest,
     isLoggedIn,
     isAdmin,
     setToken,
     fetchUser,
-    logout
+    logout,
+    enterGuestMode,
+    exitGuestMode
   }
 })
