@@ -45,6 +45,7 @@ export const projectApi = {
   create: (data: any) => api.post('/projects', data),
   update: (id: number, data: any) => api.patch(`/projects/${id}`, data),
   delete: (id: number) => api.delete(`/projects/${id}`),
+  listTypes: () => api.get('/projects/types/list'),
 }
 
 // ==================== 讨论 ====================
@@ -85,6 +86,9 @@ export const implementationApi = {
   getStatus: (projectId: number) => api.get(`/projects/${projectId}/implementation`),
   getDiff: (projectId: number) => api.get(`/projects/${projectId}/pr-diff`),
   approvePR: (projectId: number) => api.post(`/projects/${projectId}/pr/approve`),
+  prepareReview: (projectId: number) => api.post(`/projects/${projectId}/prepare-review`),
+  getWorkspaceInfo: (projectId: number) => api.get(`/projects/${projectId}/workspace-info`),
+  startIteration: (projectId: number) => api.post(`/projects/${projectId}/start-iteration`),
 }
 
 // ==================== 部署 ====================
@@ -189,6 +193,25 @@ export const skillApi = {
   update: (id: number, data: any) => api.put(`/skills/${id}`, data),
   delete: (id: number) => api.delete(`/skills/${id}`),
   duplicate: (id: number) => api.post(`/skills/${id}/duplicate`),
+}
+
+// ==================== AI 任务 ====================
+export const tasksApi = {
+  /** 获取项目当前活跃的 AI 任务 (向后兼容: 返回第一个) */
+  getActiveTask: (projectId: number) => api.get(`/projects/${projectId}/active-task`),
+  /** 获取项目所有活跃 AI 任务 (多任务并发) */
+  getActiveTasks: (projectId: number) => api.get(`/projects/${projectId}/active-tasks`),
+  /** 返回 per-task SSE 流 URL (用于 finalize 等单任务场景) */
+  streamUrl: (taskId: number) => `/studio-api/tasks/${taskId}/stream`,
+  /** 返回项目事件总线 SSE URL (多人实时同步) */
+  projectEventsUrl: (projectId: number) => `/studio-api/projects/${projectId}/events`,
+  /** 轻量级任务状态查询 */
+  getStatus: (taskId: number) => api.get(`/tasks/${taskId}/status`),
+  /** 取消正在运行的任务 */
+  cancel: (taskId: number) => api.post(`/tasks/${taskId}/cancel`),
+  /** 审批写命令执行 */
+  approveCommand: (taskId: number, body: { approved: boolean; scope: string }) =>
+    api.post(`/tasks/${taskId}/approve-command`, body),
 }
 
 export default api

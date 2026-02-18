@@ -162,25 +162,8 @@ BUILTIN_SKILLS = [
 {discussion_summary}
 
 请直接输出需求规格书内容（不需要代码块包裹）:""",
-        "stages": [
-            {"key": "draft", "label": "草稿", "status": "draft"},
-            {"key": "discussing", "label": "讨论", "status": "discussing"},
-            {"key": "planned", "label": "定稿", "status": "planned"},
-            {"key": "implementing", "label": "实施", "status": "implementing"},
-            {"key": "reviewing", "label": "审核", "status": "reviewing"},
-            {"key": "deploying", "label": "部署", "status": "deploying"},
-            {"key": "deployed", "label": "完成", "status": "deployed"},
-        ],
-        "ui_labels": {
-            "project_noun": "需求",
-            "create_title": "🆕 新建需求",
-            "create_placeholder": "简明描述需求目标",
-            "description_placeholder": "详细描述需求背景和期望效果...",
-            "output_noun": "需求规格书",
-            "output_tab_label": "📋 设计稿",
-            "finalize_action": "敲定方案",
-            "discuss_tab_label": "💬 讨论 & 设计",
-        },
+        "stages": [],
+        "ui_labels": {},
     },
     {
         "name": "Bug 问诊",
@@ -273,25 +256,8 @@ BUILTIN_SKILLS = [
 {discussion_summary}
 
 请直接输出诊断书内容（不需要代码块包裹）:""",
-        "stages": [
-            {"key": "draft", "label": "报告", "status": "draft"},
-            {"key": "discussing", "label": "问诊", "status": "discussing"},
-            {"key": "planned", "label": "诊断书", "status": "planned"},
-            {"key": "implementing", "label": "修复", "status": "implementing"},
-            {"key": "reviewing", "label": "验证", "status": "reviewing"},
-            {"key": "deploying", "label": "部署", "status": "deploying"},
-            {"key": "deployed", "label": "关闭", "status": "deployed"},
-        ],
-        "ui_labels": {
-            "project_noun": "缺陷",
-            "create_title": "🐛 新建缺陷",
-            "create_placeholder": "简明描述 Bug 现象",
-            "description_placeholder": "描述 Bug 的具体表现、出现场景...",
-            "output_noun": "诊断书",
-            "output_tab_label": "📋 诊断书",
-            "finalize_action": "生成诊断书",
-            "discuss_tab_label": "💬 问诊",
-        },
+        "stages": [],
+        "ui_labels": {},
     },
     {
         "name": "实现审查",
@@ -397,21 +363,8 @@ BUILTIN_SKILLS = [
 {discussion_summary}
 
 请直接输出审查报告内容（不需要代码块包裹）:""",
-        "stages": [
-            {"key": "draft", "label": "准备", "status": "draft"},
-            {"key": "discussing", "label": "审查", "status": "discussing"},
-            {"key": "planned", "label": "报告", "status": "planned"},
-        ],
-        "ui_labels": {
-            "project_noun": "审查",
-            "create_title": "✅ 新建审查",
-            "create_placeholder": "输入要审查的需求名称或模块",
-            "description_placeholder": "描述审查范围、需求文档位置...",
-            "output_noun": "审查报告",
-            "output_tab_label": "📋 审查报告",
-            "finalize_action": "生成报告",
-            "discuss_tab_label": "💬 审查",
-        },
+        "stages": [],
+        "ui_labels": {},
     },
 ]
 

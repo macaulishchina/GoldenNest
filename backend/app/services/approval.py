@@ -903,20 +903,34 @@ class ApprovalService:
             await self.db.flush()
             position.transaction_id = transaction.id
         else:
-            # 外部资金：创建DEPOSIT交易记录资金进入
-            transaction = Transaction(
+            # 外部资金：先创建DEPOSIT交易记录资金进入
+            deposit_transaction = Transaction(
                 family_id=request.family_id,
                 user_id=request.requester_id,
                 transaction_type=TransactionType.DEPOSIT,
                 amount=principal,
                 balance_after=current_balance + principal,
-                description=f"创建投资: {investment.name} (外部资金)",
+                description=f"外部资金注入: {investment.name} (创建投资)",
                 reference_id=investment.id,
                 reference_type="investment_create"
             )
-            self.db.add(transaction)
+            self.db.add(deposit_transaction)
             await self.db.flush()
-            position.transaction_id = transaction.id
+            
+            # 再创建INVESTMENT_BUY交易，从余额扣款到投资，net balance不变
+            buy_transaction = Transaction(
+                family_id=request.family_id,
+                user_id=request.requester_id,
+                transaction_type=TransactionType.INVESTMENT_BUY,
+                amount=-principal,
+                balance_after=current_balance,  # 净余额不变
+                description=f"投资买入: {investment.name} (外部资金)",
+                reference_id=investment.id,
+                reference_type="investment_create"
+            )
+            self.db.add(buy_transaction)
+            await self.db.flush()
+            position.transaction_id = buy_transaction.id
         
         # 创建存款记录（记录权益贡献）
         deposit = Deposit(
@@ -1179,20 +1193,18 @@ class ApprovalService:
         
         deduct_from_cash = data.get("deduct_from_cash", True)  # 默认从自由资金扣除
         
+        # 获取当前余额（无论是否从自由资金扣除都需要，用于维护 balance_after 流水）
+        result = await self.db.execute(
+            select(Transaction)
+            .where(Transaction.family_id == request.family_id)
+            .order_by(Transaction.created_at.desc())
+            .limit(1)
+        )
+        last_transaction = result.scalar_one_or_none()
+        current_balance = last_transaction.balance_after if last_transaction else 0
+        
         # 如果从自由资金扣除，需要检查余额
-        current_balance = 0
         if deduct_from_cash:
-            # 获取当前余额
-            result = await self.db.execute(
-                select(Transaction)
-                .where(Transaction.family_id == request.family_id)
-                .order_by(Transaction.created_at.desc())
-                .limit(1)
-            )
-            last_transaction = result.scalar_one_or_none()
-            current_balance = last_transaction.balance_after if last_transaction else 0
-            
-            # 检查余额是否足够
             if current_balance < amount:
                 logging.error(f"Insufficient balance for investment increase: current={current_balance}, required={amount}")
                 raise ValueError(f"余额不足，当前余额: {current_balance}，需要: {amount}")
@@ -1244,20 +1256,34 @@ class ApprovalService:
             await self.db.flush()
             position.transaction_id = transaction.id
         else:
-            # 外部资金：创建DEPOSIT交易记录资金进入
-            transaction = Transaction(
+            # 外部资金：先创建DEPOSIT交易记录资金进入
+            deposit_transaction = Transaction(
                 family_id=request.family_id,
                 user_id=request.requester_id,
                 transaction_type=TransactionType.DEPOSIT,
                 amount=amount,
                 balance_after=current_balance + amount,
+                description=f"外部资金注入: {investment.name} (增持)",
+                reference_id=investment_id,
+                reference_type="investment_increase"
+            )
+            self.db.add(deposit_transaction)
+            await self.db.flush()
+            
+            # 再创建INVESTMENT_BUY交易，从余额扣款到投资，net balance不变
+            buy_transaction = Transaction(
+                family_id=request.family_id,
+                user_id=request.requester_id,
+                transaction_type=TransactionType.INVESTMENT_BUY,
+                amount=-amount,
+                balance_after=current_balance,  # 净余额不变
                 description=f"投资买入: {investment.name} (外部资金)",
                 reference_id=investment_id,
                 reference_type="investment_increase"
             )
-            self.db.add(transaction)
+            self.db.add(buy_transaction)
             await self.db.flush()
-            position.transaction_id = transaction.id
+            position.transaction_id = buy_transaction.id
             
             # 创建存款记录（增加权益贡献）
             deposit = Deposit(

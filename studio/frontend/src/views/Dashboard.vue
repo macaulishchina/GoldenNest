@@ -39,28 +39,102 @@
         </n-gi>
       </n-grid>
 
-      <!-- 最近动态：按技能分组双列 -->
+      <!-- 最近动态：标签分组筛选 -->
       <div v-if="projects.length">
-        <n-grid :cols="recentBySkill.length > 1 ? 2 : 1" :x-gap="16" :y-gap="16">
-          <n-gi v-for="group in recentBySkill" :key="group.skillId">
-            <n-card
-              :title="`${group.icon} ${group.name}`"
-              size="small"
-              style="background: #16213e"
-              :header-style="{ borderLeft: `3px solid ${group.color}`, paddingLeft: '12px' }"
-            >
-              <n-list bordered style="background: transparent">
-                <n-list-item
-                  v-for="p in group.items"
-                  :key="p.id"
-                  style="padding: 0"
-                >
-                  <LogItem :item="p" @click="() => router.push(`/projects/${p.id}`)" />
-                </n-list-item>
-              </n-list>
-            </n-card>
-          </n-gi>
-        </n-grid>
+        <n-card size="small" style="background: #16213e">
+          <template #header>
+            <div class="filter-section">
+              <!-- 类型筛选 -->
+              <div class="filter-row">
+                <span class="filter-label">类型</span>
+                <div class="tag-filter-bar">
+                  <span
+                    class="filter-chip"
+                    :class="{ active: activeTypeFilter === null }"
+                    @click="activeTypeFilter = null"
+                  >
+                    全部
+                    <span class="chip-count">{{ projects.length }}</span>
+                  </span>
+                  <span
+                    v-for="group in allTypeGroups"
+                    :key="group.typeKey"
+                    class="filter-chip"
+                    :class="{ active: activeTypeFilter === group.typeKey }"
+                    :style="{
+                      '--chip-color': group.color,
+                      '--chip-bg': group.color + '18',
+                      '--chip-active-bg': group.color + '30',
+                    }"
+                    @click="activeTypeFilter = activeTypeFilter === group.typeKey ? null : group.typeKey"
+                  >
+                    {{ group.icon }} {{ group.name }}
+                    <span class="chip-count">{{ group.total }}</span>
+                  </span>
+                </div>
+              </div>
+              <!-- 状态筛选 -->
+              <div class="filter-row">
+                <span class="filter-label">状态</span>
+                <div class="tag-filter-bar">
+                  <span
+                    class="filter-chip filter-chip-sm"
+                    :class="{ active: activeStatusFilter === null }"
+                    @click="activeStatusFilter = null"
+                  >全部</span>
+                  <span
+                    v-for="st in allStatusGroups"
+                    :key="st.key"
+                    class="filter-chip filter-chip-sm"
+                    :class="{ active: activeStatusFilter === st.key }"
+                    :style="{
+                      '--chip-color': st.color,
+                      '--chip-active-bg': st.color + '25',
+                    }"
+                    @click="activeStatusFilter = activeStatusFilter === st.key ? null : st.key"
+                  >
+                    {{ st.label }}
+                    <span class="chip-count">{{ st.total }}</span>
+                  </span>
+                </div>
+              </div>
+              <!-- 人员筛选 -->
+              <div v-if="allUserGroups.length > 1" class="filter-row">
+                <span class="filter-label">人员</span>
+                <div class="tag-filter-bar">
+                  <span
+                    class="filter-chip filter-chip-sm"
+                    :class="{ active: activeUserFilter === null }"
+                    @click="activeUserFilter = null"
+                  >全部</span>
+                  <span
+                    v-for="u in allUserGroups"
+                    :key="u.name"
+                    class="filter-chip filter-chip-sm filter-chip-user"
+                    :class="{ active: activeUserFilter === u.name }"
+                    @click="activeUserFilter = activeUserFilter === u.name ? null : u.name"
+                  >
+                    <span class="chip-avatar">{{ u.name.charAt(0).toUpperCase() }}</span>
+                    {{ u.name }}
+                    <span class="chip-count">{{ u.total }}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </template>
+          <n-list bordered style="background: transparent">
+            <TransitionGroup name="list">
+              <n-list-item
+                v-for="p in filteredProjects"
+                :key="p.id"
+                style="padding: 0"
+              >
+                <LogItem :item="p" @click="() => router.push(`/projects/${p.id}`)" />
+              </n-list-item>
+            </TransitionGroup>
+          </n-list>
+          <n-empty v-if="filteredProjects.length === 0" description="该分类暂无项目" style="padding: 24px 0" />
+        </n-card>
       </div>
       <n-empty v-else description="还没有项目，点击「新建项目」开始" />
     </n-space>
@@ -68,29 +142,29 @@
     <!-- 新建项目对话框 -->
     <n-modal v-model:show="showCreate" preset="dialog" :title="createDialogTitle" style="width: 600px">
       <n-form :model="newProject" label-placement="left" label-width="80">
-        <n-form-item label="技能">
+        <n-form-item label="类型">
           <n-space :size="8">
             <div
-              v-for="skill in skillStore.enabledSkills"
-              :key="skill.id"
-              class="skill-card"
-              :class="{ 'skill-card-active': newProject.skill_id === skill.id }"
-              @click="newProject.skill_id = skill.id"
+              v-for="pt in projectTypes"
+              :key="pt.key"
+              class="type-card"
+              :class="{ 'type-card-active': newProject.project_type === pt.key }"
+              @click="newProject.project_type = pt.key"
             >
-              <span class="skill-icon">{{ skill.icon || '🔧' }}</span>
-              <span class="skill-name">{{ skill.name }}</span>
+              <span class="type-icon">{{ pt.icon || '📋' }}</span>
+              <span class="type-name">{{ pt.name }}</span>
             </div>
           </n-space>
         </n-form-item>
-        <n-form-item :label="selectedSkillLabels.project_noun + '标题'">
-          <n-input v-model:value="newProject.title" :placeholder="selectedSkillUiLabels.create_placeholder || ('简明描述' + selectedSkillLabels.project_noun + '目标')" />
+        <n-form-item :label="selectedTypeLabels.project_noun + '标题'">
+          <n-input v-model:value="newProject.title" :placeholder="selectedTypeUiLabels.create_placeholder || ('简明描述' + selectedTypeLabels.project_noun + '目标')" />
         </n-form-item>
-        <n-form-item :label="selectedSkillLabels.project_noun + '描述'">
+        <n-form-item :label="selectedTypeLabels.project_noun + '描述'">
           <n-input
             v-model:value="newProject.description"
             type="textarea"
             :rows="4"
-            :placeholder="selectedSkillUiLabels.description_placeholder || ('详细描述' + selectedSkillLabels.project_noun + '背景和期望效果...')"
+            :placeholder="selectedTypeUiLabels.description_placeholder || ('详细描述' + selectedTypeLabels.project_noun + '背景和期望效果...')"
           />
         </n-form-item>
         <n-form-item label="讨论模型">
@@ -116,28 +190,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, h, watch } from 'vue'
+import { ref, computed, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { AddOutline } from '@vicons/ionicons5'
 import LogItem from '@/components/LogItem.vue'
 import { useProjectStore } from '@/stores/project'
 import { useStudioConfigStore } from '@/stores/studioConfig'
-import { useSkillStore } from '@/stores/skill'
-import { snapshotApi, modelApi } from '@/api'
+import { snapshotApi, modelApi, projectApi } from '@/api'
 import { getProviderIcon } from '@/utils/providerIcons'
 
 const router = useRouter()
 const message = useMessage()
 const store = useProjectStore()
 const studioConfig = useStudioConfigStore()
-const skillStore = useSkillStore()
 
 const showCreate = ref(false)
 const creating = ref(false)
 const snapshotCount = ref(0)
 const models = ref<any[]>([])
 const discussFilter = ref('all')
+const projectTypes = ref<any[]>([])
 
 const providerFilters = computed(() => {
   const filters: Array<{value: string; label: string; icon: string}> = [
@@ -165,7 +238,7 @@ const newProject = ref({
   title: '',
   description: '',
   discussion_model: 'gpt-4o',
-  skill_id: null as number | null,
+  project_type: 'requirement',
 })
 
 const projects = computed(() => store.projects)
@@ -176,7 +249,7 @@ const deployedCount = computed(() =>
   projects.value.filter(p => p.status === 'deployed').length
 )
 
-// ── 按技能分组，每组取最近 5 条，最多 4 组 ────────────────────────
+// ── 按技能分组，标签筛选 ─────────────────────────────────────────
 const SKILL_COLORS: Record<string, string> = {
   bug: '#d03050', fix: '#d03050', 缺陷: '#d03050', 问诊: '#d03050',
   需求: '#2080f0', feature: '#2080f0', 分析: '#2080f0',
@@ -190,56 +263,106 @@ function skillGroupColor(name = '') {
   }
   return '#63e2b7'
 }
-const recentBySkill = computed(() => {
-  const map = new Map<number | string, { skillId: number | string; name: string; icon: string; color: string; items: any[] }>()
+
+const activeTypeFilter = ref<string | null>(null)
+const activeStatusFilter = ref<string | null>(null)
+const activeUserFilter = ref<string | null>(null)
+
+const STATUS_META: Record<string, { label: string; color: string }> = {
+  draft: { label: '草稿', color: '#888' },
+  discussing: { label: '讨论中', color: '#2080f0' },
+  planned: { label: '已定稿', color: '#f0a020' },
+  implementing: { label: '实施中', color: '#f0a020' },
+  reviewing: { label: '审核中', color: '#2080f0' },
+  deploying: { label: '部署中', color: '#f0a020' },
+  deployed: { label: '已部署', color: '#18a058' },
+  rolled_back: { label: '已回滚', color: '#d03050' },
+  closed: { label: '已关闭', color: '#888' },
+}
+
+const allTypeGroups = computed(() => {
+  const map = new Map<string, { typeKey: string; name: string; icon: string; color: string; total: number }>()
   for (const p of projects.value) {
-    const sid = p.skill_id ?? 0
-    if (!map.has(sid)) {
-      const name = p.skill?.name || '项目'
-      map.set(sid, { skillId: sid, name, icon: p.skill?.icon || '📋', color: skillGroupColor(name), items: [] })
+    const tk = p.project_type || p.type_info?.key || 'unknown'
+    if (!map.has(tk)) {
+      const name = p.type_info?.name || '项目'
+      map.set(tk, { typeKey: tk, name, icon: p.type_info?.icon || '📋', color: skillGroupColor(name), total: 0 })
     }
-    const g = map.get(sid)!
-    if (g.items.length < 5) g.items.push(p)
+    map.get(tk)!.total++
   }
-  // 按首项更新时间排序，最多展示 4 组
   return [...map.values()]
-    .sort((a, b) => (b.items[0]?.updated_at ?? '').localeCompare(a.items[0]?.updated_at ?? ''))
-    .slice(0, 4)
+    .sort((a, b) => b.total - a.total)
 })
 
-const selectedSkillLabels = computed(() => {
-  const sid = newProject.value.skill_id
-  if (sid) {
-    const skill = skillStore.getSkillById(sid)
-    if (skill?.ui_labels) return { project_noun: skill.ui_labels.project_noun || '需求', output_noun: skill.ui_labels.output_noun || '设计稿' }
+const allStatusGroups = computed(() => {
+  const map = new Map<string, number>()
+  for (const p of projects.value) {
+    map.set(p.status, (map.get(p.status) || 0) + 1)
   }
+  return [...map.entries()]
+    .map(([key, total]) => ({
+      key,
+      label: STATUS_META[key]?.label || key,
+      color: STATUS_META[key]?.color || '#888',
+      total,
+    }))
+    .sort((a, b) => b.total - a.total)
+})
+
+const allUserGroups = computed(() => {
+  const map = new Map<string, number>()
+  for (const p of projects.value) {
+    // 创建者
+    if (p.created_by) map.set(p.created_by, (map.get(p.created_by) || 0) + 1)
+    // 参与者
+    if (p.participants) {
+      for (const u of p.participants) {
+        if (u !== p.created_by) map.set(u, (map.get(u) || 0) + 1)
+      }
+    }
+  }
+  return [...map.entries()]
+    .map(([name, total]) => ({ name, total }))
+    .sort((a, b) => b.total - a.total)
+})
+
+const filteredProjects = computed(() => {
+  let list = projects.value
+
+  if (activeTypeFilter.value) {
+    list = list.filter(p => (p.project_type || p.type_info?.key || 'unknown') === activeTypeFilter.value)
+  }
+  if (activeStatusFilter.value) {
+    list = list.filter(p => p.status === activeStatusFilter.value)
+  }
+  if (activeUserFilter.value) {
+    const u = activeUserFilter.value
+    list = list.filter(p =>
+      p.created_by === u || (p.participants && p.participants.includes(u))
+    )
+  }
+
+  return list.slice(0, 30)
+})
+
+const selectedTypeLabels = computed(() => {
+  const pt = projectTypes.value.find(t => t.key === newProject.value.project_type)
+  if (pt?.ui_labels) return { project_noun: pt.ui_labels.project_noun || '需求', output_noun: pt.ui_labels.output_noun || '设计稿' }
   return { project_noun: '需求', output_noun: '设计稿' }
 })
 
-const selectedSkillUiLabels = computed(() => {
-  const sid = newProject.value.skill_id
-  if (sid) {
-    const skill = skillStore.getSkillById(sid)
-    return skill?.ui_labels || {}
-  }
-  return {} as Record<string, string>
+const selectedTypeUiLabels = computed(() => {
+  const pt = projectTypes.value.find(t => t.key === newProject.value.project_type)
+  return pt?.ui_labels || {} as Record<string, string>
 })
 
 const createDialogTitle = computed(() => {
-  const sid = newProject.value.skill_id
-  if (sid) {
-    const skill = skillStore.getSkillById(sid)
-    if (skill?.ui_labels?.create_title) return skill.ui_labels.create_title
-  }
+  const pt = projectTypes.value.find(t => t.key === newProject.value.project_type)
+  if (pt?.ui_labels?.create_title) return pt.ui_labels.create_title
   return '🆕 新建项目'
 })
 
-// 打开创建弹窗时自动选择第一个技能
-watch(showCreate, (show) => {
-  if (show && !newProject.value.skill_id && skillStore.enabledSkills.length > 0) {
-    newProject.value.skill_id = skillStore.enabledSkills[0].id
-  }
-})
+// 空操作: project_type 已有默认值 'requirement'
 
 function filterBySource(list: any[], source: string) {
   if (source === 'all') return list
@@ -252,7 +375,7 @@ function filterBySource(list: any[], source: string) {
 function buildGroupedOptions(list: any[]) {
   // 保留 API 返回顺序, 按 model_family 分组 (后端已提供)
   const mapOpt = (m: any) => ({
-    label: m.name, value: m.id,
+    label: m.name || m.id, value: m.id,
     supports_vision: m.supports_vision, supports_tools: m.supports_tools,
     is_reasoning: m.is_reasoning, api_backend: m.api_backend,
     is_custom: m.is_custom,
@@ -344,7 +467,9 @@ function statusLabel(status: string) {
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleString('zh-CN', {
+  // 后端存储 UTC 时间，ISO 字符串不含 Z 后缀，手动补 Z 转本地时区
+  const utcStr = dateStr && !dateStr.endsWith('Z') && !dateStr.includes('+') ? dateStr + 'Z' : dateStr
+  return new Date(utcStr).toLocaleString('zh-CN', {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
   })
 }
@@ -369,7 +494,10 @@ async function handleCreate() {
 
 onMounted(async () => {
   store.fetchProjects()
-  skillStore.fetchSkills()
+  try {
+    const { data } = await projectApi.listTypes()
+    projectTypes.value = data
+  } catch {}
   try {
     const { data } = await snapshotApi.list()
     snapshotCount.value = data.length
@@ -382,14 +510,136 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.skill-card {
+.type-card {
   display: flex; align-items: center; gap: 6px;
   padding: 6px 14px; border-radius: 8px;
   border: 1.5px solid #333; cursor: pointer;
   transition: all .15s; user-select: none;
 }
-.skill-card:hover { border-color: #63e2b7; }
-.skill-card-active { border-color: #63e2b7; background: rgba(99,226,183,.12); }
-.skill-icon { font-size: 18px; }
-.skill-name { font-size: 13px; }
+.type-card:hover { border-color: #63e2b7; }
+.type-card-active { border-color: #63e2b7; background: rgba(99,226,183,.12); }
+.type-icon { font-size: 18px; }
+.type-name { font-size: 13px; }
+
+/* ── 过滤器区域 ──────────────────── */
+.filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.35);
+  flex-shrink: 0;
+  width: 28px;
+  text-align: right;
+}
+
+/* ── 标签筛选栏 ──────────────────── */
+.tag-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.2s ease;
+}
+
+.filter-chip:hover {
+  background: var(--chip-active-bg, rgba(255, 255, 255, 0.1));
+  color: var(--chip-color, rgba(255, 255, 255, 0.85));
+  border-color: var(--chip-color, rgba(255, 255, 255, 0.2));
+}
+
+.filter-chip.active {
+  background: var(--chip-active-bg, rgba(99, 226, 183, 0.2));
+  color: var(--chip-color, #63e2b7);
+  border-color: var(--chip-color, #63e2b7);
+  font-weight: 600;
+}
+
+.chip-count {
+  font-size: 11px;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0 5px;
+}
+
+.filter-chip.active .chip-count {
+  background: var(--chip-color, #63e2b7);
+  color: #16213e;
+  font-weight: 700;
+}
+
+.filter-chip-sm {
+  padding: 2px 10px;
+  font-size: 12px;
+  border-radius: 12px;
+}
+
+.filter-chip-user {
+  gap: 4px;
+}
+
+.chip-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+}
+
+.filter-chip-user.active .chip-avatar {
+  background: var(--chip-color, #63e2b7);
+  color: #16213e;
+}
+
+/* ── 列表过渡动画 ──────────────── */
+.list-move,
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.25s ease;
+}
+.list-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.list-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.list-leave-active {
+  position: absolute;
+  width: 100%;
+}
 </style>

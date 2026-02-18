@@ -32,9 +32,11 @@ TOOL_PERMISSIONS = {
     "read_config",   # 读取配置文件
     "search",        # 全文搜索
     "tree",          # 目录浏览
+    "execute_readonly_command",  # 执行只读命令 (git log/diff, ls, cat, etc.)
+    "execute_command",           # 执行任意命令 (需显式授权)
 }
 
-DEFAULT_PERMISSIONS = set(TOOL_PERMISSIONS)  # 默认全部开启
+DEFAULT_PERMISSIONS = set(TOOL_PERMISSIONS) - {"execute_command"}  # 默认不开放写命令
 
 # ==================== 安全限制 ====================
 
@@ -264,6 +266,35 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": (
+                "在项目工作目录中执行 shell 命令。支持常用的只读命令如 "
+                "git (log, diff, show, status, blame), ls, cat, head, tail, find, "
+                "grep, wc, diff, python3 -c 等。非只读命令需要额外授权。\n\n"
+                "常用场景：\n"
+                "- `git log --oneline -20` 查看近 20 条提交\n"
+                "- `git diff origin/main...HEAD -- path/to/file` 查看单文件变更\n"
+                "- `git diff --stat origin/main...HEAD` 查看变更统计\n"
+                "- `git blame path/to/file` 查看文件逐行负责人\n"
+                "- `find . -name '*.py' -newer some_file` 查找新修改的文件\n"
+                "- `python3 -c \"import json; ...\"` 执行简单脚本\n"
+                "- `docker ps` 查看运行中的容器\n"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "要执行的 shell 命令 (单行)",
+                    },
+                },
+                "required": ["command"],
+            },
+        },
+    },
 ]
 
 
@@ -296,6 +327,7 @@ _TOOL_PERMISSION_MAP: Dict[str, Set[str]] = {
     "search_text": {"search"},
     "list_directory": {"tree"},
     "get_file_tree": {"tree"},
+    "run_command": {"execute_readonly_command"},
 }
 
 
@@ -350,11 +382,15 @@ def _is_sensitive_file(rel_path: str) -> bool:
 
 # ==================== 工具执行器 ====================
 
+# 类型: 命令审批回调 (command_str, tool_call_id) -> {"approved": bool, "scope": str}
+CommandApprovalCallback = Optional[Any]  # asyncio coroutine
+
 async def execute_tool(
     name: str,
     arguments: Dict[str, Any],
     workspace: str,
     permissions: Optional[Set[str]] = None,
+    command_approval_fn: CommandApprovalCallback = None,
 ) -> str:
     """
     执行指定工具并返回结果文本
@@ -364,6 +400,8 @@ async def execute_tool(
         arguments: 工具参数
         workspace: 工作区根路径
         permissions: 允许的权限集合
+        command_approval_fn: 异步回调, 用于请求用户批准写命令
+                            签名: async (command: str, tool_call_id: str) -> {"approved": bool, "scope": str}
 
     Returns:
         工具执行结果 (纯文本)
@@ -375,19 +413,65 @@ async def execute_tool(
     if required_perm and not required_perm.issubset(perms):
         return f"⚠️ 工具 '{name}' 已被项目管理员禁用"
 
+    # run_command 特殊处理: 非只读命令需要 execute_command 权限
+    if name == "run_command":
+        command = arguments.get("command", "")
+        if not _is_readonly_command(command):
+            if "execute_command" in perms:
+                # 已有永久写权限, 使用不受限版本
+                try:
+                    result = await asyncio.wait_for(
+                        _tool_run_command_unrestricted(arguments, workspace),
+                        timeout=COMMAND_TIMEOUT_SECONDS * 2,
+                    )
+                    return result
+                except asyncio.TimeoutError:
+                    return f"⚠️ 命令执行超时"
+                except Exception as e:
+                    logger.exception(f"命令执行失败")
+                    return f"⚠️ 命令执行失败: {str(e)}"
+            elif command_approval_fn:
+                # 请求用户实时审批
+                approval = await command_approval_fn(command, "")
+                if approval.get("approved"):
+                    try:
+                        result = await asyncio.wait_for(
+                            _tool_run_command_unrestricted(arguments, workspace),
+                            timeout=COMMAND_TIMEOUT_SECONDS * 2,
+                        )
+                        scope_label = {"once": "本次", "session": "本会话", "project": "本项目"}.get(approval.get("scope", ""), "")
+                        return f"✅ 用户已授权执行 ({scope_label})\n\n{result}"
+                    except asyncio.TimeoutError:
+                        return f"⚠️ 命令执行超时"
+                    except Exception as e:
+                        logger.exception(f"命令执行失败")
+                        return f"⚠️ 命令执行失败: {str(e)}"
+                else:
+                    reason = approval.get("reason", "用户拒绝")
+                    return (
+                        f"⚠️ 用户拒绝执行此命令。\n"
+                        f"命令: {command}\n"
+                        f"原因: {reason}\n\n"
+                        f"请改用只读命令获取信息，或向用户解释为什么需要执行此命令后再次尝试。"
+                    )
+            else:
+                # 无审批回调, 使用受限版本 (返回权限不足提示)
+                pass  # _tool_run_command 内部会检查并返回提示
+
     # 执行工具 (带超时)
     executor = _TOOL_EXECUTORS.get(name)
     if not executor:
         return f"⚠️ 未知工具: '{name}'"
 
+    timeout = COMMAND_TIMEOUT_SECONDS if name == "run_command" else TOOL_TIMEOUT_SECONDS
     try:
         result = await asyncio.wait_for(
             executor(arguments, workspace),
-            timeout=TOOL_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
         return result
     except asyncio.TimeoutError:
-        return f"⚠️ 工具 '{name}' 执行超时 ({TOOL_TIMEOUT_SECONDS}s)"
+        return f"⚠️ 工具 '{name}' 执行超时 ({timeout}s)"
     except Exception as e:
         logger.exception(f"工具 {name} 执行失败")
         return f"⚠️ 工具执行失败: {str(e)}"
@@ -713,6 +797,156 @@ async def _tool_ask_user(args: Dict[str, Any], workspace: str) -> str:
     return f"✅ 已向用户展示 {count} 个问题，请等待用户回答后再继续讨论。不要自行假设答案。"
 
 
+# ==================== 命令执行工具 ====================
+
+# 只读命令白名单: {命令: 允许的子命令集合 (None=全部允许)}
+_READONLY_COMMANDS = {
+    "git": {"log", "diff", "show", "status", "branch", "tag", "describe",
+            "rev-parse", "ls-files", "blame", "shortlog", "remote", "stash"},
+    "ls": None, "cat": None, "head": None, "tail": None,
+    "find": None, "grep": None, "wc": None, "file": None,
+    "diff": None, "pwd": None, "echo": None, "which": None,
+    "du": None, "stat": None, "realpath": None, "dirname": None,
+    "basename": None, "env": None, "uname": None, "whoami": None,
+    "date": None, "tree": None, "less": None, "more": None,
+    "sort": None, "uniq": None, "awk": None, "sed": None,
+    "cut": None, "tr": None, "xargs": None,
+    "python3": {"-c", "--version", "-V"},
+    "python": {"-c", "--version", "-V"},
+    "node": {"-e", "--version", "-v"},
+    "docker": {"ps", "images", "logs", "inspect", "stats", "top", "version", "info"},
+    "docker-compose": {"ps", "logs", "config", "images"},
+}
+
+COMMAND_TIMEOUT_SECONDS = 30
+
+
+def _is_readonly_command(command_str: str) -> bool:
+    """检查命令是否为只读命令"""
+    parts = command_str.strip().split()
+    if not parts:
+        return False
+    cmd = parts[0]
+    # 去掉路径前缀 (如 /usr/bin/git → git)
+    cmd = os.path.basename(cmd)
+
+    allowed_subs = _READONLY_COMMANDS.get(cmd)
+    if allowed_subs is None and cmd in _READONLY_COMMANDS:
+        return True  # 该命令任何子命令都允许
+    if allowed_subs is not None:
+        # 检查第一个参数是否在允许列表中
+        if len(parts) >= 2:
+            return parts[1] in allowed_subs
+        return True  # 无参数, 视为安全
+    return False
+
+
+async def _tool_run_command(args: Dict[str, Any], workspace: str) -> str:
+    """执行 shell 命令"""
+    command = args.get("command", "").strip()
+    if not command:
+        return "⚠️ 请指定要执行的命令"
+
+    # 安全检查: 阻止危险模式
+    dangerous_patterns = ["rm -rf /", "mkfs", "dd if=", "> /dev/", ":(){ :|:& };:", "shutdown", "reboot"]
+    for pattern in dangerous_patterns:
+        if pattern in command:
+            return f"⚠️ 命令包含危险模式: '{pattern}'，已阻止执行"
+
+    # 管道/链式命令: 检查每个子命令
+    # 注: 简化检查，只检查第一个命令的只读性
+    is_readonly = _is_readonly_command(command)
+
+    if not is_readonly:
+        # 非只读命令提示
+        return (
+            f"⚠️ 此命令不在只读白名单中，需要 '执行任意命令' 权限。\n"
+            f"命令: {command}\n\n"
+            f"只读命令示例: git log, git diff, ls, cat, grep, find, python3 -c 等\n"
+            f"如需执行此命令，请让项目管理员开启 'execute_command' 权限。"
+        )
+
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            cwd=workspace,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=COMMAND_TIMEOUT_SECONDS
+        )
+        out = stdout.decode("utf-8", errors="replace").strip()
+        err = stderr.decode("utf-8", errors="replace").strip()
+
+        # 限制输出长度
+        MAX_CMD_OUTPUT = 8000
+        if len(out) > MAX_CMD_OUTPUT:
+            out = out[:MAX_CMD_OUTPUT] + f"\n\n... (输出已截断至 {MAX_CMD_OUTPUT} 字符)"
+
+        result = f"$ {command}\n"
+        if out:
+            result += f"\n{out}"
+        if err:
+            result += f"\n(stderr) {err}"
+        if proc.returncode != 0:
+            result += f"\n(exit code: {proc.returncode})"
+
+        return result
+
+    except asyncio.TimeoutError:
+        return f"⚠️ 命令执行超时 ({COMMAND_TIMEOUT_SECONDS}s): {command}"
+    except Exception as e:
+        return f"⚠️ 命令执行失败: {str(e)}"
+
+
+async def _tool_run_command_unrestricted(args: Dict[str, Any], workspace: str) -> str:
+    """执行任意命令 (需要 execute_command 权限)"""
+    command = args.get("command", "").strip()
+    if not command:
+        return "⚠️ 请指定要执行的命令"
+
+    # 仍然阻止极端危险的命令
+    lethal = ["rm -rf /", "mkfs", "> /dev/", ":(){ :|:& };:", "shutdown", "reboot"]
+    for pattern in lethal:
+        if pattern in command:
+            return f"⚠️ 命令包含极端危险模式: '{pattern}'，已阻止执行"
+
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            cwd=workspace,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=COMMAND_TIMEOUT_SECONDS * 2  # 写命令给更多时间
+        )
+        out = stdout.decode("utf-8", errors="replace").strip()
+        err = stderr.decode("utf-8", errors="replace").strip()
+
+        MAX_CMD_OUTPUT = 8000
+        if len(out) > MAX_CMD_OUTPUT:
+            out = out[:MAX_CMD_OUTPUT] + f"\n\n... (输出已截断至 {MAX_CMD_OUTPUT} 字符)"
+
+        result = f"$ {command}\n"
+        if out:
+            result += f"\n{out}"
+        if err:
+            result += f"\n(stderr) {err}"
+        if proc.returncode != 0:
+            result += f"\n(exit code: {proc.returncode})"
+
+        return result
+
+    except asyncio.TimeoutError:
+        return f"⚠️ 命令执行超时 ({COMMAND_TIMEOUT_SECONDS * 2}s): {command}"
+    except Exception as e:
+        return f"⚠️ 命令执行失败: {str(e)}"
+
+
 # 工具执行器映射
 _TOOL_EXECUTORS: Dict[str, Callable] = {
     "read_file": _tool_read_file,
@@ -720,4 +954,5 @@ _TOOL_EXECUTORS: Dict[str, Callable] = {
     "list_directory": _tool_list_directory,
     "get_file_tree": _tool_get_file_tree,
     "ask_user": _tool_ask_user,
+    "run_command": _tool_run_command,
 }

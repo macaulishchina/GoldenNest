@@ -211,10 +211,10 @@
               <div class="card-footer" v-if="!item.is_deleted">
                 <span class="start-date">{{ formatLocalDate(item.start_date) }} 起</span>
                 <n-space size="small">
-                  <n-button size="small" type="primary" text @click="openIncomeModal(item)">更新价值</n-button>
-                  <n-button size="small" type="info" text @click="openIncreaseModal(item)">增持</n-button>
-                  <n-button size="small" type="warning" text @click="openDecreaseModal(item)">减持</n-button>
-                  <n-button size="small" type="error" text @click="handleDelete(item)">删除</n-button>
+                  <n-button size="small" type="primary" text @click.stop="openIncomeModal(item)">更新价值</n-button>
+                  <n-button size="small" type="info" text @click.stop="openIncreaseModal(item)">增持</n-button>
+                  <n-button size="small" type="warning" text @click.stop="openDecreaseModal(item)">减持</n-button>
+                  <n-button size="small" type="error" text @click.stop="handleDelete(item)">删除</n-button>
                 </n-space>
               </div>
               <div class="card-footer" v-else>
@@ -236,7 +236,7 @@
         <n-form-item label="当前持仓">
           <n-text type="info">{{ formatInvAmountWithCNY(selectedInvestment || {}, 'current_principal') }}</n-text>
         </n-form-item>
-        <n-form-item :label="selectedInvestment?.currency && selectedInvestment.currency !== 'CNY' ? '当前总价值('+selectedInvestment.currency+')' : '当前总价值'">
+        <n-form-item :label="selectedInvestment?.currency && selectedInvestment.currency !== 'CNY' ? '当前总价值('+selectedInvestment.currency+')' : '当前总价值'" label-placement="top">
           <n-input-number v-model:value="incomeForm.current_value" style="width: 100%" :min="0">
             <template #prefix>{{ getCurrencySymbol(selectedInvestment?.currency || 'CNY') }}</template>
           </n-input-number>

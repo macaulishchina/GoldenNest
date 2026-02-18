@@ -21,6 +21,8 @@ from studio.backend.api.studio_auth import router as studio_auth_router
 from studio.backend.api.endpoint_probe import router as endpoint_probe_router
 from studio.backend.api.provider_api import router as provider_router, seed_providers
 from studio.backend.api.skills import router as skills_router
+from studio.backend.api.tasks import project_router as tasks_project_router, task_router as tasks_router
+from studio.backend.api.ws import router as ws_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,6 +63,10 @@ async def lifespan(app: FastAPI):
     # 一次性迁移: 为旧项目的 tool_permissions 添加 ask_user
     await _migrate_ask_user_permission()
 
+    # 恢复残留的 AI 任务 (服务重启时标记 running→failed)
+    from studio.backend.services.task_runner import TaskManager
+    await TaskManager.recover_stale_tasks()
+
     yield
     logger.info("🏗️ 设计院关闭")
 
@@ -99,11 +105,24 @@ async def _auto_migrate():
                     await db.execute(sql)
                     logger.info(f"✅ 自动迁移: 添加 projects.{col}")
 
-            # projects.skill_id 迁移
+            # projects.skill_id 迁移 (DEPRECATED, 保留兼容)
             proj_skill_migrations = {
                 "skill_id": "ALTER TABLE projects ADD COLUMN skill_id INTEGER REFERENCES skills(id)",
             }
             for col, sql in proj_skill_migrations.items():
+                if col not in proj_cols:
+                    await db.execute(sql)
+                    logger.info(f"✅ 自动迁移: 添加 projects.{col}")
+
+            # projects: project_type + review 列迁移
+            proj_type_migrations = {
+                "project_type": "ALTER TABLE projects ADD COLUMN project_type VARCHAR(50) DEFAULT 'requirement'",
+                "review_content": "ALTER TABLE projects ADD COLUMN review_content TEXT DEFAULT ''",
+                "review_version": "ALTER TABLE projects ADD COLUMN review_version INTEGER DEFAULT 0",
+                "workspace_dir": "ALTER TABLE projects ADD COLUMN workspace_dir VARCHAR(500)",
+                "iteration_count": "ALTER TABLE projects ADD COLUMN iteration_count INTEGER DEFAULT 0",
+            }
+            for col, sql in proj_type_migrations.items():
                 if col not in proj_cols:
                     await db.execute(sql)
                     logger.info(f"✅ 自动迁移: 添加 projects.{col}")
@@ -135,35 +154,77 @@ async def _auto_migrate():
             except Exception:
                 pass
 
+            # ai_tasks 表迁移 (CREATE TABLE IF NOT EXISTS)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS ai_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id INTEGER NOT NULL REFERENCES projects(id),
+                    task_type VARCHAR(50) NOT NULL DEFAULT 'discuss',
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    model VARCHAR(100) DEFAULT '',
+                    sender_name VARCHAR(100) DEFAULT '',
+                    input_message TEXT DEFAULT '',
+                    input_attachments JSON DEFAULT '[]',
+                    max_tool_rounds INTEGER DEFAULT 15,
+                    regenerate BOOLEAN DEFAULT 0,
+                    output_content TEXT DEFAULT '',
+                    thinking_content TEXT DEFAULT '',
+                    tool_calls_data JSON DEFAULT '[]',
+                    token_usage JSON,
+                    error_message TEXT DEFAULT '',
+                    result_message_id INTEGER,
+                    created_at DATETIME,
+                    updated_at DATETIME,
+                    completed_at DATETIME
+                )
+            """)
+            logger.info("✅ ai_tasks 表就绪")
+
             await db.commit()
     except Exception as e:
         logger.warning(f"⚠️ 自动迁移跳过: {e}")
 
 
 async def _migrate_null_skill_projects():
-    """一次性迁移: 为 skill_id=NULL 的旧项目设置为第一个内置技能"""
+    """一次性迁移: 为旧项目设置 project_type + 设置缺少 skill_id 的默认值"""
     from studio.backend.core.database import async_session_maker
     from sqlalchemy import text
     try:
         async with async_session_maker() as db:
-            # 找第一个内置且启用的技能
+            # 1) 为 skill_id=NULL 的旧项目设置默认技能
             row = (await db.execute(
                 text("SELECT id FROM skills WHERE is_builtin = 1 AND is_enabled = 1 ORDER BY sort_order, id LIMIT 1")
             )).first()
-            if not row:
-                return
-            default_id = row[0]
-            result = await db.execute(
-                text("UPDATE projects SET skill_id = :sid WHERE skill_id IS NULL"),
-                {"sid": default_id},
+            if row:
+                default_id = row[0]
+                result = await db.execute(
+                    text("UPDATE projects SET skill_id = :sid WHERE skill_id IS NULL"),
+                    {"sid": default_id},
+                )
+                if result.rowcount > 0:
+                    logger.info(f"✅ 迁移 {result.rowcount} 个旧项目 → 默认技能 id={default_id}")
+
+            # 2) 根据已有 skill 设置 project_type
+            # Bug 问诊 skill → bug, 其余 → requirement
+            bug_row = (await db.execute(
+                text("SELECT id FROM skills WHERE name = 'Bug 问诊' LIMIT 1")
+            )).first()
+            bug_skill_id = bug_row[0] if bug_row else -1
+            result2 = await db.execute(
+                text("UPDATE projects SET project_type = 'bug' WHERE skill_id = :sid AND (project_type IS NULL OR project_type = 'requirement')"),
+                {"sid": bug_skill_id},
             )
-            if result.rowcount > 0:
-                await db.commit()
-                logger.info(f"✅ 迁移 {result.rowcount} 个旧项目 → 默认技能 id={default_id}")
-            else:
-                await db.commit()
+            if result2.rowcount > 0:
+                logger.info(f"✅ 迁移 {result2.rowcount} 个旧项目 → project_type=bug")
+
+            # 确保所有项目都有 project_type
+            await db.execute(
+                text("UPDATE projects SET project_type = 'requirement' WHERE project_type IS NULL OR project_type = ''")
+            )
+
+            await db.commit()
     except Exception as e:
-        logger.warning(f"⚠️ 旧项目技能迁移跳过: {e}")
+        logger.warning(f"⚠️ 旧项目迁移跳过: {e}")
 
 
 app = FastAPI(
@@ -229,6 +290,9 @@ app.include_router(studio_auth_router)
 app.include_router(endpoint_probe_router)
 app.include_router(provider_router)
 app.include_router(skills_router)
+app.include_router(tasks_project_router)
+app.include_router(tasks_router)
+app.include_router(ws_router)
 
 
 @app.get("/studio-api/health")

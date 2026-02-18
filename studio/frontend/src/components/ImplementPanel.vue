@@ -1,53 +1,55 @@
 <template>
   <div>
-    <!-- 模型选择与控制 -->
-    <n-space align="center" style="margin-bottom: 16px" :wrap="true">
-      <n-radio-group v-model:value="modelSourceFilter" size="small">
-        <n-radio-button v-for="f in providerFilters" :key="f.value" :value="f.value">
-          <span style="display:inline-flex;align-items:center;gap:3px">
-            <span v-if="f.icon" v-html="f.icon"></span>
-            <span>{{ f.label }}</span>
-          </span>
-        </n-radio-button>
-      </n-radio-group>
-      <n-select
-        v-model:value="implModel"
-        :options="modelOptions"
-        :render-label="renderModelLabel"
-        size="small"
-        style="width: 260px"
-        filterable
-        @update:value="handleModelChange"
-      />
-      <n-tag v-if="studioConfig.docModelsOnly" size="tiny" type="info" :bordered="false">📄 文档模型</n-tag>
-      <n-tooltip trigger="hover">
-        <template #trigger>
-          <n-button size="tiny" quaternary @click="refreshModels" :loading="loadingModels">
-            🔄
+    <!-- 实施控制 -->
+    <n-card style="background: #16213e; margin-bottom: 16px">
+      <n-space vertical :size="12">
+        <n-space align="center" :size="12">
+          <n-tooltip trigger="hover" placement="bottom">
+            <template #trigger>
+              <n-input
+                v-model:value="baseBranch"
+                size="small"
+                style="width: 200px"
+                placeholder="基础分支"
+              >
+                <template #prefix>🌿</template>
+              </n-input>
+            </template>
+            <div style="max-width: 280px; font-size: 12px">
+              <b>基础分支</b>: Copilot Agent 将基于此分支创建 PR。<br>
+              通常为 <code>main</code> 或 <code>master</code>。<br>
+              如需基于其他 feature 分支开发，可在此修改。
+            </div>
+          </n-tooltip>
+          <n-button
+            type="primary"
+            @click="handleStartImplementation"
+            :loading="starting"
+            :disabled="!project.plan_content || isImplementing"
+          >
+            🚀 发起实施
           </n-button>
-        </template>
-        刷新模型列表
-      </n-tooltip>
-      <n-button
-        type="primary"
-        @click="handleStartImplementation"
-        :loading="starting"
-        :disabled="!project.plan_content || project.status === 'implementing'"
-      >
-        🚀 发起实施
-      </n-button>
-      <n-button @click="refreshStatus" :loading="polling" size="small">
-        🔄 刷新状态
-      </n-button>
-    </n-space>
+          <n-button @click="refreshStatus" :loading="polling" size="small">
+            🔄 刷新状态
+          </n-button>
+        </n-space>
+        <n-input
+          v-model:value="customInstructions"
+          type="textarea"
+          size="small"
+          placeholder="附加指令 (可选) — 给 Copilot Agent 的额外提示"
+          :autosize="{ minRows: 2, maxRows: 5 }"
+        />
+      </n-space>
+    </n-card>
 
     <!-- 进度面板 -->
     <n-card style="background: #16213e; margin-bottom: 16px">
       <n-steps :current="implStep" size="small">
-        <n-step title="创建 Issue" :status="stepStatus(1)" />
-        <n-step title="Agent 编码" :status="stepStatus(2)" />
-        <n-step title="PR 创建" :status="stepStatus(3)" />
-        <n-step title="Review" :status="stepStatus(4)" />
+        <n-step title="创建任务" :status="stepStatus(1)" description="创建 Issue 并分配 Agent" />
+        <n-step title="Agent 编码" :status="stepStatus(2)" :description="workflowDesc" />
+        <n-step title="编码完成" :status="stepStatus(3)" description="Workflow 执行结束" />
+        <n-step title="进入审查" :status="stepStatus(4)" description="AI 审查实现质量" />
       </n-steps>
     </n-card>
 
@@ -70,204 +72,166 @@
         <n-descriptions-item label="分支" v-if="implStatus.branch_name">
           <n-tag size="small" :bordered="false">{{ implStatus.branch_name }}</n-tag>
         </n-descriptions-item>
+        <!-- Workflow 状态 -->
+        <n-descriptions-item label="Workflow" v-if="implStatus.workflow_status">
+          <n-space align="center" :size="6">
+            <n-tag :type="workflowTagType" size="small">
+              {{ workflowStatusText }}
+            </n-tag>
+            <n-button
+              v-if="implStatus.workflow_url"
+              text
+              tag="a"
+              :href="implStatus.workflow_url"
+              target="_blank"
+              size="small"
+            >
+              查看 →
+            </n-button>
+          </n-space>
+        </n-descriptions-item>
         <n-descriptions-item label="变更文件" v-if="implStatus.pr_files_changed">
           {{ implStatus.pr_files_changed }} 个文件
         </n-descriptions-item>
       </n-descriptions>
     </n-card>
 
-    <!-- PR Diff 查看 -->
-    <n-card v-if="implStatus?.github_pr_number" title="📝 PR Diff" style="background: #16213e">
-      <template #header-extra>
-        <n-button size="small" @click="loadDiff" :loading="loadingDiff">查看 Diff</n-button>
-      </template>
-
-      <div v-if="diffData">
-        <n-collapse>
-          <n-collapse-item
-            v-for="f in diffData.files"
-            :key="f.filename"
-            :title="`${f.status === 'added' ? '🟢' : f.status === 'removed' ? '🔴' : '🟡'} ${f.filename}`"
-            :name="f.filename"
-          >
-            <template #header-extra>
-              <n-text depth="3" style="font-size: 12px">
-                +{{ f.additions }} -{{ f.deletions }}
-              </n-text>
-            </template>
-            <pre style="background: #0d1b2a; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 12px; white-space: pre-wrap">{{ f.patch }}</pre>
-          </n-collapse-item>
-        </n-collapse>
-      </div>
-
-      <n-empty v-else-if="!loadingDiff" description="点击「查看 Diff」加载变更" />
+    <!-- Agent 完成提示 -->
+    <n-card v-if="isAgentDone" style="background: #16213e; margin-bottom: 16px">
+      <n-result status="success" title="Copilot Agent 编码完成" :description="agentDoneDesc">
+        <template #footer>
+          <n-space>
+            <n-button type="primary" @click="goToReview">
+              🔍 进入审查
+            </n-button>
+            <n-button v-if="implStatus?.github_pr_number" @click="loadDiff" :loading="loadingDiff" quaternary>
+              📝 查看 Diff
+            </n-button>
+          </n-space>
+        </template>
+      </n-result>
     </n-card>
 
-    <!-- 操作按钮 -->
-    <n-space v-if="implStatus?.github_pr_number && implStatus.pr_state === 'open'" style="margin-top: 16px">
-      <n-button type="success" @click="handleApprovePR" :loading="approving">
-        ✅ 通过并合并 PR
-      </n-button>
+    <!-- PR Diff 查看 (可折叠) -->
+    <n-card v-if="diffData" title="📝 PR Diff" style="background: #16213e; margin-bottom: 16px">
+      <n-collapse>
+        <n-collapse-item
+          v-for="f in diffData.files"
+          :key="f.filename"
+          :title="`${f.status === 'added' ? '🟢' : f.status === 'removed' ? '🔴' : '🟡'} ${f.filename}`"
+          :name="f.filename"
+        >
+          <template #header-extra>
+            <n-text depth="3" style="font-size: 12px">
+              +{{ f.additions }} -{{ f.deletions }}
+            </n-text>
+          </template>
+          <pre style="background: #0d1b2a; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 12px; white-space: pre-wrap">{{ f.patch }}</pre>
+        </n-collapse-item>
+      </n-collapse>
+    </n-card>
+
+    <!-- PR 已合并 (遗留兼容) -->
+    <n-space v-if="implStatus?.status === 'pr_merged'" style="margin-top: 16px">
+      <n-tag type="success" size="large">✅ PR 已合并</n-tag>
     </n-space>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useMessage } from 'naive-ui'
-import { implementationApi, modelApi, projectApi } from '@/api'
-import { useStudioConfigStore } from '@/stores/studioConfig'
-import { getProviderIcon } from '@/utils/providerIcons'
+import { implementationApi } from '@/api'
 import type { Project } from '@/stores/project'
 
 const props = defineProps<{ project: Project }>()
-const emit = defineEmits(['status-changed'])
+const emit = defineEmits(['status-changed', 'go-review'])
 const message = useMessage()
-const studioConfig = useStudioConfigStore()
 
 const implStatus = ref<any>(null)
-const implModel = ref(props.project.implementation_model || 'claude-sonnet-4-20250514')
+const baseBranch = ref('main')
+const customInstructions = ref('')
 const starting = ref(false)
 const polling = ref(false)
 const loadingDiff = ref(false)
-const approving = ref(false)
 const diffData = ref<any>(null)
-const models = ref<any[]>([])
 let pollTimer: any = null
-const loadingModels = ref(false)
-const modelSourceFilter = ref('all')
-
-const providerFilters = computed(() => {
-  const filters: Array<{value: string; label: string; icon: string}> = [
-    { value: 'all', label: '全部', icon: '' },
-    { value: 'github', label: 'GitHub', icon: getProviderIcon('github', 'G', 12) },
-  ]
-  if (models.value.some(m => m.api_backend === 'copilot')) {
-    filters.push({ value: 'copilot', label: 'Copilot', icon: getProviderIcon('copilot', 'C', 12) })
-  }
-  const seen = new Set<string>()
-  for (const m of models.value) {
-    const slug = m.provider_slug || ''
-    if (slug && slug !== 'github' && slug !== 'copilot' && !seen.has(slug)) {
-      seen.add(slug)
-      filters.push({ value: slug, label: m.publisher || slug, icon: getProviderIcon(slug, m.publisher || slug, 12) })
-    }
-  }
-  if (studioConfig.customModelsEnabled) {
-    filters.push({ value: 'custom', label: '补充', icon: '' })
-  }
-  return filters
-})
 
 const repoName = 'macaulishchina/GoldenNest'
 
-const modelOptions = computed(() => {
-  const byCategory = models.value.filter(m => m.category === 'implementation' || m.category === 'both')
-  const filtered = modelSourceFilter.value === 'all'
-    ? byCategory
-    : modelSourceFilter.value === 'custom'
-      ? byCategory.filter(m => m.is_custom)
-      : modelSourceFilter.value === 'github'
-        ? byCategory.filter(m => m.provider_slug === 'github' || (!m.provider_slug && m.api_backend === 'models'))
-        : modelSourceFilter.value === 'copilot'
-          ? byCategory.filter(m => m.provider_slug === 'copilot' || m.api_backend === 'copilot')
-          : byCategory.filter(m => m.provider_slug === modelSourceFilter.value)
+// ── 状态计算 ──────────────────────────────────────────────────
 
-  // 保留 API 返回顺序, 按 model_family 分组
-  const mapOpt = (m: any) => ({
-    label: m.name, value: m.id,
-    supports_vision: m.supports_vision, supports_tools: m.supports_tools,
-    is_reasoning: m.is_reasoning, api_backend: m.api_backend,
-    is_custom: m.is_custom,
-    provider_slug: m.provider_slug || (m.api_backend === 'copilot' ? 'copilot' : 'github'),
-    pricing_tier: m.pricing_tier, premium_multiplier: m.premium_multiplier,
-    is_deprecated: m.is_deprecated, pricing_note: m.pricing_note,
-  })
-  const groups: Array<{ key: string; label: string; slug: string; items: any[] }> = []
-  const groupMap: Record<string, typeof groups[0]> = {}
-  for (const m of filtered) {
-    const family = m.model_family || m.publisher || m.provider_slug || 'Other'
-    const slug = m.provider_slug || (m.api_backend === 'copilot' ? 'copilot' : 'github')
-    const gKey = slug + ':' + family
-    if (!groupMap[gKey]) {
-      const g = { key: gKey, label: family, slug, items: [] as any[] }
-      groups.push(g)
-      groupMap[gKey] = g
-    }
-    groupMap[gKey].items.push(m)
-  }
-  return groups.map(g => ({
-    type: 'group', label: g.label, key: g.key, provider_slug: g.slug,
-    children: g.items.map(mapOpt),
-  }))
+const isImplementing = computed(() =>
+  ['implementing', 'reviewing'].includes(props.project.status) && !!implStatus.value?.github_issue_number
+)
+
+const isAgentDone = computed(() =>
+  implStatus.value?.status === 'agent_done'
+)
+
+const agentDoneDesc = computed(() => {
+  const conclusion = implStatus.value?.workflow_conclusion
+  if (conclusion === 'success') return 'Workflow 执行成功，PR 已就绪。可进入审查阶段。'
+  if (conclusion === 'failure') return 'Workflow 执行失败，请检查 Actions 日志后决定是否继续审查。'
+  return 'Copilot Agent 编码已完成，可进入审查阶段。'
 })
-
-function renderModelLabel(option: any, selected: boolean) {
-  if (option.type === 'group') {
-    const iconHtml = getProviderIcon(option.provider_slug || 'github', option.label, 14)
-    return h('span', { style: 'display:inline-flex;align-items:center;gap:4px' }, [
-      h('span', { innerHTML: iconHtml, style: 'display:inline-flex' }),
-      option.label,
-    ])
-  }
-  const caps: string[] = []
-  if (option.is_reasoning) caps.push('🧠')
-  if (option.supports_vision) caps.push('👁️')
-  if (option.supports_tools) caps.push('🔧')
-  const depStr = option.is_deprecated ? ' ⚠️' : ''
-  const capStr = caps.length ? ` ${caps.join('')}` : ''
-  const iconHtml = getProviderIcon(option.provider_slug || 'github', '', 12)
-  const iconVNode = h('span', { innerHTML: iconHtml, style: 'display:inline-flex;vertical-align:middle;margin:0 2px' })
-  const customStr = option.is_custom ? ' 🧩' : ''
-  const priceText = option.pricing_note || 'x0'
-  const nameStyle = selected ? 'font-weight:600' : ''
-  const priceStyle = selected
-    ? 'color:#18a058;font-size:11px;flex-shrink:0;margin-left:12px;font-weight:600'
-    : 'color:#888;font-size:11px;flex-shrink:0;margin-left:12px'
-  return h('div', { style: 'display:flex;justify-content:space-between;align-items:center;width:100%' }, [
-    h('span', { style: nameStyle }, [selected ? '● ' : '', option.label as string, ' ', iconVNode, customStr, capStr, depStr]),
-    h('span', { style: priceStyle }, priceText),
-  ])
-}
-
-async function refreshModels() {
-  loadingModels.value = true
-  try {
-    await modelApi.refresh()
-    const { data } = await modelApi.list({ category: 'implementation', custom_models: studioConfig.customModelsEnabled })
-    models.value = data
-    message.success(`已刷新，共 ${data.length} 个可用模型`)
-  } catch (e: any) {
-    message.error('刷新失败: ' + (e.response?.data?.detail || e.message))
-  } finally {
-    loadingModels.value = false
-  }
-}
 
 const implStep = computed(() => {
   if (!implStatus.value) return 0
   const s = implStatus.value.status
   if (s === 'pr_merged') return 5
+  if (s === 'agent_done') return 3
   if (s === 'pr_created') return 3
   if (s === 'agent_working') return 2
-  if (s === 'issue_created') return 1
+  if (s === 'task_created') return 1
   return 0
 })
 
 const implStatusType = computed(() => {
   const m: Record<string, any> = {
-    not_started: 'default', issue_created: 'info', agent_working: 'warning',
-    pr_created: 'success', pr_merged: 'success',
+    not_started: 'default', task_created: 'info', agent_working: 'warning',
+    agent_done: 'success', pr_created: 'success', pr_merged: 'success',
   }
   return m[implStatus.value?.status] || 'default'
 })
 
 const implStatusText = computed(() => {
   const m: Record<string, string> = {
-    not_started: '未开始', issue_created: 'Issue 已创建', agent_working: 'Agent 编码中...',
-    pr_created: 'PR 已创建', pr_merged: 'PR 已合并',
+    not_started: '未开始', task_created: '任务已创建', agent_working: 'Agent 编码中...',
+    agent_done: 'Agent 编码完成', pr_created: 'PR 已创建', pr_merged: 'PR 已合并',
   }
   return m[implStatus.value?.status] || ''
+})
+
+// ── Workflow 相关 ─────────────────────────────────────────────
+
+const workflowDesc = computed(() => {
+  const ws = implStatus.value?.workflow_status
+  if (ws === 'in_progress') return 'Copilot Agent 正在编码...'
+  if (ws === 'queued') return '排队等待执行...'
+  if (ws === 'completed') return '执行完成'
+  return 'Copilot Coding Agent 处理中'
+})
+
+const workflowTagType = computed(() => {
+  const ws = implStatus.value?.workflow_status
+  const wc = implStatus.value?.workflow_conclusion
+  if (ws === 'completed' && wc === 'success') return 'success'
+  if (ws === 'completed' && wc === 'failure') return 'error'
+  if (ws === 'completed') return 'warning'
+  if (ws === 'in_progress') return 'warning'
+  return 'default'
+})
+
+const workflowStatusText = computed(() => {
+  const ws = implStatus.value?.workflow_status
+  const wc = implStatus.value?.workflow_conclusion
+  if (ws === 'completed') {
+    const cm: Record<string, string> = { success: '✅ 成功', failure: '❌ 失败', cancelled: '⚪ 取消' }
+    return cm[wc] || `完成 (${wc})`
+  }
+  const sm: Record<string, string> = { in_progress: '🔄 运行中', queued: '⏳ 排队中' }
+  return sm[ws] || ws
 })
 
 function stepStatus(step: number) {
@@ -276,11 +240,18 @@ function stepStatus(step: number) {
   return 'wait'
 }
 
+// ── 操作 ──────────────────────────────────────────────────────
+
 async function refreshStatus() {
   polling.value = true
   try {
     const { data } = await implementationApi.getStatus(props.project.id)
+    const prevStatus = implStatus.value?.status
     implStatus.value = data
+    // Agent 完成时通知父组件刷新项目状态
+    if (data.status === 'agent_done' && prevStatus !== 'agent_done') {
+      emit('status-changed')
+    }
   } catch {}
   finally { polling.value = false }
 }
@@ -289,11 +260,11 @@ async function handleStartImplementation() {
   starting.value = true
   try {
     const { data } = await implementationApi.start(props.project.id, {
-      use_copilot_agent: true,
+      custom_instructions: customInstructions.value,
+      base_branch: baseBranch.value,
     })
     message.success(data.message)
     emit('status-changed')
-    // 开始轮询
     startPolling()
     refreshStatus()
   } catch (e: any) {
@@ -315,35 +286,22 @@ async function loadDiff() {
   }
 }
 
-async function handleApprovePR() {
-  approving.value = true
-  try {
-    const { data } = await implementationApi.approvePR(props.project.id)
-    if (data.merged) {
-      message.success('PR 已合并')
-      emit('status-changed')
-      refreshStatus()
-    }
-  } catch (e: any) {
-    message.error(e.response?.data?.detail || '合并失败')
-  } finally {
-    approving.value = false
-  }
+function goToReview() {
+  emit('go-review')
 }
 
-async function handleModelChange(val: string) {
-  try { await projectApi.update(props.project.id, { implementation_model: val }) } catch {}
-}
+// ── 轮询 ──────────────────────────────────────────────────────
 
 function startPolling() {
   if (pollTimer) return
   pollTimer = setInterval(() => {
-    if (implStatus.value?.status === 'agent_working' || implStatus.value?.status === 'issue_created') {
+    const s = implStatus.value?.status
+    if (s === 'agent_working' || s === 'task_created') {
       refreshStatus()
     } else {
       stopPolling()
     }
-  }, 30000)
+  }, 15000) // 15秒轮询, 更快响应 workflow 变化
 }
 
 function stopPolling() {
@@ -351,16 +309,9 @@ function stopPolling() {
 }
 
 onMounted(async () => {
-  refreshStatus()
-  // 加载模型列表 (使用后端缓存，不阻塞页面; 手动点击刷新按钮强制刷新)
-  modelApi.list({ category: 'implementation', custom_models: studioConfig.customModelsEnabled }).then(({ data }) => {
-    models.value = data
-    if (data.length && !data.find((m: any) => m.id === implModel.value)) {
-      implModel.value = data[0].id
-    }
-  }).catch(() => {})
-  // 自动轮询
-  if (['implementing', 'reviewing'].includes(props.project.status)) {
+  await refreshStatus()
+  const s = implStatus.value?.status
+  if (s === 'agent_working' || s === 'task_created') {
     startPolling()
   }
 })

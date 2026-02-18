@@ -31,16 +31,40 @@ async def create_issue(
     body: str,
     labels: Optional[List[str]] = None,
     assignees: Optional[List[str]] = None,
+    agent_assignment: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """创建 GitHub Issue"""
+    """创建 GitHub Issue (可附带 Copilot agent_assignment)"""
     payload: Dict[str, Any] = {"title": title, "body": body}
     if labels:
         payload["labels"] = labels
     if assignees:
         payload["assignees"] = assignees
+    if agent_assignment:
+        payload["agent_assignment"] = agent_assignment
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(_repo_url("/issues"), headers=_headers(), json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def assign_issue_to_copilot(
+    issue_number: int,
+    agent_assignment: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """将已有 Issue 分配给 Copilot Coding Agent"""
+    payload: Dict[str, Any] = {
+        "assignees": ["copilot-swe-agent[bot]"],
+    }
+    if agent_assignment:
+        payload["agent_assignment"] = agent_assignment
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            _repo_url(f"/issues/{issue_number}/assignees"),
+            headers=_headers(),
+            json=payload,
+        )
         resp.raise_for_status()
         return resp.json()
 
@@ -168,3 +192,76 @@ async def check_connection() -> Dict[str, Any]:
         }
     except Exception as e:
         return {"connected": False, "error": str(e)}
+
+
+# ==================== GitHub Actions Workflow ====================
+
+async def list_workflow_runs(
+    branch: Optional[str] = None,
+    event: Optional[str] = None,
+    status: Optional[str] = None,
+    per_page: int = 10,
+) -> List[Dict[str, Any]]:
+    """列出 GitHub Actions workflow runs"""
+    params: Dict[str, str] = {"per_page": str(per_page)}
+    if branch:
+        params["branch"] = branch
+    if event:
+        params["event"] = event
+    if status:
+        params["status"] = status
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            _repo_url("/actions/runs"), headers=_headers(), params=params
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("workflow_runs", [])
+
+
+async def get_workflow_run(run_id: int) -> Dict[str, Any]:
+    """获取单个 workflow run 详情"""
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            _repo_url(f"/actions/runs/{run_id}"), headers=_headers()
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def get_copilot_workflow_status(branch: str) -> Optional[Dict[str, Any]]:
+    """
+    获取指定分支上 Copilot coding agent 的 workflow 状态。
+    返回最新的 workflow run 信息, 或 None (未找到)。
+    """
+    try:
+        runs = await list_workflow_runs(branch=branch, per_page=5)
+        # 找 Copilot coding agent 的 run
+        for run in runs:
+            name = (run.get("name") or "").lower()
+            if "copilot" in name:
+                return {
+                    "run_id": run["id"],
+                    "name": run.get("name"),
+                    "status": run.get("status"),         # queued, in_progress, completed
+                    "conclusion": run.get("conclusion"),  # success, failure, cancelled, ...
+                    "html_url": run.get("html_url"),
+                    "created_at": run.get("created_at"),
+                    "updated_at": run.get("updated_at"),
+                }
+        # 没找到, 尝试所有 run
+        if runs:
+            run = runs[0]
+            return {
+                "run_id": run["id"],
+                "name": run.get("name"),
+                "status": run.get("status"),
+                "conclusion": run.get("conclusion"),
+                "html_url": run.get("html_url"),
+                "created_at": run.get("created_at"),
+                "updated_at": run.get("updated_at"),
+            }
+    except Exception as e:
+        logger.warning(f"获取 Copilot workflow 状态失败: {e}")
+    return None

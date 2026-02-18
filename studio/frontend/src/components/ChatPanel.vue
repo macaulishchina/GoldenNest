@@ -37,21 +37,22 @@
 
       <!-- 空对话欢迎状态 -->
       <div v-if="!messages.length && !streaming" class="empty-chat-welcome">
-        <div class="empty-chat-icon">{{ props.project.skill?.icon || '💬' }}</div>
-        <div class="empty-chat-title">{{ props.project.skill?.name || '讨论' }}</div>
+        <div class="empty-chat-icon">{{ props.project.type_info?.icon || '💬' }}</div>
+        <div class="empty-chat-title">{{ props.project.type_info?.name || '讨论' }}</div>
         <div class="empty-chat-desc">{{ props.project.title }}</div>
         <n-button
           type="primary"
           size="large"
           :loading="startingChat"
-          :disabled="aiMuted"
+          :disabled="aiMuted || props.readonly"
           style="margin-top: 20px; border-radius: 20px; padding: 0 32px"
           @click="handleStartChat"
         >
           <template #icon><span style="font-size: 16px">✨</span></template>
           开始对话
         </n-button>
-        <n-text v-if="aiMuted" depth="3" style="font-size: 12px; margin-top: 8px">AI 已禁言，请先解除禁言</n-text>
+        <n-text v-if="props.readonly" depth="3" style="font-size: 12px; margin-top: 8px">此阶段已完成，当前为只读模式</n-text>
+        <n-text v-else-if="aiMuted" depth="3" style="font-size: 12px; margin-top: 8px">AI 已禁言，请先解除禁言</n-text>
       </div>
 
       <div v-for="msg in messages" :key="msg.id" style="margin-bottom: 6px">
@@ -288,28 +289,29 @@
         </n-card>
       </div>
 
-      <!-- AI 正在回复 -->
-      <div v-if="streaming" style="display: flex; justify-content: flex-start; margin-bottom: 6px">
+      <!-- AI 正在回复 (多任务 + 敲定方案统一渲染) -->
+      <div v-for="card in activeStreamCards" :key="card.key" style="display: flex; justify-content: flex-start; margin-bottom: 6px">
         <n-card size="small" style="max-width: 85%; background: #1a2a3e; border-left: 2px solid #e94560; --n-padding-top: 6px; --n-padding-bottom: 6px">
           <template #header>
             <n-space align="center" :size="6">
-              <n-text style="color: #e94560; font-size: 12px">{{ selectedModelDisplay }}</n-text>
-              <span v-html="selectedModelProviderIcon" style="display:inline-flex"></span>
+              <n-text style="color: #e94560; font-size: 12px">{{ card.model }}</n-text>
+              <n-text v-if="card.senderName" depth="3" style="font-size: 10px">by {{ card.senderName }}</n-text>
               <n-spin size="small" />
+              <n-button v-if="card.isMine && card.taskId" size="tiny" type="error" quaternary @click="cancelTask(card.taskId)" style="padding: 0 4px; font-size: 11px">⏹</n-button>
             </n-space>
           </template>
 
           <!-- 思考过程 (折叠) -->
-          <n-collapse v-if="streamThinking" :default-expanded-names="['thinking']" style="margin-bottom: 8px">
+          <n-collapse v-if="card.thinking" :default-expanded-names="['thinking']" style="margin-bottom: 8px">
             <n-collapse-item title="💭 思考过程" name="thinking">
-              <div class="thinking-block" v-html="renderMarkdown(streamThinking)" />
+              <div class="thinking-block" v-html="renderMarkdown(card.thinking)" />
             </n-collapse-item>
           </n-collapse>
 
           <!-- 流式内容段 (工具调用内联显示) -->
-          <template v-for="(seg, segIdx) in streamSegments" :key="segIdx">
+          <template v-for="(seg, segIdx) in card.segments" :key="segIdx">
             <div v-if="seg.type === 'content'" class="markdown-body"
-              v-html="renderMarkdown((seg.text || '') + (segIdx === streamSegments.length - 1 ? '▍' : ''))" />
+              v-html="renderMarkdown((seg.text || '') + (segIdx === card.segments.length - 1 ? '▍' : ''))" />
             <!-- ask_user: 交互式问题卡片 (preparing 状态也显示) -->
             <div v-else-if="seg.type === 'tool' && seg.toolCall?.name === 'ask_user' && (seg.toolCall.status === 'preparing' || parseQuestions(seg.toolCall.arguments).length > 0)" class="question-card">
               <!-- 准备中: 参数还在流式传输 -->
@@ -411,7 +413,7 @@
               </n-popover>
             </div>
           </template>
-          <div v-if="!streamSegments.length" class="markdown-body" v-html="renderMarkdown('▍')" />
+          <div v-if="!card.segments.length" class="markdown-body" v-html="renderMarkdown('▍')" />
         </n-card>
       </div>
     </div>
@@ -433,7 +435,12 @@
     <input ref="fileInputRef" type="file" accept="image/*" style="display: none" @change="onFileInputChange" />
 
     <!-- ========== 输入区 ========== -->
-    <div class="input-area">
+    <!-- 只读模式: 锁定提示 -->
+    <div v-if="props.readonly" class="input-area" style="justify-content: center; align-items: center; min-height: 48px; padding: 12px">
+      <n-text depth="3" style="font-size: 13px">🔒 此阶段已完成，当前为只读模式</n-text>
+    </div>
+    <!-- 正常输入区 -->
+    <div v-else class="input-area">
       <!-- 第 1 行: 工具栏 -->
       <div class="toolbar-row">
         <n-dropdown :options="sourceFilterOptions" @select="onSourceFilterChange" trigger="click" size="small">
@@ -456,7 +463,7 @@
             <span :class="{ 'spin-icon': loadingModels }">⟲</span>
           </button>
         </div>
-        <n-button v-if="currentModelCaps.supports_vision" size="small" quaternary :disabled="streaming" @click="fileInputRef?.click()">📷 图片</n-button>
+        <n-button v-if="currentModelCaps.supports_vision" size="small" quaternary :disabled="finalizingPlan" @click="fileInputRef?.click()">📷 图片</n-button>
         <n-popover v-if="currentModelCaps.supports_tools" trigger="click" placement="bottom" style="max-width: 320px">
           <template #trigger>
             <n-button size="small" quaternary :type="toolPermissions.length ? 'info' : 'default'">🛠️ 工具</n-button>
@@ -468,6 +475,13 @@
             </n-text>
             <n-checkbox-group v-model:value="toolPermissions" @update:value="saveToolPermissions">
               <n-space vertical :size="4">
+                <n-checkbox value="execute_readonly_command" label="🖥️ 执行只读命令" />
+                <n-checkbox value="execute_command" label="⚠️ 执行写入命令">
+                  <template #default>
+                    <span>⚠️ 执行写入命令</span>
+                    <n-text depth="3" style="font-size: 10px; margin-left: 4px">(危险)</n-text>
+                  </template>
+                </n-checkbox>
                 <n-checkbox value="ask_user" label="❓ 主动提问澄清" />
                 <n-checkbox value="read_source" label="📖 读取源码文件" />
                 <n-checkbox value="read_config" label="📄 读取配置文件" />
@@ -477,7 +491,7 @@
             </n-checkbox-group>
           </div>
         </n-popover>
-        <n-tag v-if="remoteStreaming" type="warning" size="small" :bordered="false" round>⏳ AI 回复中...</n-tag>
+        <n-tag v-if="streamingTasks.size > 0 && !streaming" type="warning" size="small" :bordered="false" round>⏳ AI 回复中 ({{ streamingTasks.size }})</n-tag>
       </div>
 
       <!-- 第 2 行: 文本输入框 -->
@@ -487,7 +501,7 @@
         type="textarea"
         :autosize="{ minRows: 1, maxRows: 5 }"
         :placeholder="aiMuted ? '人工讨论模式 (Enter 发送)' : '描述你的需求... (Enter 发送, Shift+Enter 换行)'"
-        :disabled="streaming"
+        :disabled="finalizingPlan"
         @keydown="handleKeydown"
         style="margin: 4px 0"
       />
@@ -630,69 +644,254 @@
           </template>
           {{ aiMuted ? '解除禁言后，AI 会阅读所有新消息并回复' : '禁言后仅人工讨论，AI 不参与回复' }}
         </n-tooltip>
-        <n-button size="small" type="warning" quaternary @click="handleFinalizePlan" :loading="finalizingPlan" :disabled="messages.length < 2 || streaming">
-          📋 {{ props.project.skill?.ui_labels?.finalize_action || '敲定' }}
+        <n-button size="small" type="warning" quaternary @click="handleFinalizePlan" :loading="finalizingPlan" :disabled="messages.length < 2 || anyStreaming">
+          📋 {{ props.project.type_info?.ui_labels?.finalize_action || '敲定' }}
         </n-button>
-        <n-button v-if="streaming" size="small" type="error" @click="stopStreaming">⏹ 停止</n-button>
-        <n-button v-else size="small" type="primary" @click="sendMessage()" :disabled="!inputText.trim() && !pendingImages.length">发送</n-button>
+        <n-button v-if="anyStreaming" size="small" type="error" @click="stopAllMyStreaming">⏹ 停止</n-button>
+        <n-button size="small" type="primary" @click="sendMessage()" :disabled="finalizingPlan || (!inputText.trim() && !pendingImages.length)">发送</n-button>
       </div>
     </div>
   </div>
+
+  <!-- 命令审批对话框 -->
+  <n-modal v-model:show="commandApproval.show" preset="card" title="⚠️ AI 请求执行写命令" style="max-width: 540px" :mask-closable="false" :closable="false">
+    <n-alert type="warning" :bordered="false" style="margin-bottom: 12px">
+      AI 正在尝试执行以下写入命令，需要您的授权才能继续。
+    </n-alert>
+    <div style="background: #0d1b2a; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; font-family: monospace; font-size: 13px; color: #e0e0e0; word-break: break-all; white-space: pre-wrap">$ {{ commandApproval.command }}</div>
+    <n-space vertical :size="8" style="margin-bottom: 16px">
+      <n-text depth="2" style="font-size: 12px">授权范围：</n-text>
+      <n-radio-group v-model:value="commandApproval.scope" size="small">
+        <n-space :size="12">
+          <n-radio value="once">仅本次</n-radio>
+          <n-radio value="session">
+            <n-tooltip trigger="hover">
+              <template #trigger>本会话</template>
+              本次 AI 回复中的同类命令自动批准
+            </n-tooltip>
+          </n-radio>
+          <n-radio value="project">
+            <n-tooltip trigger="hover">
+              <template #trigger>本项目 (永久)</template>
+              永久开启写命令权限（等同勾选 execute_command）
+            </n-tooltip>
+          </n-radio>
+        </n-space>
+      </n-radio-group>
+    </n-space>
+    <template #action>
+      <n-space justify="end">
+        <n-button @click="handleCommandApproval(false)" :loading="commandApproval.loading" :disabled="commandApproval.loading">
+          拒绝
+        </n-button>
+        <n-button type="warning" @click="handleCommandApproval(true)" :loading="commandApproval.loading" :disabled="commandApproval.loading">
+          授权执行
+        </n-button>
+      </n-space>
+    </template>
+  </n-modal>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch, h } from 'vue'
+/**
+ * ChatPanel — 聊天面板编排器
+ *
+ * 核心逻辑拆分到 6 个 composable:
+ *   useChatUtils       — 纯函数 (markdown / 时间 / 错误 / 滚动 / 工具显示)
+ *   useModelSelection   — 模型列表, 过滤, 分组, 渲染
+ *   useContextInfo      — 上下文占用率, 总结, 清空, 模型切换检查
+ *   useProjectEventBus  — 项目事件总线 SSE (多人实时同步)
+ *   useSSEFinalize      — 敲定方案流式处理
+ *   useAskUser          — ask_user 问题卡片状态
+ */
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
-import { discussionApi, modelApi, projectApi } from '@/api'
+import { discussionApi, projectApi, tasksApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useStudioConfigStore } from '@/stores/studioConfig'
-import { getProviderIcon } from '@/utils/providerIcons'
 import type { Project } from '@/stores/project'
-import { marked } from 'marked'
 
+// ---- Composables ----
+import {
+  renderMarkdown, formatTime, formatTokens,
+  useScroll, parseErrorMeta, formatErrorAsMessage,
+  getUserColor, toolDisplayName, formatToolArgs,
+  parseQuestions, getRecommendedLabels,
+  type ParsedQuestion,
+} from '@/composables/useChatUtils'
+import { useModelSelection } from '@/composables/useModelSelection'
+import { useContextInfo } from '@/composables/useContextInfo'
+import { useProjectEventBus } from '@/composables/useProjectEventBus'
+import { useSSEFinalize } from '@/composables/useSSEFinalize'
+import { useAskUser } from '@/composables/useAskUser'
+
+// ==================== Props / Emit ====================
+
+const props = defineProps<{ project: Project; readonly?: boolean }>()
+const emit = defineEmits(['plan-finalized'])
 const authStore = useAuthStore()
 const studioConfig = useStudioConfigStore()
-
-const props = defineProps<{ project: Project }>()
-const emit = defineEmits(['plan-finalized'])
 const message = useMessage()
 const dialog = useDialog()
 
+// ==================== Core Refs ====================
+
 const messages = ref<any[]>([])
 const inputText = ref('')
-const streaming = ref(false)
+const inputHistory = ref<string[]>([])
+const historyIndex = ref(-1)
+const historySavedInput = ref('')
 const startingChat = ref(false)
-const streamContent = ref('')
-const streamThinking = ref('')
-const streamToolCalls = ref<Array<{
-  id: string
-  name: string
-  arguments: any
-  status: 'calling' | 'done' | 'error'
-  result?: string
-  duration_ms?: number
-}>>([])
-const streamSegments = ref<Array<{
-  type: 'content' | 'tool'
-  text?: string
-  toolCall?: {
-    id: string
-    name: string
-    arguments: any
-    status: 'calling' | 'done' | 'error'
-    result?: string
-    duration_ms?: number
-  }
-}>>([])
-const contextInfo = ref<any>(null)
-const tokenUsage = ref<any>(null)
-const summaryNotice = ref<string>('')
-const finalizingPlan = ref(false)
 const messageListRef = ref<HTMLElement>()
 const inputRef = ref()
 const fileInputRef = ref<HTMLInputElement>()
+const hoveredMessageId = ref<number | null>(null)
+const aiMuted = ref(false)
+const muteLoading = ref(false)
+const expandedToolGroups = reactive<Record<number, boolean>>({})
 
-// ---- 项目信息编辑 ----
+// ==================== Scroll ====================
+
+const { scrollToBottom, scrollToTop } = useScroll(messageListRef)
+
+// ==================== Model Selection ====================
+
+const {
+  models, selectedModel, loadingModels,
+  modelSourceFilter, sourceFilterOptions, sourceFilterLabel,
+  modelOptions, currentModelCaps,
+  selectedModelDisplay, selectedModelProviderIcon,
+  selectedModelMaxTokens, currentModelToolRounds,
+  onSourceFilterChange, renderModelLabel,
+  refreshModels, loadModels,
+} = useModelSelection(props.project.discussion_model || 'gpt-4o')
+
+// ==================== Context Info ====================
+
+const {
+  persistentContextInfo, contextCompressing, summarizing,
+  ctxContentModal, ctxContentTitle, ctxContentText, ctxExpanded,
+  displayContextInfo, ctxBreakdown, ctxMessages,
+  ctxBreakdownPercents, ctxSystemSections, ctxHistoryDetail,
+  refreshContextInfo, openCtxContent,
+  handleSummarize, handleClearContext, handleModelChange,
+} = useContextInfo({
+  projectId: () => props.project.id,
+  selectedModel,
+  selectedModelMaxTokens,
+  messages,
+  scrollToBottom,
+})
+
+// ==================== SSE Finalize ====================
+
+const {
+  streaming, streamContent, streamThinking, streamToolCalls, streamSegments,
+  finalizingPlan, lastTokenUsage, summaryNotice,
+  handleFinalizePlan: _handleFinalizePlan,
+  stopFinalizeStreaming,
+} = useSSEFinalize({
+  projectId: () => props.project.id,
+  selectedModel,
+  messages,
+  persistentContextInfo,
+  scrollToBottom,
+  onPlanFinalized: () => emit('plan-finalized'),
+})
+
+// ==================== 命令审批对话框 ====================
+
+const commandApproval = ref<{
+  show: boolean
+  taskId: number
+  command: string
+  toolCallId: string
+  scope: string
+  loading: boolean
+}>({ show: false, taskId: 0, command: '', toolCallId: '', scope: 'once', loading: false })
+
+function onCommandApprovalRequest(taskId: number, command: string, toolCallId: string) {
+  commandApproval.value = { show: true, taskId, command, toolCallId, scope: 'once', loading: false }
+}
+
+async function handleCommandApproval(approved: boolean) {
+  const { taskId, scope } = commandApproval.value
+  commandApproval.value.loading = true
+  try {
+    await tasksApi.approveCommand(taskId, { approved, scope })
+    // scope=project 时同步本地权限状态
+    if (approved && scope === 'project' && !toolPermissions.value.includes('execute_command')) {
+      toolPermissions.value = [...toolPermissions.value, 'execute_command']
+    }
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '审批请求失败')
+  } finally {
+    commandApproval.value.show = false
+    commandApproval.value.loading = false
+  }
+}
+
+// ==================== Project Event Bus ====================
+
+const {
+  streamingTasks, myTaskIds,
+  anyStreamingWith,
+  subscribe: subscribeBus,
+  unsubscribe: unsubscribeBus,
+  cancelTask,
+} = useProjectEventBus({
+  projectId: () => props.project.id,
+  messages,
+  persistentContextInfo,
+  lastTokenUsage,
+  scrollToBottom,
+  refreshContextInfo,
+  sendMessage: (content?: string) => sendMessage(content),
+  onCommandApprovalRequest,
+})
+
+const anyStreaming = anyStreamingWith(streaming)
+
+// 多任务 + 敲定方案流式卡片统一入口
+const activeStreamCards = computed(() => {
+  const cards: Array<{key: string; taskId: number; model: string; senderName: string; thinking: string; segments: any[]; toolCalls: any[]; isMine: boolean}> = []
+  for (const [taskId, ts] of streamingTasks.value) {
+    cards.push({
+      key: 'task-' + taskId,
+      taskId,
+      model: ts.model || '模型',
+      senderName: ts.senderName || '',
+      thinking: ts.thinking,
+      segments: ts.segments,
+      toolCalls: ts.toolCalls,
+      isMine: myTaskIds.value.has(taskId),
+    })
+  }
+  if (finalizingPlan.value && streaming.value) {
+    cards.push({
+      key: 'finalize',
+      taskId: 0,
+      model: selectedModel.value,
+      senderName: '',
+      thinking: streamThinking.value,
+      segments: streamSegments.value,
+      toolCalls: streamToolCalls.value,
+      isMine: true,
+    })
+  }
+  return cards
+})
+
+// ==================== Ask User ====================
+
+const {
+  getCardState, toggleOption, submitQuestionCard,
+  isAskUserAnswered, getAskUserAnswer, isAskUserAutoDecided,
+  getRegularToolCalls,
+} = useAskUser(messages, (content: string) => sendMessage(content))
+
+// ==================== Project Info Edit ====================
+
 const showProjectEdit = ref(false)
 const editProjectTitle = ref('')
 const editProjectDesc = ref('')
@@ -712,7 +911,6 @@ async function saveProjectInfo() {
       title: editProjectTitle.value,
       description: editProjectDesc.value,
     })
-    // 直接更新 props 对象 (reactive)
     ;(props.project as any).title = editProjectTitle.value
     ;(props.project as any).description = editProjectDesc.value
     showProjectEdit.value = false
@@ -723,225 +921,14 @@ async function saveProjectInfo() {
     savingProject.value = false
   }
 }
-const models = ref<any[]>([])
-const selectedModel = ref(props.project.discussion_model || 'gpt-4o')
-const loadingModels = ref(false)
-const modelSourceFilter = computed({
-  get: () => studioConfig.chatModelSourceFilter,
-  set: (v: string) => { studioConfig.chatModelSourceFilter = v }
-})
 
-// AbortController for canceling streams
-const abortController = ref<AbortController | null>(null)
+// ==================== Tool Permissions ====================
 
-// Message hover state for action buttons
-const hoveredMessageId = ref<number | null>(null)
-
-// Last token usage for display
-const lastTokenUsage = ref<any>(null)
-
-// 上下文信息 (常驻显示, 不随 streaming 重置)
-const persistentContextInfo = ref<any>(null)
-
-// 刷新上下文使用率 (复用在 mount / sendMessage / regenerate / summarize 等场景)
-function refreshContextInfo() {
-  const model = selectedModel.value
-  if (!model || !props.project?.id) return
-  discussionApi.checkContext(props.project.id, model).then(({ data: ctx }) => {
-    if (ctx?.context) persistentContextInfo.value = ctx.context
-  }).catch(() => {})
-}
-
-// 当前选中模型的最大上下文 tokens
-const selectedModelMaxTokens = computed(() => {
-  const model = models.value.find((m: any) => m.id === selectedModel.value)
-  if (!model) return 0
-  return studioConfig.getEffectiveMaxInput(model.id, model.max_input_tokens || 0) || model.max_input_tokens || 0
-})
-
-// 始终显示的上下文信息: 分母跟随活跃模型
-const displayContextInfo = computed(() => {
-  const total = selectedModelMaxTokens.value
-  if (persistentContextInfo.value) {
-    // 有实际数据时, 使用实际 used 但 total 以当前模型为准
-    const used = persistentContextInfo.value.used || 0
-    const effectiveTotal = total || persistentContextInfo.value.total || 1
-    const percentage = Math.min(100, Math.round(used * 100 / Math.max(effectiveTotal, 1)))
-    return { used, total: effectiveTotal, percentage }
-  }
-  // 无数据时, 显示 0/模型上限
-  return { used: 0, total: total || 0, percentage: 0 }
-})
-
-// 上下文占用明细 (breakdown)
-const ctxBreakdown = computed(() => {
-  const bd = persistentContextInfo.value?.breakdown
-  return { system: bd?.system || 0, tools: bd?.tools || 0, history: bd?.history || 0 }
-})
-const ctxMessages = computed(() => {
-  const m = persistentContextInfo.value?.messages
-  return { kept: m?.kept || 0, dropped: m?.dropped || 0, total: m?.total || 0 }
-})
-const ctxBreakdownPercents = computed(() => {
-  const total = displayContextInfo.value.total || 1
-  return {
-    system: Math.round(ctxBreakdown.value.system * 100 / total),
-    tools: Math.round(ctxBreakdown.value.tools * 100 / total),
-    history: Math.round(ctxBreakdown.value.history * 100 / total),
-  }
-})
-// System Prompt 分段明细 (树形子节点)
-const ctxSystemSections = computed(() => {
-  return persistentContextInfo.value?.system_sections || []
-})
-// 对话历史每条消息的 token 明细
-const ctxHistoryDetail = computed(() => {
-  return persistentContextInfo.value?.history_detail || []
-})
-// 树形展开状态
-const ctxExpanded = reactive<Record<string, boolean>>({})
-// 工具调用分组展开状态
-const expandedToolGroups = reactive<Record<number, boolean>>({})
-function toggleToolGroup(msgId: number) {
-  expandedToolGroups[msgId] = !expandedToolGroups[msgId]
-}
-function getRegularToolCalls(toolCalls: any[] | undefined) {
-  return (toolCalls || []).filter((tc: any) => tc.name !== 'ask_user')
-}
-// 判断 ask_user 是否已被用户回答 (查找后续的 ask_user_response 消息)
-function isAskUserAnswered(currentMsg: any, _tc: any): boolean {
-  const idx = messages.value.findIndex((m: any) => m.id === currentMsg.id)
-  if (idx < 0) return false
-  // 往后找紧邻的 user 消息是否是 ask_user_response
-  for (let i = idx + 1; i < messages.value.length; i++) {
-    const m = messages.value[i]
-    if (m.role === 'user' && m.content?.startsWith('<!-- ask_user_response -->')) return true
-    if (m.role === 'assistant') break // 碰到下一个 AI 消息就停
-  }
-  return false
-}
-// 获取 ask_user 的用户回答内容
-function getAskUserAnswer(currentMsg: any): string {
-  const idx = messages.value.findIndex((m: any) => m.id === currentMsg.id)
-  if (idx < 0) return ''
-  for (let i = idx + 1; i < messages.value.length; i++) {
-    const m = messages.value[i]
-    if (m.role === 'user' && m.content?.startsWith('<!-- ask_user_response -->')) {
-      return m.content.replace('<!-- ask_user_response -->\n', '').replace('<!-- ask_user_response -->', '')
-    }
-    if (m.role === 'assistant') break
-  }
-  return ''
-}
-// 判断 ask_user 是否全部由 AI 自行决定 (用户未选任何选项)
-function isAskUserAutoDecided(msg: any, tc: any): boolean {
-  const state = getCardState(tc.id)
-  if (state.submitted) {
-    // 本地 state: 全部问题都没有回答
-    const questions = parseQuestions(tc.arguments)
-    return questions.every((_: any, qi: number) => !state.answers[qi]?.length && !state.customTexts[qi]?.trim())
-  }
-  // DB 加载: 回答文本含跳过标记
-  const answer = getAskUserAnswer(msg)
-  return answer.includes('以上问题由你来决定')
-}
-
-// 获取问题的推荐选项文本 (用于 AI 自行决定的显示)
-function getRecommendedLabels(q: ParsedQuestion): string {
-  const recs = q.options?.filter(o => o.recommended)
-  if (recs?.length) return recs.map(o => o.label).join('、')
-  return ''
-}
-
-// 内容查看器 (气泡弹窗)
-const ctxContentModal = ref(false)
-const ctxContentTitle = ref('')
-const ctxContentText = ref('')
-function openCtxContent(name: string, content?: string) {
-  if (!content) return
-  ctxContentTitle.value = name
-  ctxContentText.value = content
-  ctxContentModal.value = true
-}
-
-// AI 禁言状态
-const aiMuted = ref(false)
-const muteLoading = ref(false)
-
-// 上下文压缩状态 (转圈圈特效)
-const contextCompressing = ref(false)
-const summarizing = ref(false)
-let contextCheckVersion = 0  // 快速切换模型时取消旧请求
-
-// 自动继续计数器 (防止无限循环)
-let autoContinueCount = 0
-
-// 来源过滤 — 下拉菜单
-const sourceFilterOptions = computed(() => {
-  const base: Array<{label: string; key: string}> = [
-    { label: '全部', key: 'all' },
-    { label: 'GitHub (免费)', key: 'github' },
-  ]
-  if (models.value.some(m => m.api_backend === 'copilot')) {
-    base.push({ label: 'Copilot (付费)', key: 'copilot' })
-  }
-  const seen = new Set<string>()
-  for (const m of models.value) {
-    const slug = m.provider_slug || ''
-    if (slug && slug !== 'github' && slug !== 'copilot' && !seen.has(slug)) {
-      seen.add(slug)
-      base.push({ label: m.publisher || slug, key: slug })
-    }
-  }
-  if (studioConfig.customModelsEnabled) {
-    base.push({ label: '🧩 补充模型', key: 'custom' })
-  }
-  return base
-})
-const sourceFilterLabel = computed(() => {
-  const opt = sourceFilterOptions.value.find(o => o.key === modelSourceFilter.value)
-  return opt?.label || '全部'
-})
-function onSourceFilterChange(key: string) {
-  if (key === 'custom' && !studioConfig.customModelsEnabled) {
-    modelSourceFilter.value = 'all'
-    return
-  }
-  modelSourceFilter.value = key as any
-}
-
-// 当前选中模型的能力 (用于动态显示/隐藏按钮)
-const currentModelCaps = computed(() => {
-  const model = models.value.find((m: any) => m.id === selectedModel.value)
-  if (!model) return { supports_vision: false, supports_tools: false }
-  return { supports_vision: !!model.supports_vision, supports_tools: !!model.supports_tools }
-})
-
-const selectedModelDisplay = computed(() => {
-  const model = models.value.find((m: any) => m.id === selectedModel.value)
-  if (!model) return selectedModel.value
-  const customStr = model.is_custom ? ' 🧩' : ''
-  return `${selectedModel.value}${customStr}`
-})
-
-const selectedModelProviderIcon = computed(() => {
-  const model = models.value.find((m: any) => m.id === selectedModel.value)
-  if (!model) return ''
-  const slug = model.provider_slug || (model.api_backend === 'copilot' ? 'copilot' : 'github')
-  return getProviderIcon(slug, '', 12)
-})
-
-// 工具权限 (代码工具默认关闭, ask_user 默认开启)
+// 默认全开 (除 execute_command 需显式授权)，除非项目有自定义保存
+const ALL_DEFAULT_PERMS = ['ask_user', 'read_source', 'read_config', 'search', 'tree', 'execute_readonly_command']
 const toolPermissions = ref<string[]>(
-  props.project.tool_permissions?.length ? props.project.tool_permissions : ['ask_user']
+  props.project.tool_permissions?.length ? props.project.tool_permissions : [...ALL_DEFAULT_PERMS]
 )
-
-// 当前模型的工具轮次上限 (根据免费/付费配置)
-const currentModelToolRounds = computed(() => {
-  const model = models.value.find(m => m.id === selectedModel.value)
-  if (!model) return studioConfig.freeToolRounds
-  return studioConfig.getToolRounds(model)
-})
 
 async function saveToolPermissions(val: string[]) {
   try {
@@ -951,377 +938,15 @@ async function saveToolPermissions(val: string[]) {
   }
 }
 
-// 远程流式输出检测 (其他用户触发的 AI 流式)
-const remoteStreaming = ref(false)
-let streamingPollTimer: ReturnType<typeof setInterval> | null = null
+// ==================== Image Upload ====================
 
-// 待发送的图片
 const pendingImages = ref<Array<{ file: File; preview: string; uploaded?: any }>>([])
 
-// 用户颜色映射
-const userColorMap: Record<string, string> = {}
-const userColors = ['#0ea5e9', '#a855f7', '#22c55e', '#f59e0b', '#ec4899', '#06b6d4', '#84cc16']
-let colorIndex = 0
-
-function getUserColor(senderName: string): string {
-  if (!senderName || senderName === 'assistant') return '#e94560'
-  if (!userColorMap[senderName]) {
-    userColorMap[senderName] = userColors[colorIndex % userColors.length]
-    colorIndex++
-  }
-  return userColorMap[senderName]
-}
-
-// 模型选项，保持 API 返回顺序, 按 model_family 分组, 应用配置过滤
-const modelOptions = computed(() => {
-  const byCategory = models.value.filter(m => m.category === 'discussion' || m.category === 'both')
-  // 按来源过滤
-  const sourceFiltered = modelSourceFilter.value === 'all'
-    ? byCategory
-    : modelSourceFilter.value === 'copilot'
-      ? byCategory.filter(m => m.provider_slug === 'copilot' || m.api_backend === 'copilot')
-      : modelSourceFilter.value === 'custom'
-        ? byCategory.filter(m => m.is_custom)
-        : modelSourceFilter.value === 'github'
-          ? byCategory.filter(m => m.provider_slug === 'github' || (!m.provider_slug && m.api_backend === 'models'))
-          : byCategory.filter(m => m.provider_slug === modelSourceFilter.value)
-
-  // 应用配置过滤 (免费模式 + 黑名单)
-  const filtered = sourceFiltered.filter(m => studioConfig.isModelVisible(m))
-
-  const mapOpt = (m: any) => ({
-    label: m.name, value: m.id,
-    description: m.summary || m.description || '',
-    supports_vision: m.supports_vision, supports_tools: m.supports_tools,
-    is_reasoning: m.is_reasoning, api_backend: m.api_backend,
-    is_custom: m.is_custom,
-    provider_slug: m.provider_slug || (m.api_backend === 'copilot' ? 'copilot' : 'github'),
-    pricing_tier: m.pricing_tier, premium_multiplier: m.premium_multiplier,
-    is_deprecated: m.is_deprecated, pricing_note: m.pricing_note,
-    max_input_tokens: studioConfig.getEffectiveMaxInput(m.id, m.max_input_tokens || 0),
-    max_output_tokens: m.max_output_tokens || 0,
-  })
-  // 按 model_family 保序分组
-  const groups: Array<{ key: string; label: string; slug: string; items: any[] }> = []
-  const groupMap: Record<string, typeof groups[0]> = {}
-  for (const m of filtered) {
-    const family = m.model_family || m.publisher || m.provider_slug || 'Other'
-    const slug = m.provider_slug || (m.api_backend === 'copilot' ? 'copilot' : 'github')
-    const gKey = slug + ':' + family
-    if (!groupMap[gKey]) {
-      const g = { key: gKey, label: family, slug, items: [] as any[] }
-      groups.push(g)
-      groupMap[gKey] = g
-    }
-    groupMap[gKey].items.push(m)
-  }
-  return groups.map(g => ({
-    type: 'group', label: g.label, key: g.key, provider_slug: g.slug,
-    children: g.items.map(mapOpt),
-  }))
-})
-
-// 自定义模型选项渲染 (能力图标 + 上下文窗口 + 定价标识)
-function renderModelLabel(option: any, selected: boolean) {
-  if (option.type === 'group') {
-    const iconHtml = getProviderIcon(option.provider_slug || 'github', option.label, 14)
-    return h('span', { style: 'display:inline-flex;align-items:center;gap:4px' }, [
-      h('span', { innerHTML: iconHtml, style: 'display:inline-flex' }),
-      option.label,
-    ])
-  }
-  const caps: string[] = []
-  if (option.is_reasoning) caps.push('🧠')
-  if (option.supports_vision) caps.push('👁️')
-  if (option.supports_tools) caps.push('🔧')
-  const depStr = option.is_deprecated ? ' ⚠️' : ''
-  const capStr = caps.length ? ` ${caps.join('')}` : ''
-  const iconHtml = getProviderIcon(option.provider_slug || 'github', '', 12)
-  const iconVNode = h('span', { innerHTML: iconHtml, style: 'display:inline-flex;vertical-align:middle;margin:0 2px' })
-  const customStr = option.is_custom ? ' 🧩' : ''
-  const priceText = option.pricing_note || 'x0'
-  const ctxText = option.max_input_tokens ? formatTokens(option.max_input_tokens) : ''
-  const nameStyle = selected ? 'font-weight:600' : ''
-  const priceStyle = selected
-    ? 'color:#18a058;font-size:11px;flex-shrink:0;margin-left:8px;font-weight:600'
-    : 'color:#888;font-size:11px;flex-shrink:0;margin-left:8px'
-  return h('div', { style: 'display:flex;justify-content:space-between;align-items:center;width:100%' }, [
-    h('span', { style: nameStyle }, [selected ? '● ' : '', option.label as string, ' ', iconVNode, customStr, capStr, depStr]),
-    h('span', { style: priceStyle }, [
-      ctxText ? h('span', { style: 'color:#666;margin-right:6px' }, ctxText) : null,
-      priceText,
-    ]),
-  ])
-}
-
-async function refreshModels() {
-  loadingModels.value = true
-  try {
-    await modelApi.refresh()
-    const { data } = await modelApi.list({ category: 'discussion', custom_models: studioConfig.customModelsEnabled })
-    models.value = data
-    message.success(`已刷新，共 ${data.length} 个可用模型`)
-  } catch (e: any) {
-    message.error('刷新模型列表失败: ' + (e.response?.data?.detail || e.message))
-  } finally {
-    loadingModels.value = false
-  }
-}
-
-function renderMarkdown(text: string) {
-  if (!text) return ''
-  try {
-    return marked.parse(text, { async: false }) as string
-  } catch {
-    return text.replace(/\n/g, '<br>')
-  }
-}
-
-function formatTime(d: string) {
-  // 后端存储 UTC 时间 (datetime.utcnow)，ISO 字符串不含 Z 后缀
-  // 需要手动补 Z 让浏览器正确转为本地时区
-  const utcStr = d && !d.endsWith('Z') && !d.includes('+') ? d + 'Z' : d
-  return new Date(utcStr).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-}
-
-function scrollToBottom() {
-  nextTick(() => {
-    if (messageListRef.value) {
-      messageListRef.value.scrollTop = messageListRef.value.scrollHeight
-    }
-  })
-}
-
-function scrollToTop() {
-  nextTick(() => {
-    if (messageListRef.value) {
-      messageListRef.value.scrollTop = 0
-    }
-  })
-}
-
-function formatTokens(n: number): string {
-  if (!n) return '0'
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
-  if (n >= 1000) return `${(n / 1000).toFixed(0)}K`
-  return `${n}`
-}
-
-// ==================== 错误解析 ====================
-
-function parseErrorMeta(errorText: string, backendMeta?: any): any {
-  const meta: any = { ...(backendMeta || {}) }
-
-  // 速率限制
-  const rlMatch = errorText.match(/Rate limit.*?(\d+)\s*per\s*(\d+)s/i)
-  if (rlMatch) {
-    meta.error_type = meta.error_type || 'rate_limit'
-    meta.rate_limit = `${rlMatch[1]} per ${rlMatch[2]}s`
-    meta.rate_limit_count = parseInt(rlMatch[1])
-    meta.rate_limit_seconds = parseInt(rlMatch[2])
-  }
-  const waitMatch = errorText.match(/wait\s+(\d+)\s*seconds?/i)
-  if (waitMatch) {
-    meta.wait_seconds = parseInt(waitMatch[1])
-    meta.error_type = meta.error_type || 'rate_limit'
-  }
-
-  // 上下文超限
-  const ctxMatch = errorText.match(/maximum context length.*?(\d{3,})/i)
-  if (ctxMatch) {
-    meta.error_type = meta.error_type || 'context_overflow'
-    meta.max_context_tokens = parseInt(ctxMatch[1])
-  }
-  const maxSizeMatch = errorText.match(/Max size:\s*(\d+)\s*tokens/i)
-  if (maxSizeMatch) {
-    meta.error_type = meta.error_type || 'context_overflow'
-    meta.max_context_tokens = parseInt(maxSizeMatch[1])
-  }
-  const requestedMatch = errorText.match(/requested\s+(\d+)\s*tokens/i)
-  if (requestedMatch) {
-    meta.requested_tokens = parseInt(requestedMatch[1])
-  }
-
-  // 生成摘要
-  if (meta.error_type === 'rate_limit') {
-    meta.summary = `🚦 速率限制 (${meta.rate_limit || ''}${meta.wait_seconds ? `, 等待 ${meta.wait_seconds}s` : ''})`
-  } else if (meta.error_type === 'context_overflow') {
-    meta.summary = `📏 上下文超限 (最大 ${formatTokens(meta.max_context_tokens || 0)})`
-  } else if (meta.error_type === 'auth_error') {
-    meta.summary = '🔒 认证错误，请检查授权状态'
-  } else {
-    meta.summary = '⚠️ AI 服务错误'
-  }
-
-  return meta
-}
-
-function formatErrorAsMessage(error: string, meta: any): string {
-  const parts = ['**⚠️ AI 服务错误**\n']
-
-  if (meta.error_type === 'rate_limit') {
-    if (meta.rate_limit_count && meta.rate_limit_seconds) {
-      parts.push(`> 🚦 **速率限制**: 每 ${meta.rate_limit_seconds}秒 最多 ${meta.rate_limit_count} 次请求`)
-    }
-    if (meta.wait_seconds) {
-      parts.push(`> ⏱️ **等待**: ${meta.wait_seconds} 秒后可重试`)
-    }
-    parts.push('\n💡 *建议：稍后重新发送消息，或切换到其他模型*')
-  } else if (meta.error_type === 'context_overflow') {
-    const limit = meta.max_context_tokens
-    if (limit) {
-      parts.push(`> 📏 **上下文超限**: 模型最大 ${formatTokens(limit)} tokens`)
-    }
-    if (meta.requested_tokens) {
-      parts.push(`> 📊 **实际请求**: ${formatTokens(meta.requested_tokens)} tokens`)
-    }
-    parts.push('\n💡 *建议：删除部分历史消息，或切换到上下文更大的模型*')
-  } else if (meta.error_type === 'auth_error') {
-    parts.push('> 🔒 **认证失败**: 请前往设置页面检查 Copilot 授权状态')
-  } else {
-    // 通用错误 — 显示前 300 字符
-    const brief = error.length > 300 ? error.slice(0, 300) + '...' : error
-    parts.push('```\n' + brief + '\n```')
-  }
-
-  return parts.join('\n')
-}
-
-// 工具显示名称映射
-const toolNames: Record<string, string> = {
-  read_file: '📖 读取文件',
-  search_text: '🔍 搜索',
-  list_directory: '📂 列目录',
-  get_file_tree: '🌳 目录树',
-  ask_user: '❓ 提问',
-}
-
-/** 解析 ask_user 的 questions 参数 (支持新格式: options 为对象数组) */
-interface QuestionOption {
-  label: string
-  description?: string
-  recommended?: boolean
-}
-interface ParsedQuestion {
-  question: string
-  type: 'single' | 'multi'
-  options: QuestionOption[]
-  context?: string
-}
-function parseQuestions(args: any): ParsedQuestion[] {
-  if (!args?.questions) return []
-  try {
-    const qs = typeof args.questions === 'string' ? JSON.parse(args.questions) : args.questions
-    if (!Array.isArray(qs)) return []
-    return qs.map((q: any) => ({
-      question: q.question || '',
-      type: q.type === 'multi' ? 'multi' : 'single',
-      options: (q.options || []).map((opt: any) =>
-        typeof opt === 'string' ? { label: opt } : { label: opt.label || '', description: opt.description, recommended: !!opt.recommended }
-      ),
-      context: q.context,
-    }))
-  } catch { return [] }
-}
-
-/** 问题卡片状态管理 (toolCallId → { answers, submitted }) */
-interface QuestionCardState {
-  answers: Record<number, string[]>  // questionIndex → selected labels
-  customTexts: Record<number, string> // questionIndex → custom input text
-  submitted: boolean
-}
-const questionCardStates = ref<Record<string, QuestionCardState>>({})
-
-function getCardState(tcId: string): QuestionCardState {
-  if (!questionCardStates.value[tcId]) {
-    questionCardStates.value[tcId] = { answers: {}, customTexts: {}, submitted: false }
-  }
-  return questionCardStates.value[tcId]
-}
-
-function toggleOption(tcId: string, qi: number, label: string, type: 'single' | 'multi') {
-  const state = getCardState(tcId)
-  if (!state.answers[qi]) state.answers[qi] = []
-  if (type === 'single') {
-    state.answers[qi] = state.answers[qi][0] === label ? [] : [label]
-  } else {
-    const idx = state.answers[qi].indexOf(label)
-    if (idx >= 0) state.answers[qi].splice(idx, 1)
-    else state.answers[qi].push(label)
-  }
-}
-
-function submitQuestionCard(tcId: string, questions: ParsedQuestion[]) {
-  const state = getCardState(tcId)
-  state.submitted = true
-
-  // 格式化回答为用户消息
-  const parts: string[] = []
-  questions.forEach((q, qi) => {
-    const selected = state.answers[qi] || []
-    const custom = state.customTexts[qi]?.trim()
-    if (selected.length || custom) {
-      const answer = custom || selected.join('、')
-      parts.push(`**${q.question}**\n${answer}`)
-    }
-    // 未回答的问题省略，AI 自行决定
-  })
-
-  if (parts.length === 0) {
-    parts.push('以上问题由你来决定，请继续。')
-  }
-
-  // 添加标记，让 UI 可以识别这是 ask_user 回答，渲染为紧凑形式
-  const content = `<!-- ask_user_response -->\n${parts.join('\n\n')}`
-  sendMessage(content)
-}
-
-function toolDisplayName(name: string): string {
-  return toolNames[name] || name
-}
-
-/** 追加流式内容到 streamContent + streamSegments */
-function appendStreamContent(text: string) {
-  streamContent.value += text
-  const segs = streamSegments.value
-  const last = segs[segs.length - 1]
-  if (last && last.type === 'content') {
-    last.text = (last.text || '') + text
-  } else {
-    segs.push({ type: 'content', text })
-  }
-}
-
-function formatToolArgs(name: string, args: any): string {
-  if (!args) return ''
-  if (name === 'read_file') {
-    let s = args.path || ''
-    if (args.start_line) s += ` L${args.start_line}`
-    if (args.end_line) s += `-${args.end_line}`
-    return s
-  }
-  if (name === 'search_text') {
-    let s = `"${args.query || ''}"`
-    if (args.include_pattern) s += ` in ${args.include_pattern}`
-    return s
-  }
-  if (name === 'list_directory' || name === 'get_file_tree') {
-    return args.path || '.'
-  }
-  if (name === 'ask_user') {
-    const qs = parseQuestions(args)
-    return `${qs.length} 个问题`
-  }
-  return JSON.stringify(args)
-}
-
-// 图片上传
-// 图片上传 (通过隐藏 input[type=file] 触发)
 async function onFileInputChange(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
-  input.value = '' // 重置以允许重复选择同一文件
+  input.value = ''
   try {
     const preview = URL.createObjectURL(file)
     const { data } = await discussionApi.uploadImage(props.project.id, file)
@@ -1331,47 +956,11 @@ async function onFileInputChange(e: Event) {
   }
 }
 
-async function handleImageUpload({ file }: any) {
-  try {
-    const preview = URL.createObjectURL(file.file)
-    const { data } = await discussionApi.uploadImage(props.project.id, file.file)
-    pendingImages.value.push({
-      file: file.file,
-      preview,
-      uploaded: data,
-    })
-  } catch (e: any) {
-    message.error(e.response?.data?.detail || '图片上传失败')
-  }
+// ==================== Message Actions ====================
+
+function toggleToolGroup(msgId: number) {
+  expandedToolGroups[msgId] = !expandedToolGroups[msgId]
 }
-
-// ==================== 停止生成 ====================
-
-function stopStreaming() {
-  abortController.value?.abort()
-  // 保留已生成的部分内容
-  if (streamContent.value) {
-    messages.value.push({
-      id: Date.now(),
-      role: 'assistant',
-      sender_name: selectedModel.value,
-      content: streamContent.value + '\n\n---\n*⏹ 已手动停止*',
-      model_used: selectedModel.value,
-      thinking_content: streamThinking.value || null,
-      tool_calls: streamToolCalls.value.length ? [...streamToolCalls.value] : null,
-      created_at: new Date().toISOString(),
-    })
-  }
-  streaming.value = false
-  streamContent.value = ''
-  streamThinking.value = ''
-  streamToolCalls.value = []
-  streamSegments.value = []
-  abortController.value = null
-  scrollToBottom()
-}
-
-// ==================== 消息操作 ====================
 
 async function copyMessage(msg: any) {
   try {
@@ -1388,34 +977,10 @@ async function copyMessage(msg: any) {
   }
 }
 
-function confirmDeleteMessage(msg: any) {
-  dialog.warning({
-    title: '确认删除',
-    content: `删除这条${msg.role === 'user' ? '用户' : 'AI'}消息？`,
-    positiveText: '删除',
-    negativeText: '取消',
-    onPositiveClick: () => doDeleteMessage(msg),
-  })
-}
-
-async function doDeleteMessage(msg: any) {
-  try {
-    // 只对有真实 DB ID 的消息发起删除请求 (Date.now() 生成的 ID > 1e12)
-    if (msg.id && msg.id < 1e12) {
-      await discussionApi.deleteMessage(props.project.id, msg.id)
-    }
-    messages.value = messages.value.filter(m => m.id !== msg.id)
-    message.success('已删除')
-  } catch (e: any) {
-    message.error(e.response?.data?.detail || '删除失败')
-  }
-}
-
 async function retryMessage(msg: any) {
   const retryContent = msg.content
   const retryAttachments = msg.attachments || []
   try {
-    // 只对有真实 DB ID 的消息发起删除请求 (Date.now() 生成的 ID > 1e12)
     if (msg.id && msg.id < 1e12) {
       await discussionApi.deleteMessageAndAfter(props.project.id, msg.id)
     }
@@ -1429,234 +994,30 @@ async function retryMessage(msg: any) {
 
 async function regenerateMessage(msg: any) {
   try {
-    // 只对有真实 DB ID 的消息发起删除请求 (Date.now() 生成的 ID > 1e12)
     if (msg.id && msg.id < 1e12) {
       await discussionApi.deleteMessage(props.project.id, msg.id)
     }
     messages.value = messages.value.filter(m => m.id !== msg.id)
-
-    streaming.value = true
-    streamContent.value = ''
-    streamThinking.value = ''
-    streamToolCalls.value = []
-    streamSegments.value = []
-    contextInfo.value = null
-    tokenUsage.value = null
-    summaryNotice.value = ''
-    abortController.value = new AbortController()
-
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (authStore.token) {
-      headers['Authorization'] = `Bearer ${authStore.token}`
-    }
-
-    const response = await fetch(discussionApi.discussUrl(props.project.id), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ message: '', sender_name: 'user', regenerate: true, max_tool_rounds: currentModelToolRounds.value }),
-      signal: abortController.value.signal,
-    })
-
-    await handleSSEResponse(response)
+    await sendMessage('', [], true)
   } catch (e: any) {
     if (e.name !== 'AbortError') {
       message.error('重新生成失败: ' + (e.message || ''))
     }
-  } finally {
-    streaming.value = false
-    streamContent.value = ''
-    streamThinking.value = ''
-    streamToolCalls.value = []
-    streamSegments.value = []
-    abortController.value = null
-    scrollToBottom()
-    // 每次 AI 请求完成后刷新上下文使用率
-    refreshContextInfo()
   }
 }
 
-// ==================== SSE 响应处理 (共用) ====================
+// ==================== Stop Generation ====================
 
-// 标记 handleSSEResponse 是否已将内容添加到 messages
-let sseContentSaved = false
-
-async function handleSSEResponse(response: Response) {
-  const reader = response.body?.getReader()
-  const decoder = new TextDecoder()
-  if (!reader) throw new Error('No response body')
-
-  let savedThinking = ''
-  let savedToolCalls: any[] = []
-  sseContentSaved = false
-  let streamTruncated = false
-  let streamAskUserPending = false
-  streamToolCalls.value = []
-  streamSegments.value = []
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-
-    const chunk = decoder.decode(value, { stream: true })
-    const lines = chunk.split('\n')
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue
-      try {
-        const data = JSON.parse(line.slice(6))
-        if (data.type === 'content') {
-          appendStreamContent(data.content)
-          scrollToBottom()
-        } else if (data.type === 'thinking') {
-          streamThinking.value += data.content
-          savedThinking += data.content
-          scrollToBottom()
-        } else if (data.type === 'context') {
-          contextInfo.value = data.context
-          persistentContextInfo.value = data.context  // 常驻保存
-        } else if (data.type === 'summary') {
-          summaryNotice.value = data.summary
-          scrollToBottom()
-        } else if (data.type === 'tool_call_start') {
-          // ask_user 提前通知: 工具名已确认但参数还在流式中, 显示 loading 卡片
-          const tc_data = data.tool_call || data
-          const toolCall = {
-            id: tc_data.id || '',
-            name: tc_data.name || '',
-            arguments: null as any,
-            status: 'preparing' as const,
-          }
-          streamToolCalls.value.push(toolCall)
-          streamSegments.value.push({ type: 'tool', toolCall })
-          scrollToBottom()
-        } else if (data.type === 'tool_call') {
-          // backend sends: {type: 'tool_call', tool_call: {id, name, arguments}}
-          const tc_data = data.tool_call || data
-          const tcId = tc_data.id || data.tool_call_id || ''
-          // 尝试合并已有的 preparing 段
-          const existingTc = streamToolCalls.value.find(t => t.id === tcId)
-          if (existingTc) {
-            existingTc.arguments = tc_data.arguments || data.arguments || ''
-            existingTc.status = 'calling'
-          } else {
-            const toolCall = {
-              id: tcId,
-              name: tc_data.name || data.name || '',
-              arguments: tc_data.arguments || data.arguments || '',
-              status: 'calling' as const,
-            }
-            streamToolCalls.value.push(toolCall)
-            streamSegments.value.push({ type: 'tool', toolCall })
-          }
-          scrollToBottom()
-        } else if (data.type === 'tool_result') {
-          const tc = streamToolCalls.value.find(t => t.id === data.tool_call_id)
-          if (tc) {
-            tc.status = 'done'
-            tc.result = data.result
-            tc.duration_ms = data.duration_ms
-          }
-          savedToolCalls = [...streamToolCalls.value]
-          scrollToBottom()
-        } else if (data.type === 'tool_error') {
-          const tc = streamToolCalls.value.find(t => t.id === data.tool_call_id)
-          if (tc) {
-            tc.status = 'error'
-            tc.result = data.error
-            tc.duration_ms = data.duration_ms
-          }
-          savedToolCalls = [...streamToolCalls.value]
-          scrollToBottom()
-        } else if (data.type === 'truncated') {
-          // AI 输出因 max_tokens 截断，标记为需要自动继续
-          streamTruncated = true
-        } else if (data.type === 'ask_user_pending') {
-          // AI 调用了 ask_user 后停止，等待用户回答
-          // 不设 truncated，不自动继续，但保留 streaming 状态直到 done
-          streamAskUserPending = true
-        } else if (data.type === 'usage') {
-          tokenUsage.value = data.usage
-          lastTokenUsage.value = data.usage
-        } else if (data.type === 'done') {
-          // 有内容 或 有工具调用时保存消息 (AI 可能只调用 ask_user 无文本)
-          if (streamContent.value || savedToolCalls.length) {
-            messages.value.push({
-              id: data.message_id || Date.now(),
-              role: 'assistant',
-              sender_name: selectedModel.value,
-              content: streamContent.value || '',
-              model_used: selectedModel.value,
-              thinking_content: savedThinking || null,
-              tool_calls: savedToolCalls.length ? savedToolCalls : null,
-              token_usage: tokenUsage.value || null,
-              created_at: new Date().toISOString(),
-            })
-            sseContentSaved = true
-          }
-        } else if (data.type === 'error') {
-          const errorMeta = parseErrorMeta(data.error, data.error_meta)
-
-          if (!streamContent.value && !sseContentSaved) {
-            // 无内容生成 — 将错误作为聊天消息显示
-            messages.value.push({
-              id: Date.now(),
-              role: 'assistant',
-              sender_name: selectedModel.value,
-              content: formatErrorAsMessage(data.error, errorMeta),
-              model_used: selectedModel.value,
-              thinking_content: savedThinking || null,
-              tool_calls: savedToolCalls.length ? savedToolCalls : null,
-              token_usage: tokenUsage.value || null,
-              created_at: new Date().toISOString(),
-            })
-            sseContentSaved = true
-            // 从错误中学习模型能力
-            if (errorMeta.max_context_tokens || errorMeta.rate_limit) {
-              studioConfig.updateModelCapability(selectedModel.value, errorMeta)
-            }
-          } else if (streamContent.value && !sseContentSaved) {
-            // 有部分内容 — 保留已生成的部分并附加错误
-            messages.value.push({
-              id: Date.now(),
-              role: 'assistant',
-              sender_name: selectedModel.value,
-              content: streamContent.value + '\n\n---\n' + formatErrorAsMessage(data.error, errorMeta),
-              model_used: selectedModel.value,
-              thinking_content: savedThinking || null,
-              tool_calls: savedToolCalls.length ? savedToolCalls : null,
-              token_usage: tokenUsage.value || null,
-              created_at: new Date().toISOString(),
-            })
-            sseContentSaved = true
-          }
-          // 简短提示 (warning 不会自动消失)
-          message.warning(errorMeta.summary || '⚠️ AI 服务错误', { duration: 10000 })
-        }
-      } catch {}
-    }
+function stopAllMyStreaming() {
+  for (const taskId of myTaskIds.value) {
+    cancelTask(taskId)
   }
-
-  // 流结束后, 如果有内容或工具调用但未保存 (没收到 done 也没收到 error), 兜底保存
-  if ((streamContent.value || savedToolCalls.length) && !sseContentSaved) {
-    messages.value.push({
-      id: Date.now(),
-      role: 'assistant',
-      sender_name: selectedModel.value,
-      content: streamContent.value || '',
-      model_used: selectedModel.value,
-      thinking_content: savedThinking || null,
-      tool_calls: savedToolCalls.length ? savedToolCalls : null,
-      token_usage: tokenUsage.value || null,
-      created_at: new Date().toISOString(),
-    })
-    sseContentSaved = true
+  if (streaming.value) {
+    stopFinalizeStreaming()
   }
-
-  // 返回是否截断 (供调用方决定是否自动继续)
-  return { truncated: streamTruncated }
 }
 
-// ==================== 发送消息 ====================
+// ==================== Send Message ====================
 
 async function handleStartChat() {
   startingChat.value = true
@@ -1670,7 +1031,6 @@ async function handleStartChat() {
 async function sendMessage(overrideContent?: string, overrideAttachments?: any[], regenerate = false) {
   const text = overrideContent ?? inputText.value.trim()
   const isOverride = overrideContent !== undefined
-
   if (!text && !pendingImages.value.length && !isOverride) return
 
   const attachments = isOverride
@@ -1685,18 +1045,22 @@ async function sendMessage(overrideContent?: string, overrideAttachments?: any[]
           name: img.file.name,
         }))
 
-  // 使用认证用户的昵称作为发送者
   const senderName = authStore.user?.nickname || authStore.user?.username || 'user'
-
   if (!isOverride) {
+    // 保存到输入历史
+    if (text.trim()) {
+      inputHistory.value.push(text.trim())
+    }
+    historyIndex.value = -1
+    historySavedInput.value = ''
     inputText.value = ''
     pendingImages.value = []
   }
 
-  // regenerate 模式不推送用户消息（AI 直接发言）
+  const tempMsgId = Date.now()
   if (!regenerate) {
     messages.value.push({
-      id: Date.now(),
+      id: tempMsgId,
       role: 'user',
       sender_name: senderName,
       content: text,
@@ -1706,158 +1070,48 @@ async function sendMessage(overrideContent?: string, overrideAttachments?: any[]
     scrollToBottom()
   }
 
-  streaming.value = true
-  streamContent.value = ''
-  streamThinking.value = ''
-  streamToolCalls.value = []
-  streamSegments.value = []
-  contextInfo.value = null
-  tokenUsage.value = null
-  summaryNotice.value = ''
-  abortController.value = new AbortController()
-
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (authStore.token) {
-      headers['Authorization'] = `Bearer ${authStore.token}`
-    }
+    if (authStore.token) headers['Authorization'] = `Bearer ${authStore.token}`
 
     const response = await fetch(discussionApi.discussUrl(props.project.id), {
       method: 'POST',
       headers,
       body: JSON.stringify({ message: text, sender_name: senderName, attachments, max_tool_rounds: currentModelToolRounds.value, regenerate }),
-      signal: abortController.value.signal,
     })
 
-    // 处理非流式响应 (AI 正在输出 / AI 禁言)
-    const contentType = response.headers.get('content-type') || ''
-    if (contentType.includes('application/json')) {
-      const result = await response.json()
-      if (result.status === 'queued') {
-        message.info('AI 正在输出中，你的消息已保存，稍后一并回复')
-      } else if (result.status === 'muted') {
-        message.info('AI 已禁言，消息已保存')
+    const result = await response.json()
+
+    if (result.status === 'muted') {
+      message.info('AI 已禁言，消息已保存')
+      if (result.user_message_id && !regenerate) {
+        const tmpMsg = messages.value.find(m => m.id === tempMsgId)
+        if (tmpMsg) tmpMsg.id = result.user_message_id
       }
-      streaming.value = false
-      streamContent.value = ''
-      streamThinking.value = ''
-      streamToolCalls.value = []
-      streamSegments.value = []
-      abortController.value = null
       return
     }
 
-    const sseResult = await handleSSEResponse(response)
-
-    // 自动继续: AI 输出因 max_tokens 截断时自动发 "请继续"
-    if (sseResult?.truncated && autoContinueCount < studioConfig.maxAutoContinues) {
-      autoContinueCount++
-      streaming.value = false
-      streamContent.value = ''
-      streamThinking.value = ''
-      streamToolCalls.value = []
-      streamSegments.value = []
-      abortController.value = null
-      await new Promise(r => setTimeout(r, 300))
-      message.info(`AI 输出被截断，自动继续 (${autoContinueCount}/${studioConfig.maxAutoContinues})`)
-      await sendMessage('请继续上面没说完的内容')
-      return
+    if (result.task_id) {
+      myTaskIds.value.add(result.task_id)
+      if (result.user_message_id && !regenerate) {
+        const tmpMsg = messages.value.find(m => m.id === tempMsgId)
+        if (tmpMsg) tmpMsg.id = result.user_message_id
+      }
     }
-    autoContinueCount = 0
   } catch (e: any) {
     if (e.name !== 'AbortError') {
       message.error('AI 通信异常: ' + (e.message || ''))
     }
-  } finally {
-    streaming.value = false
-    streamContent.value = ''
-    streamThinking.value = ''
-    streamToolCalls.value = []
-    streamSegments.value = []
-    abortController.value = null
-    scrollToBottom()
-    // 每次 AI 请求完成后刷新上下文使用率
-    refreshContextInfo()
   }
 }
 
-// 敲定方案
+// ==================== Finalize Plan ====================
+
 async function handleFinalizePlan() {
-  finalizingPlan.value = true
-  streaming.value = true
-  streamContent.value = ''
-  streamThinking.value = ''
-  streamSegments.value = []
-  abortController.value = new AbortController()
-
-  try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (authStore.token) {
-      headers['Authorization'] = `Bearer ${authStore.token}`
-    }
-
-    const response = await fetch(discussionApi.finalizePlanUrl(props.project.id), {
-      method: 'POST',
-      headers,
-      signal: abortController.value.signal,
-    })
-
-    const reader = response.body?.getReader()
-    const decoder = new TextDecoder()
-    if (!reader) throw new Error('No response body')
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      const text = decoder.decode(value, { stream: true })
-      for (const line of text.split('\n')) {
-        if (!line.startsWith('data: ')) continue
-        try {
-          const data = JSON.parse(line.slice(6))
-          if (data.type === 'content') {
-            appendStreamContent(data.content)
-            scrollToBottom()
-          } else if (data.type === 'thinking') {
-            streamThinking.value += data.content
-            scrollToBottom()
-          } else if (data.type === 'done') {
-            message.success(`设计稿已生成 (v${data.plan_version})`)
-            emit('plan-finalized')
-          } else if (data.type === 'error') {
-            message.error(data.error)
-          }
-        } catch {}
-      }
-    }
-
-    // 保存 plan 消息到列表
-    if (streamContent.value) {
-      messages.value.push({
-        id: Date.now(),
-        role: 'assistant',
-        sender_name: `Plan Generator (${selectedModel.value})`,
-        content: streamContent.value,
-        message_type: 'plan_final',
-        created_at: new Date().toISOString(),
-      })
-    }
-  } catch (e: any) {
-    if (e.name !== 'AbortError') {
-      message.error('Plan 生成异常: ' + (e.message || ''))
-    }
-  } finally {
-    finalizingPlan.value = false
-    streaming.value = false
-    streamContent.value = ''
-    streamThinking.value = ''
-    streamSegments.value = []
-    abortController.value = null
-    scrollToBottom()
-  }
+  await _handleFinalizePlan()
 }
 
-// ==================== AI 禁言控制 ====================
+// ==================== AI Mute ====================
 
 async function toggleAiMute() {
   muteLoading.value = true
@@ -1880,139 +1134,93 @@ async function toggleAiMute() {
   }
 }
 
-// ==================== 上下文管理 ====================
-
-async function handleSummarize() {
-  summarizing.value = true
-  try {
-    const { data } = await discussionApi.summarizeContext(props.project.id)
-    message.success(`已总结 ${data.summarized_count} 条旧消息 → 1 条摘要`)
-    // 刷新消息列表
-    const { data: msgs } = await discussionApi.getMessages(props.project.id)
-    messages.value = msgs
-    scrollToBottom()
-    // 刷新上下文使用率
-    refreshContextInfo()
-  } catch (e: any) {
-    message.error(e.response?.data?.detail || '总结失败')
-  } finally {
-    summarizing.value = false
-  }
-}
-
-function handleClearContext() {
-  dialog.warning({
-    title: '确认清空',
-    content: '将删除所有讨论消息，此操作不可撤销。确定清空？',
-    positiveText: '清空',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      try {
-        await discussionApi.clearContext(props.project.id)
-        messages.value = []
-        persistentContextInfo.value = null
-        message.success('已清空所有讨论消息')
-      } catch (e: any) {
-        message.error(e.response?.data?.detail || '清空失败')
-      }
-    },
-  })
-}
-
-// 轮询远程流式输出状态 (检测其他用户是否在使用 AI)
-function startStreamingPoll() {
-  stopStreamingPoll() // 确保不重复启动
-  streamingPollTimer = setInterval(async () => {
-    if (streaming.value) return // 自己正在流式输出, 不需要轮询
-    try {
-      const { data } = await discussionApi.getStreamingStatus(props.project.id)
-      const wasStreaming = remoteStreaming.value
-      remoteStreaming.value = data.streaming
-      // 远程流式结束时刷新消息列表 (可能有新 AI 回复)
-      if (wasStreaming && !data.streaming) {
-        const { data: msgs } = await discussionApi.getMessages(props.project.id)
-        messages.value = msgs
-        scrollToBottom()
-        refreshContextInfo()
-      }
-    } catch {}
-  }, 5000)
-}
-
-function stopStreamingPoll() {
-  if (streamingPollTimer) {
-    clearInterval(streamingPollTimer)
-    streamingPollTimer = null
-  }
-}
+// ==================== Keyboard ====================
 
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
     e.preventDefault()
     sendMessage()
+    return
+  }
+  // 上下箭头切换历史输入
+  const isMultiLine = inputText.value.includes('\n')
+  if (!isMultiLine && e.key === 'ArrowUp' && inputHistory.value.length > 0) {
+    e.preventDefault()
+    if (historyIndex.value === -1) {
+      // 第一次进入历史模式，保存当前输入
+      historySavedInput.value = inputText.value
+    }
+    if (historyIndex.value < inputHistory.value.length - 1) {
+      historyIndex.value++
+      inputText.value = inputHistory.value[inputHistory.value.length - 1 - historyIndex.value]
+    }
+    return
+  }
+  if (!isMultiLine && e.key === 'ArrowDown' && historyIndex.value >= 0) {
+    e.preventDefault()
+    historyIndex.value--
+    if (historyIndex.value < 0) {
+      // 回到底部，恢复原始输入
+      inputText.value = historySavedInput.value
+    } else {
+      inputText.value = inputHistory.value[inputHistory.value.length - 1 - historyIndex.value]
+    }
+    return
   }
 }
 
-async function handleModelChange(val: string) {
+// ==================== Lifecycle ====================
+
+// 当项目 ID 变化时重新加载消息 (修复新建项目后显示旧聊天上下文)
+watch(() => props.project.id, async (newId, oldId) => {
+  if (newId === oldId) return
+  // 重置状态
+  messages.value = []
+  streaming.value = false
+  streamContent.value = ''
+  streamThinking.value = ''
+  streamSegments.value = []
+  streamingTasks.value.clear()
+  myTaskIds.value.clear()
+  // 加载新项目的消息
   try {
-    await projectApi.update(props.project.id, { discussion_model: val })
+    const { data } = await discussionApi.getMessages(newId)
+    messages.value = data
+    scrollToTop()
   } catch {}
-
-  // 切换模型后检查上下文使用情况
-  const myVersion = ++contextCheckVersion
-  contextCompressing.value = true
   try {
-    const { data } = await discussionApi.checkContext(props.project.id, val)
-    // 快速切换时忽略过期结果
-    if (myVersion !== contextCheckVersion) return
-    if (data.context) {
-      persistentContextInfo.value = data.context
-    }
-    if (data.summarized && data.summary_text) {
-      message.info('上下文已自动压缩以适应新模型窗口')
-    }
-  } catch {} finally {
-    if (myVersion === contextCheckVersion) {
-      contextCompressing.value = false
-    }
-  }
-}
+    const { data } = await discussionApi.getAiMuteStatus(newId)
+    aiMuted.value = data.ai_muted
+  } catch {}
+  // 刷新工具权限
+  toolPermissions.value = props.project.tool_permissions?.length
+    ? props.project.tool_permissions
+    : [...ALL_DEFAULT_PERMS]
+  refreshContextInfo()
+})
 
 onMounted(async () => {
-  // 加载消息历史
   try {
     const { data } = await discussionApi.getMessages(props.project.id)
     messages.value = data
     scrollToTop()
   } catch {}
 
-  // 加载 AI 禁言状态
   try {
     const { data } = await discussionApi.getAiMuteStatus(props.project.id)
     aiMuted.value = data.ai_muted
   } catch {}
 
-  // 加载模型列表 (使用后端缓存，不阻塞页面; 手动点击刷新按钮强制刷新)
-  modelApi.list({ category: 'discussion', custom_models: studioConfig.customModelsEnabled }).then(({ data }) => {
-    models.value = data
-    if (data.length && !data.find((m: any) => m.id === selectedModel.value)) {
-      selectedModel.value = data[0].id
-    }
-    // 模型加载完成后，获取当前模型的上下文使用率
-    refreshContextInfo()
-  }).catch(() => {})
+  subscribeBus()
+  loadModels().then(() => refreshContextInfo())
 
-  // 兜底: 即使模型列表加载慢/失败，也尝试用默认模型获取上下文
   setTimeout(() => {
     if (!persistentContextInfo.value) refreshContextInfo()
   }, 3000)
-
-  // 启动远程流式输出轮询
-  startStreamingPoll()
 })
 
 onUnmounted(() => {
-  stopStreamingPoll()
+  unsubscribeBus()
 })
 </script>
 

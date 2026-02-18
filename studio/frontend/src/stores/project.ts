@@ -2,6 +2,15 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { projectApi } from '@/api'
 
+export interface ProjectTypeInfo {
+  key: string
+  name: string
+  icon: string
+  stages: { key: string; label: string; status: string; skill?: string }[]
+  ui_labels: Record<string, string>
+}
+
+// DEPRECATED: 保留兼容旧数据, 新代码使用 type_info
 export interface SkillBrief {
   id: number
   name: string
@@ -17,9 +26,13 @@ export interface Project {
   status: string
   plan_content: string
   plan_version: number
+  review_content: string
+  review_version: number
   github_issue_number: number | null
   github_pr_number: number | null
   branch_name: string | null
+  workspace_dir: string | null
+  iteration_count: number
   preview_port: number | null
   discussion_model: string
   implementation_model: string
@@ -30,6 +43,10 @@ export interface Project {
   created_at: string
   updated_at: string
   message_count: number
+  participants: string[]
+  project_type: string | null
+  type_info: ProjectTypeInfo | null
+  // DEPRECATED: 保留兼容
   skill_id: number | null
   skill: SkillBrief | null
 }
@@ -63,6 +80,7 @@ export const useProjectStore = defineStore('project', () => {
   async function createProject(payload: any) {
     const { data } = await projectApi.create(payload)
     projects.value.unshift(data)
+    currentProject.value = data  // 确保导航前 store 已指向新项目
     return data
   }
 

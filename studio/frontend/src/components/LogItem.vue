@@ -25,6 +25,29 @@
 
       <!-- 第二行：描述摘要 -->
       <div v-if="item.description" class="desc">{{ shortContent(item.description) }}</div>
+
+      <!-- 第三行：创建者 + 参与者 -->
+      <div v-if="item.created_by || (item.participants && item.participants.length)" class="people-row">
+        <span v-if="item.created_by" class="person-badge creator">
+          <span class="person-avatar">{{ item.created_by.charAt(0).toUpperCase() }}</span>
+          {{ item.created_by }}
+        </span>
+        <template v-if="item.participants && item.participants.length">
+          <span class="people-sep">·</span>
+          <span
+            v-for="p in item.participants.filter(x => x !== item.created_by).slice(0, 4)"
+            :key="p"
+            class="person-badge participant"
+          >
+            <span class="person-avatar">{{ p.charAt(0).toUpperCase() }}</span>
+            {{ p }}
+          </span>
+          <span
+            v-if="item.participants.filter(x => x !== item.created_by).length > 4"
+            class="meta-text"
+          >+{{ item.participants.filter(x => x !== item.created_by).length - 4 }}</span>
+        </template>
+      </div>
     </div>
   </div>
 </template>
@@ -50,6 +73,8 @@ interface LogItemShape {
   type?: string
   status?: string
   updated_at?: string
+  created_by?: string
+  participants?: string[]
   skill?: SkillBrief | null
 }
 
@@ -135,7 +160,10 @@ function shortContent(s = '') {
 function formatDate(d = '') {
   if (!d) return ''
   try {
-    return new Date(d).toLocaleString('zh-CN', {
+    // 后端存储 UTC 时间 (datetime.utcnow)，ISO 字符串不含 Z 后缀
+    // 需要手动补 Z 让浏览器正确转为本地时区
+    const utcStr = d && !d.endsWith('Z') && !d.includes('+') ? d + 'Z' : d
+    return new Date(utcStr).toLocaleString('zh-CN', {
       month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
     })
   } catch { return d }
@@ -217,5 +245,53 @@ function onClick() { emit('click') }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 创建者 & 参与者行 */
+.people-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  flex-wrap: wrap;
+}
+
+.person-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--c-muted, #9aa6b2);
+  padding: 1px 6px 1px 2px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.person-badge.creator {
+  color: #63e2b7;
+  background: rgba(99, 226, 183, 0.08);
+}
+
+.person-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.1);
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.person-badge.creator .person-avatar {
+  background: rgba(99, 226, 183, 0.2);
+}
+
+.people-sep {
+  color: rgba(255, 255, 255, 0.15);
+  font-size: 10px;
 }
 </style>

@@ -195,6 +195,7 @@ def build_project_context(
     budget_tokens: int = 0,
     return_sections: bool = False,
     tool_permissions: set = None,
+    ui_labels_override: dict = None,
 ) -> Union[str, Tuple[str, List]]:
     """
     构建项目上下文用于 AI system prompt
@@ -280,6 +281,23 @@ def build_project_context(
         )
         tool_strategy_text = ask_disabled_notice + tool_strategy_text
 
+    # ask_user 是唯一开启的工具: 移除代码工具段落, 强调 ask_user
+    _code_tool_perms = _perms - {"ask_user"}
+    if _perms and "ask_user" in _perms and not _code_tool_perms:
+        # 替换代码查看工具段落
+        tool_strategy_text = tool_strategy_text.replace(
+            "### 代码查看工具（按需使用）",
+            "### 代码查看工具（未开启）"
+        )
+        ask_only_notice = (
+            "\n\n⚠️ **当前仅开启了 ask_user 工具，代码查看工具均未开启。**\n"
+            "- 你**必须积极使用 `ask_user` 工具**向用户提问，澄清需求细节。\n"
+            "- 不要尝试调用 read_file、search_text、get_file_tree 等工具——它们不可用。\n"
+            "- 每次回复都应包含一个 `ask_user` 调用来推进需求讨论。\n"
+            "- 聚焦于：用户场景、业务规则、边界条件、优先级、技术选型。\n"
+        )
+        tool_strategy_text = tool_strategy_text + ask_only_notice
+
     # ---- 构建各段 (带跟踪) ----
     named_parts = []
 
@@ -308,8 +326,9 @@ def build_project_context(
 
     if extra_context:
         label = "项目上下文"
-        if skill and skill.ui_labels:
-            noun = skill.ui_labels.get("project_noun", "需求")
+        _uilabels = ui_labels_override or (skill.ui_labels if skill and skill.ui_labels else None) or {}
+        if _uilabels:
+            noun = _uilabels.get("project_noun", "需求")
             label = f"{noun}上下文"
         named_parts.append((label, extra_context))
 

@@ -7,11 +7,16 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import select, func, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from studio.backend.core.database import get_db
+from studio.backend.core.security import get_optional_studio_user
+from studio.backend.core.project_types import (
+    get_project_type, get_all_project_types, get_stages, get_ui_labels,
+    DEFAULT_PROJECT_TYPE,
+)
 from studio.backend.models import Project, ProjectStatus, Message, Skill
 
 logger = logging.getLogger(__name__)
@@ -20,15 +25,27 @@ router = APIRouter(prefix="/studio-api/projects", tags=["Projects"])
 
 # ==================== Helpers ====================
 
-def _build_skill_brief(skill_obj) -> Optional['SkillBrief']:
-    if not skill_obj:
+class ProjectTypeInfo(BaseModel):
+    """项目类型信息 (内嵌到项目响应)"""
+    key: str
+    name: str
+    icon: str
+    stages: list
+    ui_labels: dict
+
+
+def _build_project_type_info(project) -> Optional[ProjectTypeInfo]:
+    """从项目的 project_type 构建类型信息"""
+    type_key = getattr(project, 'project_type', None) or DEFAULT_PROJECT_TYPE
+    pt = get_project_type(type_key)
+    if not pt:
         return None
-    return SkillBrief(
-        id=skill_obj.id,
-        name=skill_obj.name,
-        icon=skill_obj.icon or "",
-        stages=skill_obj.stages or [],
-        ui_labels=skill_obj.ui_labels or {},
+    return ProjectTypeInfo(
+        key=type_key,
+        name=pt["name"],
+        icon=pt["icon"],
+        stages=pt["stages"],
+        ui_labels=pt.get("ui_labels", {}),
     )
 
 
@@ -38,8 +55,7 @@ class ProjectCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: str = Field("", max_length=5000)
     discussion_model: str = Field("gpt-4o")
-    implementation_model: str = Field("claude-sonnet-4-20250514")
-    skill_id: Optional[int] = None
+    project_type: str = Field(DEFAULT_PROJECT_TYPE)
 
 
 class ProjectUpdate(BaseModel):
@@ -47,21 +63,11 @@ class ProjectUpdate(BaseModel):
     description: Optional[str] = None
     status: Optional[ProjectStatus] = None
     plan_content: Optional[str] = None
+    review_content: Optional[str] = None
     discussion_model: Optional[str] = None
     implementation_model: Optional[str] = None
     tool_permissions: Optional[List[str]] = None
     is_archived: Optional[bool] = None
-
-
-class SkillBrief(BaseModel):
-    id: int
-    name: str
-    icon: str
-    stages: list
-    ui_labels: dict
-
-    class Config:
-        from_attributes = True
 
 
 class ProjectSummary(BaseModel):
@@ -69,9 +75,10 @@ class ProjectSummary(BaseModel):
     title: str
     description: str
     status: ProjectStatus
-    github_issue_number: Optional[int]
-    github_pr_number: Optional[int]
-    branch_name: Optional[str]
+    project_type: Optional[str] = None
+    github_issue_number: Optional[int] = None
+    github_pr_number: Optional[int] = None
+    branch_name: Optional[str] = None
     discussion_model: str
     implementation_model: str
     tool_permissions: Optional[List[str]] = None
@@ -81,8 +88,12 @@ class ProjectSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     message_count: int = 0
+    participants: List[str] = Field(default_factory=list, description="参与讨论的用户列表")
+    # 项目类型信息 (取代原来的 skill 字段)
+    type_info: Optional[ProjectTypeInfo] = None
+    # 向后兼容: 保留 skill 字段用于旧前端
     skill_id: Optional[int] = None
-    skill: Optional[SkillBrief] = None
+    skill: Optional[dict] = None
 
     class Config:
         from_attributes = True
@@ -91,51 +102,43 @@ class ProjectSummary(BaseModel):
 class ProjectDetail(ProjectSummary):
     plan_content: str
     plan_version: int
-    preview_port: Optional[int]
+    review_content: str = ""
+    review_version: int = 0
+    preview_port: Optional[int] = None
+    workspace_dir: Optional[str] = None
+    iteration_count: int = 0
 
 
 # ==================== Routes ====================
 
 @router.post("", response_model=ProjectDetail, status_code=status.HTTP_201_CREATED)
-async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)):
+async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db), user: dict = Depends(get_optional_studio_user)):
     """创建需求项目"""
-    # 验证 skill_id (如果提供)
-    skill_obj = None
-    if data.skill_id:
-        result = await db.execute(select(Skill).where(Skill.id == data.skill_id))
-        skill_obj = result.scalar_one_or_none()
-        if not skill_obj:
-            raise HTTPException(status_code=400, detail="指定的技能不存在")
-    else:
-        # 默认使用第一个启用的内置技能
-        result = await db.execute(
-            select(Skill).where(Skill.is_enabled.is_(True)).order_by(Skill.sort_order, Skill.id).limit(1)
-        )
-        skill_obj = result.scalar_one_or_none()
+    # 验证 project_type
+    pt = get_project_type(data.project_type)
+    if not pt:
+        raise HTTPException(status_code=400, detail=f"未知的项目类型: {data.project_type}")
 
     project = Project(
         title=data.title,
         description=data.description,
         discussion_model=data.discussion_model,
-        implementation_model=data.implementation_model,
+        project_type=data.project_type,
         status=ProjectStatus.draft,
-        skill_id=skill_obj.id if skill_obj else None,
+        created_by=user.get("username", "admin") if user else "admin",
     )
     db.add(project)
     await db.flush()
     await db.refresh(project)
 
-    skill_brief = None
-    if skill_obj:
-        skill_brief = SkillBrief(
-            id=skill_obj.id, name=skill_obj.name, icon=skill_obj.icon or "",
-            stages=skill_obj.stages or [], ui_labels=skill_obj.ui_labels or {},
-        )
+    type_info = _build_project_type_info(project)
 
     return ProjectDetail(
         **{c.name: getattr(project, c.name) for c in project.__table__.columns},
         message_count=0,
-        skill=skill_brief,
+        participants=[],
+        type_info=type_info,
+        skill=None,
     )
 
 
@@ -158,18 +161,44 @@ async def list_projects(
     result = await db.execute(query)
     projects = result.scalars().all()
 
+    # 批量获取所有项目的消息数量和参与者
+    project_ids = [p.id for p in projects]
+    if project_ids:
+        # 消息数量
+        msg_counts_result = await db.execute(
+            select(Message.project_id, func.count(Message.id))
+            .where(Message.project_id.in_(project_ids))
+            .group_by(Message.project_id)
+        )
+        msg_counts = dict(msg_counts_result.all())
+
+        # 参与者: 仅人类用户消息 (role=user), 排除系统名称
+        participants_result = await db.execute(
+            select(Message.project_id, Message.sender_name)
+            .where(
+                Message.project_id.in_(project_ids),
+                Message.role == "user",
+                Message.sender_name != "",
+                Message.sender_name.isnot(None),
+            )
+            .distinct()
+        )
+        participants_map: dict[int, list[str]] = {}
+        for pid, name in participants_result.all():
+            participants_map.setdefault(pid, []).append(name)
+    else:
+        msg_counts = {}
+        participants_map = {}
+
     summaries = []
     for p in projects:
-        # 获取消息数量
-        msg_count_result = await db.execute(
-            select(func.count(Message.id)).where(Message.project_id == p.id)
-        )
-        msg_count = msg_count_result.scalar() or 0
-        skill_brief = _build_skill_brief(p.skill) if p.skill else None
+        type_info = _build_project_type_info(p)
         summaries.append(ProjectSummary(
             **{c.name: getattr(p, c.name) for c in p.__table__.columns},
-            message_count=msg_count,
-            skill=skill_brief,
+            message_count=msg_counts.get(p.id, 0),
+            participants=participants_map.get(p.id, []),
+            type_info=type_info,
+            skill=None,
         ))
     return summaries
 
@@ -186,12 +215,27 @@ async def get_project(project_id: int, db: AsyncSession = Depends(get_db)):
         select(func.count(Message.id)).where(Message.project_id == project.id)
     )
     msg_count = msg_count_result.scalar() or 0
-    skill_brief = _build_skill_brief(project.skill) if project.skill else None
+
+    # 参与者
+    participants_result = await db.execute(
+        select(distinct(Message.sender_name))
+        .where(
+            Message.project_id == project.id,
+            Message.role == "user",
+            Message.sender_name != "",
+            Message.sender_name.isnot(None),
+        )
+    )
+    participants = [r[0] for r in participants_result.all()]
+
+    type_info = _build_project_type_info(project)
 
     return ProjectDetail(
         **{c.name: getattr(project, c.name) for c in project.__table__.columns},
         message_count=msg_count,
-        skill=skill_brief,
+        participants=participants,
+        type_info=type_info,
+        skill=None,
     )
 
 
@@ -209,9 +253,25 @@ async def update_project(
 
     update_data = data.model_dump(exclude_unset=True)
 
+    # 状态跳转验证: 不允许跳过阶段
+    if "status" in update_data:
+        from studio.backend.core.project_types import validate_stage_transition
+        type_key = getattr(project, 'project_type', None) or 'requirement'
+        current_status = project.status.value if hasattr(project.status, 'value') else str(project.status)
+        new_status = update_data["status"]
+        if hasattr(new_status, 'value'):
+            new_status = new_status.value
+        ok, err_msg = validate_stage_transition(type_key, current_status, str(new_status))
+        if not ok:
+            raise HTTPException(status_code=400, detail=err_msg)
+
     # 如果更新 plan_content, 自增版本号
     if "plan_content" in update_data and update_data["plan_content"] != project.plan_content:
         project.plan_version += 1
+
+    # 如果更新 review_content, 自增版本号
+    if "review_content" in update_data and update_data["review_content"] != project.review_content:
+        project.review_version += 1
 
     # 归档时间戳维护
     if "is_archived" in update_data:
@@ -232,13 +292,27 @@ async def update_project(
         select(func.count(Message.id)).where(Message.project_id == project.id)
     )
     msg_count = msg_count_result.scalar() or 0
-    # 刷新 skill relationship (skill_id 可能被更新)
-    skill_brief = _build_skill_brief(project.skill) if project.skill else None
+
+    # 参与者
+    participants_result = await db.execute(
+        select(distinct(Message.sender_name))
+        .where(
+            Message.project_id == project.id,
+            Message.role == "user",
+            Message.sender_name != "",
+            Message.sender_name.isnot(None),
+        )
+    )
+    participants = [r[0] for r in participants_result.all()]
+
+    type_info = _build_project_type_info(project)
 
     return ProjectDetail(
         **{c.name: getattr(project, c.name) for c in project.__table__.columns},
         message_count=msg_count,
-        skill=skill_brief,
+        participants=participants,
+        type_info=type_info,
+        skill=None,
     )
 
 
@@ -250,3 +324,11 @@ async def delete_project(project_id: int, db: AsyncSession = Depends(get_db)):
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
     await db.delete(project)
+
+
+# ==================== 项目类型 API ====================
+
+@router.get("/types/list")
+async def list_project_types():
+    """获取所有项目类型配置"""
+    return get_all_project_types()
