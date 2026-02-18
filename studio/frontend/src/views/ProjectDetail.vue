@@ -63,7 +63,7 @@
         <div class="discuss-layout">
           <!-- 左: 聊天区 -->
           <div class="discuss-chat">
-            <ChatPanel :project="project" :readonly="isStageReadonly('discussing')" @plan-finalized="onPlanFinalized" />
+            <ChatPanel :key="'discuss-' + project.id" :project="project" :readonly="isStageReadonly('discussing')" @plan-finalized="onPlanFinalized" />
           </div>
           <!-- 右: 设计稿面板 -->
           <div v-if="showPlanPanel" class="discuss-plan">
@@ -113,7 +113,7 @@
           </div>
           <div class="discuss-layout">
             <div class="discuss-chat">
-              <ChatPanel :project="project" @plan-finalized="onReviewFinalized" />
+              <ChatPanel :key="'review-' + project.id" :project="project" @plan-finalized="onReviewFinalized" />
             </div>
             <div v-if="showReviewPanel" class="discuss-plan">
               <div class="plan-panel-header">

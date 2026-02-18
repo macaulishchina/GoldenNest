@@ -1172,8 +1172,9 @@ function handleKeydown(e: KeyboardEvent) {
 // ==================== Lifecycle ====================
 
 // 当项目 ID 变化时重新加载消息 (修复新建项目后显示旧聊天上下文)
+// immediate: true 确保首次挂载时也触发，防止复用组件时使用旧消息
 watch(() => props.project.id, async (newId, oldId) => {
-  if (newId === oldId) return
+  if (newId === oldId && oldId !== undefined) return
   // 重置状态
   messages.value = []
   streaming.value = false
@@ -1197,20 +1198,10 @@ watch(() => props.project.id, async (newId, oldId) => {
     ? props.project.tool_permissions
     : [...ALL_DEFAULT_PERMS]
   refreshContextInfo()
-})
+}, { immediate: true })
 
 onMounted(async () => {
-  try {
-    const { data } = await discussionApi.getMessages(props.project.id)
-    messages.value = data
-    scrollToTop()
-  } catch {}
-
-  try {
-    const { data } = await discussionApi.getAiMuteStatus(props.project.id)
-    aiMuted.value = data.ai_muted
-  } catch {}
-
+  // watch immediate: true 已在挂载时加载消息，这里主要是初始化 event bus 和模型列表
   subscribeBus()
   loadModels().then(() => refreshContextInfo())
 
