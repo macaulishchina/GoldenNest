@@ -60,6 +60,11 @@ const route = useRoute()
 const message = useMessage()
 const userStore = useUserStore()
 
+// 清除游客模式（如果有）
+if (userStore.isGuest) {
+  userStore.exitGuestMode()
+}
+
 const loading = ref(false)
 const activeTab = ref('login')
 const loginFormRef = ref<FormInst | null>(null)

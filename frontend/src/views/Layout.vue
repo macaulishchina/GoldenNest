@@ -40,13 +40,17 @@
         <div class="header-content">
           <div class="greeting">
             <span class="wave">👋</span>
-            <span>{{ greeting }}，{{ userStore.user?.nickname || '用户' }}</span>
+            <span v-if="userStore.isGuest">欢迎，游客</span>
+            <span v-else>{{ greeting }}，{{ userStore.user?.nickname || '用户' }}</span>
           </div>
           <div class="header-actions">
-            <n-tag v-if="holidayGreeting" type="warning" round class="holiday-tag">
+            <n-tag v-if="userStore.isGuest" type="info" round>
+              🎭 游客模式
+            </n-tag>
+            <n-tag v-else-if="holidayGreeting" type="warning" round class="holiday-tag">
               {{ holidayGreeting }}
             </n-tag>
-            <n-tag v-if="family" type="success" round>
+            <n-tag v-else-if="family" type="success" round>
               🏡 {{ family.name }}
             </n-tag>
             <!-- 主题切换按钮 -->
@@ -60,7 +64,10 @@
         <div class="mobile-header-content">
           <span class="mobile-logo">🏠 小金库</span>
           <div class="mobile-header-right">
-            <n-tag v-if="holidayGreeting" type="warning" size="small" round class="holiday-tag">
+            <n-tag v-if="userStore.isGuest" type="info" size="small" round>
+              游客
+            </n-tag>
+            <n-tag v-else-if="holidayGreeting" type="warning" size="small" round class="holiday-tag">
               {{ holidayGreeting }}
             </n-tag>
             <n-tag v-else-if="family" type="success" size="small" round>
@@ -312,7 +319,7 @@
                   style="margin-left: auto"
                 />
               </div>
-              <div class="drawer-menu-item" @click="navigateAndClose('/family')">
+              <div v-if="!userStore.isGuest" class="drawer-menu-item" @click="navigateAndClose('/family')">
                 <n-icon :size="20"><PeopleOutline /></n-icon>
                 <span>家庭管理</span>
               </div>
@@ -368,26 +375,38 @@
             </div>
           </div>
           
-          <!-- ⚙️ 系统设置 -->
+          <!-- ⚙️ 系统设置或登录注册 -->
           <div class="drawer-section">
-            <div class="drawer-section-title">⚙️ 系统设置</div>
+            <div class="drawer-section-title">{{ userStore.isGuest ? '🔐 账号' : '⚙️ 系统设置' }}</div>
             <div class="drawer-menu-items">
-              <div v-if="userStore.isAdmin" class="drawer-menu-item" @click="navigateAndClose('/system-settings')">
-                <n-icon :size="20"><SettingsOutline /></n-icon>
-                <span>AI 服务配置</span>
-              </div>
-              <div class="drawer-menu-item" @click="navigateAndClose('/site-settings')">
-                <n-icon :size="20"><SettingsOutline /></n-icon>
-                <span>网站配置</span>
-              </div>
-              <div class="drawer-menu-item" @click="navigateAndClose('/settings')">
-                <n-icon :size="20"><PersonOutline /></n-icon>
-                <span>个人设置</span>
-              </div>
-              <div class="drawer-menu-item logout" @click="handleLogout">
-                <n-icon :size="20"><LogOutOutline /></n-icon>
-                <span>退出登录</span>
-              </div>
+              <template v-if="userStore.isGuest">
+                <div class="drawer-menu-item" @click="navigateAndClose('/register')">
+                  <n-icon :size="20"><AddOutline /></n-icon>
+                  <span>立即注册</span>
+                </div>
+                <div class="drawer-menu-item" @click="navigateAndClose('/login')">
+                  <n-icon :size="20"><LogOutOutline /></n-icon>
+                  <span>去登录</span>
+                </div>
+              </template>
+              <template v-else>
+                <div v-if="userStore.isAdmin" class="drawer-menu-item" @click="navigateAndClose('/system-settings')">
+                  <n-icon :size="20"><SettingsOutline /></n-icon>
+                  <span>AI 服务配置</span>
+                </div>
+                <div class="drawer-menu-item" @click="navigateAndClose('/site-settings')">
+                  <n-icon :size="20"><SettingsOutline /></n-icon>
+                  <span>网站配置</span>
+                </div>
+                <div class="drawer-menu-item" @click="navigateAndClose('/settings')">
+                  <n-icon :size="20"><PersonOutline /></n-icon>
+                  <span>个人设置</span>
+                </div>
+                <div class="drawer-menu-item logout" @click="handleLogout">
+                  <n-icon :size="20"><LogOutOutline /></n-icon>
+                  <span>退出登录</span>
+                </div>
+              </template>
             </div>
           </div>
         </div>
@@ -396,6 +415,9 @@
 
     <!-- Floating AI Assistant -->
     <FloatingAIAssistant />
+    
+    <!-- Guest Login Prompt Modal -->
+    <GuestLoginPrompt v-model:show="showGuestLoginPrompt" />
   </n-layout>
 </template>
 
@@ -415,6 +437,7 @@ import type { MenuOption } from 'naive-ui'
 import { markRaw } from 'vue'
 import ThemeSelector from '@/components/ThemeSelector.vue'
 import FloatingAIAssistant from '@/components/FloatingAIAssistant.vue'
+import GuestLoginPrompt from '@/components/GuestLoginPrompt.vue'
 import { 
   HomeOutline, 
   WalletOutline, 
@@ -459,6 +482,7 @@ const collapsed = ref(false)
 const family = ref<any>(null)
 const showDrawer = ref(false)
 const showShortcutModal = ref(false)
+const showGuestLoginPrompt = ref(false)
 const drawerAvatarInputRef = ref<HTMLInputElement | null>(null)
 const avatarUploading = ref(false)
 const selfAvatarError = ref(false)
@@ -622,6 +646,23 @@ function handleTabClick(key: string) {
 
 // 抽屉内导航并关闭
 function navigateAndClose(path: string) {
+  // 游客模式：特殊处理
+  if (userStore.isGuest) {
+    if (path === '/' || path === '/register' || path === '/login') {
+      showDrawer.value = false
+      if (path === '/register' || path === '/login') {
+        userStore.exitGuestMode()
+      }
+      router.push(path)
+    } else {
+      // 其他页面显示登录提示
+      showDrawer.value = false
+      showGuestLoginPrompt.value = true
+    }
+    return
+  }
+  
+  // 正常用户模式
   router.push(path)
   showDrawer.value = false
 }
@@ -723,7 +764,35 @@ function renderGovernanceGroupLabel() {
 }
 
 // 菜单选项 - 方案B三分类: 财务管理、家庭治理、生活协作
-const menuOptions = computed<MenuOption[]>(() => [
+const menuOptions = computed<MenuOption[]>(() => {
+  const governanceChildren = [
+    {
+      label: '股权结构',
+      key: 'equity',
+      icon: renderIcon(PieChartOutline)
+    },
+    {
+      label: createBadgeLabel('股权赠与', () => giftStore.pendingCount),
+      key: 'gift',
+      icon: renderIcon(GiftOutline)
+    },
+    {
+      label: createBadgeLabel('股东大会', () => voteStore.pendingCount),
+      key: 'vote',
+      icon: renderIcon(CheckboxOutline)
+    }
+  ]
+  
+  // 游客模式下不显示"家庭管理"菜单项
+  if (!userStore.isGuest) {
+    governanceChildren.push({
+      label: '家庭管理',
+      key: 'family',
+      icon: renderIcon(PeopleOutline)
+    })
+  }
+  
+  return [
   {
     label: '仪表盘',
     key: 'dashboard',
@@ -779,28 +848,7 @@ const menuOptions = computed<MenuOption[]>(() => [
     label: renderGovernanceGroupLabel,
     key: 'governance-group',
     icon: renderIcon(PieChartOutline, 'governance-group'),
-    children: [
-      {
-        label: '股权结构',
-        key: 'equity',
-        icon: renderIcon(PieChartOutline)
-      },
-      {
-        label: createBadgeLabel('股权赠与', () => giftStore.pendingCount),
-        key: 'gift',
-        icon: renderIcon(GiftOutline)
-      },
-      {
-        label: createBadgeLabel('股东大会', () => voteStore.pendingCount),
-        key: 'vote',
-        icon: renderIcon(CheckboxOutline)
-      },
-      {
-        label: '家庭管理',
-        key: 'family',
-        icon: renderIcon(PeopleOutline)
-      }
-    ]
+    children: governanceChildren
   },
   {
     label: '生活协作',
@@ -848,36 +896,72 @@ const menuOptions = computed<MenuOption[]>(() => [
     type: 'divider',
     key: 'd2'
   },
-  {
-    label: '系统设置',
-    key: 'settings-group',
-    icon: renderIcon(SettingsOutline),
-    children: [
-      ...(userStore.isAdmin ? [{
-        label: 'AI 服务配置',
-        key: 'system-settings',
-        icon: renderIcon(SettingsOutline)
-      }] : []),
-      {
-        label: '网站配置',
-        key: 'site-settings',
-        icon: renderIcon(SettingsOutline)
-      },
-      {
-        label: '个人设置',
-        key: 'settings',
-        icon: renderIcon(PersonOutline)
-      },
-      {
-        label: '退出登录',
-        key: 'logout',
-        icon: renderIcon(LogOutOutline)
-      }
-    ]
-  }
-])
+  // 游客模式显示登录/注册按钮，非游客显示系统设置
+  ...(userStore.isGuest ? [
+    {
+      label: '立即注册',
+      key: 'register',
+      icon: renderIcon(AddOutline)
+    },
+    {
+      label: '去登录',
+      key: 'login',
+      icon: renderIcon(LogOutOutline)
+    }
+  ] : [
+    {
+      label: '系统设置',
+      key: 'settings-group',
+      icon: renderIcon(SettingsOutline),
+      children: [
+        ...(userStore.isAdmin ? [{
+          label: 'AI 服务配置',
+          key: 'system-settings',
+          icon: renderIcon(SettingsOutline)
+        }] : []),
+        {
+          label: '网站配置',
+          key: 'site-settings',
+          icon: renderIcon(SettingsOutline)
+        },
+        {
+          label: '个人设置',
+          key: 'settings',
+          icon: renderIcon(PersonOutline)
+        },
+        {
+          label: '退出登录',
+          key: 'logout',
+          icon: renderIcon(LogOutOutline)
+        }
+      ]
+    }
+  ])
+]
+})
 
 function handleMenuClick(key: string) {
+  // 游客模式：特殊处理
+  if (userStore.isGuest) {
+    if (key === 'dashboard') {
+      router.push('/')
+      return
+    } else if (key === 'register') {
+      userStore.exitGuestMode()
+      router.push('/register')
+      return
+    } else if (key === 'login') {
+      userStore.exitGuestMode()
+      router.push('/login')
+      return
+    } else {
+      // 其他菜单项显示登录提示
+      showGuestLoginPrompt.value = true
+      return
+    }
+  }
+  
+  // 正常用户模式
   if (key === 'dashboard') {
     router.push('/')
   } else if (key === 'logout') {
