@@ -2,6 +2,14 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { projectApi } from '@/api'
 
+export interface SkillBrief {
+  id: number
+  name: string
+  icon: string
+  stages: { key: string; label: string; status: string }[]
+  ui_labels: Record<string, string>
+}
+
 export interface Project {
   id: number
   title: string
@@ -16,10 +24,14 @@ export interface Project {
   discussion_model: string
   implementation_model: string
   tool_permissions: string[] | null
+  is_archived: boolean
+  archived_at: string | null
   created_by: string
   created_at: string
   updated_at: string
   message_count: number
+  skill_id: number | null
+  skill: SkillBrief | null
 }
 
 export const useProjectStore = defineStore('project', () => {
@@ -27,10 +39,10 @@ export const useProjectStore = defineStore('project', () => {
   const currentProject = ref<Project | null>(null)
   const loading = ref(false)
 
-  async function fetchProjects() {
+  async function fetchProjects(params?: any) {
     loading.value = true
     try {
-      const { data } = await projectApi.list()
+      const { data } = await projectApi.list(params)
       projects.value = data
     } finally {
       loading.value = false

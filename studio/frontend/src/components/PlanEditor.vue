@@ -3,7 +3,7 @@
     <!-- 工具栏 -->
     <n-space justify="space-between" align="center" style="margin-bottom: 8px; flex-shrink: 0;">
       <n-space align="center" :size="8">
-        <n-text strong>设计稿 Plan</n-text>
+        <n-text strong>{{ props.outputNoun || '设计稿' }}</n-text>
         <n-tag v-if="project.plan_version" size="small" type="info">v{{ project.plan_version }}</n-tag>
         <!-- 版本历史 -->
         <n-select
@@ -41,7 +41,7 @@
     <!-- 内容区 -->
     <div style="flex: 1; overflow-y: auto;">
       <n-card v-if="!displayContent && !editing" style="background: #16213e">
-        <n-empty description="还没有设计稿，请在讨论区完成讨论后点击「敲定方案」" />
+        <n-empty :description="`还没有${props.outputNoun || '设计稿'}，请在讨论区完成讨论后点击「${props.finalizeAction || '敲定方案'}」`" />
       </n-card>
 
       <!-- 编辑模式: 左右分栏 (编辑 + 实时预览) -->
@@ -76,7 +76,11 @@ import { projectApi, discussionApi } from '@/api'
 import type { Project } from '@/stores/project'
 import { marked } from 'marked'
 
-const props = defineProps<{ project: Project }>()
+const props = defineProps<{
+  project: Project
+  outputNoun?: string
+  finalizeAction?: string
+}>()
 const emit = defineEmits(['updated'])
 const message = useMessage()
 

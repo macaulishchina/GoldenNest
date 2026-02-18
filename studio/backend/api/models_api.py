@@ -52,6 +52,9 @@ class ModelInfo(BaseModel):
     pricing_note: str = Field("", description="定价/弃用说明")
     task: str = Field("", description="模型任务类型 (chat-completion, etc)")
     is_custom: bool = Field(False, description="是否来自 DB 补充模型 (用于全局开关过滤)")
+    model_family: str = Field("", description="二级分类/厂商族 (如 OpenAI, DeepSeek, MiniMax 等)")
+    provider_slug: str = Field("", description="提供商标识 (github/copilot/deepseek 等)")
+    provider_icon: str = Field("", description="提供商图标")
     # 原始数据保留
     raw_capabilities: Dict[str, Any] = Field(default_factory=dict)
 
@@ -128,12 +131,14 @@ _FAMILY_DISPLAY = {
     "meta": "Meta",
     "mistralai": "Mistral AI",
     "mistral-ai": "Mistral AI",
+    "mistral": "Mistral AI",
     "deepseek": "DeepSeek",
     "google": "Google",
     "microsoft": "Microsoft",
     "cohere": "Cohere",
     "ai21 labs": "AI21 Labs",
     "xai": "xAI",
+    "unknown": "Other",
 }
 
 # tags → 能力映射
@@ -198,10 +203,113 @@ _COPILOT_PREMIUM_COST: Dict[str, Dict[str, Any]] = {
     "grok-code-fast-1": {"paid": 0.25, "free": 1},
 }
 
+# 硬编码默认值副本 (用于 DB diff 比较)
+_COPILOT_PREMIUM_COST_DEFAULTS: Dict[str, Dict[str, Any]] = dict(_COPILOT_PREMIUM_COST)
+
 # 已知即将弃用 / 已有更新版本的模型
 _DEPRECATED_MODELS: Dict[str, str] = {
     "claude-3.5-sonnet": "建议升级到 Claude Sonnet 4",
 }
+
+# 在线 token 上限来源 (社区维护，优先用于校准预设值)
+_CONTEXT_LIMITS_SOURCE_URL = "https://raw.githubusercontent.com/taylorwilsdon/llm-context-limits/main/README.md"
+
+
+async def load_pricing_overrides_from_db():
+    """启动时从 DB 加载定价覆盖; 若有记录则完整替换运行时定价表"""
+    global _COPILOT_PREMIUM_COST
+    from sqlalchemy import select
+    from studio.backend.core.database import async_session_maker
+    try:
+        async with async_session_maker() as db:
+            result = await db.execute(
+                select(ModelCapabilityOverride).where(
+                    ModelCapabilityOverride.premium_paid.isnot(None)
+                )
+            )
+            rows = result.scalars().all()
+            if not rows:
+                return
+            # DB 有定价数据 → 合并到硬编码上 (只更新/新增, 不删除)
+            db_pricing: Dict[str, Dict[str, Any]] = {}
+            for r in rows:
+                free_val = r.premium_free if r.premium_free != -1 else None
+                db_pricing[r.model_name] = {
+                    "paid": r.premium_paid,
+                    "free": free_val,
+                }
+            _COPILOT_PREMIUM_COST.update(db_pricing)
+            logger.info(f"✅ 从 DB 加载了 {len(rows)} 条定价覆盖, 运行时定价表共 {len(_COPILOT_PREMIUM_COST)} 条")
+    except Exception as e:
+        logger.warning(f"加载定价覆盖失败: {e}")
+
+
+def _normalize_model_key(name: str) -> str:
+    key = (name or "").strip().lower()
+    key = key.replace("**", "")
+    key = key.replace("`", "")
+    key = re.sub(r"\s+", "-", key)
+    key = key.replace(":", "-")
+    key = key.replace("_", "-")
+    return key
+
+
+def _parse_token_value(raw: str) -> int:
+    if not raw:
+        return 0
+    s = raw.strip().lower()
+    if "unknown" in s or "unclear" in s or s == "-":
+        return 0
+    s = s.replace("tokens", "").replace("token", "").strip()
+    m = re.search(r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*(k|m)?", s)
+    if not m:
+        return 0
+    value = float(m.group(1).replace(",", ""))
+    unit = m.group(2)
+    if unit == "k":
+        value *= 1000
+    elif unit == "m":
+        value *= 1000000
+    return int(value)
+
+
+def _parse_online_context_limits(markdown_text: str) -> Dict[str, tuple[int, int]]:
+    """从 llm-context-limits README 的 Markdown 表格解析 token 上限"""
+    limits: Dict[str, tuple[int, int]] = {}
+    lines = markdown_text.splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        if set(line.replace("|", "").strip()) <= {":", "-", " "}:
+            continue
+        parts = [p.strip() for p in line.strip("|").split("|")]
+        if len(parts) < 3:
+            continue
+
+        model_name = parts[0]
+        if model_name.lower() in {"model", "model name", "endpoint"}:
+            continue
+
+        ctx = _parse_token_value(parts[1])
+        out = _parse_token_value(parts[2])
+        if ctx <= 0 and out <= 0:
+            continue
+
+        key = _normalize_model_key(model_name)
+        if ctx <= 0:
+            ctx = 128000
+        if out <= 0:
+            out = 4096
+        limits[key] = (ctx, out)
+    return limits
+
+
+async def _fetch_online_context_limits() -> Dict[str, tuple[int, int]]:
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.get(_CONTEXT_LIMITS_SOURCE_URL)
+        resp.raise_for_status()
+        return _parse_online_context_limits(resp.text)
 
 
 def _classify_model(model_name: str, task: str, supports_tools: bool) -> str:
@@ -271,7 +379,11 @@ def _parse_model(raw: Dict[str, Any], api_backend: str = "models") -> ModelInfo:
             break
 
     # publisher 显示名
-    publisher = _FAMILY_DISPLAY.get(model_family, raw.get("publisher", model_family))
+    publisher = _FAMILY_DISPLAY.get(model_family, None)
+    if not publisher:
+        # 尝试从模型名猜测厂商再查表
+        guessed = _guess_family(model_name)
+        publisher = _FAMILY_DISPLAY.get(guessed, raw.get("publisher", model_family or model_name))
 
     # 分类
     category = _classify_model(model_name, task, supports_tools)
@@ -320,6 +432,10 @@ def _parse_model(raw: Dict[str, Any], api_backend: str = "models") -> ModelInfo:
     capability_cache.learn_from_api(model_id, raw)
     cap_input, cap_output = capability_cache.get_context_window(model_id)
 
+    # provider 信息
+    provider_slug = "copilot" if api_backend == "copilot" else "github"
+    provider_icon = "☁️" if api_backend == "copilot" else "🐙"
+
     return ModelInfo(
         id=model_id,             # copilot:gpt-4o 或 gpt-4o
         name=display_name,       # 显示名
@@ -341,6 +457,9 @@ def _parse_model(raw: Dict[str, Any], api_backend: str = "models") -> ModelInfo:
         is_deprecated=model_is_deprecated,
         pricing_note=pricing_note,
         task=task,
+        model_family=publisher,
+        provider_slug=provider_slug,
+        provider_icon=provider_icon,
         raw_capabilities={"tags": list(tags)},
     )
 
@@ -577,6 +696,9 @@ async def _fetch_github_models() -> List[ModelInfo]:
     # 应用 DB 能力覆盖 (supports_vision, supports_tools, is_reasoning)
     await _apply_db_capability_overrides(models)
 
+    # 加载第三方提供商 (openai_compatible) 的模型
+    await _append_third_party_models(models, seen_names)
+
     # 按 publisher 排序，常用模型靠前
     publisher_order = {"OpenAI": 0, "Anthropic": 1, "Google": 2, "DeepSeek": 3, "Mistral AI": 4, "Meta": 5, "xAI": 6, "AI21 Labs": 7}
     models.sort(key=lambda m: (publisher_order.get(m.publisher, 99), m.api_backend, m.name))
@@ -629,6 +751,346 @@ async def _apply_db_capability_overrides(models: List[ModelInfo]):
         logger.warning(f"应用 DB 能力覆盖失败: {e}")
 
 
+async def _append_third_party_models(models: List[ModelInfo], seen_names: set):
+    """从已启用的第三方 (openai_compatible) 提供商加载模型 — 优先 API 动态发现, 回退到预设"""
+    try:
+        from studio.backend.api.provider_api import get_enabled_providers
+        providers = await get_enabled_providers()
+    except Exception as e:
+        logger.warning(f"加载第三方提供商失败: {e}")
+        return
+
+    for prov in providers:
+        if prov.provider_type != "openai_compatible":
+            continue
+        if not prov.api_key:
+            continue  # 无 API Key 的提供商跳过
+
+        # 优先尝试 API 动态发现模型
+        discovered = await _discover_provider_models(prov)
+        model_list = discovered if discovered else (prov.default_models or [])
+        source = "API发现" if discovered else "预设"
+
+        count = 0
+        for dm in model_list:
+            model_name = dm.get("name", "")
+            if not model_name:
+                continue
+            full_id = f"{prov.slug}:{model_name}"
+            if full_id.lower() in seen_names:
+                continue
+
+            friendly = dm.get("friendly_name") or dm.get("name", model_name)
+            family = dm.get("model_family") or prov.name
+            tags = dm.get("tags", [])
+            summary = dm.get("summary", "")
+
+            models.append(ModelInfo(
+                id=full_id,
+                name=friendly,
+                publisher=prov.name,
+                registry=prov.slug,
+                description=summary,
+                summary=summary,
+                category="both",
+                max_input_tokens=dm.get("max_input_tokens", 0),
+                max_output_tokens=dm.get("max_output_tokens", 4096),
+                supports_vision="multimodal" in tags or "vision" in tags,
+                supports_tools="agents" in tags or "tools" in tags,
+                supports_json_output="json" in tags,
+                is_reasoning="reasoning" in tags,
+                api_backend=prov.slug,
+                pricing_tier="paid",
+                premium_multiplier=0,
+                free_multiplier=None,
+                task="chat-completion",
+                is_custom=False,
+                model_family=family,
+                provider_slug=prov.slug,
+                provider_icon=prov.icon,
+            ))
+            seen_names.add(full_id.lower())
+            count += 1
+
+        logger.info(f"第三方提供商 {prov.name} ({prov.slug}): 添加 {count} 个模型 ({source})")
+
+
+async def _discover_provider_models(prov) -> list:
+    """尝试从提供商的 /models 端点动态发现可用模型"""
+    base_url = prov.base_url.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            resp = await client.get(
+                f"{base_url}/models",
+                headers={"Authorization": f"Bearer {prov.api_key}", "Accept": "application/json"},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_list = data.get("data", data) if isinstance(data, dict) else data
+                if not isinstance(raw_list, list):
+                    return []
+                _SKIP = {"embed", "tts", "whisper", "audio", "image", "dall", "moderation",
+                         "rerank", "ocr", "asr", "s2s", "mt-", "livetranslate",
+                         "gui-", "tongyi-xiaomi", "z-image", "deep-search"}
+                models = []
+                for m in raw_list:
+                    mid = m.get("id") or m.get("name", "")
+                    if not mid:
+                        continue
+                    mid_lower = mid.lower()
+                    if any(pat in mid_lower for pat in _SKIP):
+                        continue
+                    family, clean_name = _parse_model_family(mid, prov.name)
+                    token_info = _guess_token_limits(mid)
+                    models.append({
+                        "name": mid,
+                        "friendly_name": clean_name,
+                        "model_family": family,
+                        "tags": _guess_tags_from_name(mid),
+                        "summary": "",
+                        "max_input_tokens": token_info[0],
+                        "max_output_tokens": token_info[1],
+                    })
+                logger.info(f"从 {prov.slug} API 动态发现 {len(models)} 个模型")
+                return models
+    except Exception as e:
+        logger.debug(f"从 {prov.slug} API 发现模型失败 (回退到预设): {e}")
+    return []
+
+
+def _parse_model_family(model_id: str, provider_name: str) -> tuple:
+    """
+    从模型 ID 解析二级分类 (model_family) 和干净的显示名。
+    如 'MiniMax/MiniMax-M2.1' → ('MiniMax', 'MiniMax-M2.1')
+    如 'siliconflow/deepseek-v3.2' → ('SiliconFlow', 'deepseek-v3.2')
+    如 'deepseek-r1' → ('DeepSeek', 'deepseek-r1')
+    如 'qwen3-max' → (provider_name, 'qwen3-max')  # 属于提供商自己
+    """
+    # 1. 带斜杠的前缀: 'Vendor/model-name'
+    if "/" in model_id:
+        prefix, rest = model_id.split("/", 1)
+        family = _KNOWN_FAMILIES.get(prefix.lower(), prefix)
+        return (family, rest)
+
+    # 2. 根据模型名称前缀猜测厂商
+    n = model_id.lower()
+    for key, display in _KNOWN_FAMILIES.items():
+        if n.startswith(key):
+            return (display, model_id)
+
+    # 3. 默认归属提供商自身
+    return (provider_name, model_id)
+
+
+# 已知模型族 → 显示名 (小写 key)
+_KNOWN_FAMILIES: Dict[str, str] = {
+    "deepseek": "DeepSeek",
+    "glm": "Zhipu GLM",
+    "kimi": "Kimi",
+    "minimax": "MiniMax",
+    "siliconflow": "SiliconFlow",
+    "claude": "Anthropic",
+    "gpt": "OpenAI",
+    "o1": "OpenAI",
+    "o3": "OpenAI",
+    "o4": "OpenAI",
+    "gemini": "Google",
+    "llama": "Meta",
+    "mistral": "Mistral AI",
+    "codestral": "Mistral AI",
+    "qwq": "Qwen",
+    "qvq": "Qwen",
+    "qwen": "Qwen",
+    "codeqwen": "Qwen",
+}
+
+
+def _guess_token_limits(model_id: str) -> tuple:
+    """
+    根据模型名称猜测 (max_input_tokens, max_output_tokens)。
+    返回 (0, 4096) 表示未知。
+    """
+    n = model_id.lower()
+    # 长上下文模型
+    if "1m" in n:
+        return (1048576, 8192)
+    # DeepSeek
+    if "deepseek-v3" in n or "deepseek-r1" in n:
+        return (65536, 8192)
+    if "deepseek" in n:
+        return (32768, 4096)
+    # GLM
+    if "glm-4" in n:
+        return (128000, 4096)
+    # Kimi
+    if "kimi" in n:
+        return (131072, 8192)
+    # MiniMax
+    if "minimax" in n:
+        return (1048576, 16384)
+    # Qwen 3.5
+    if "qwen3.5" in n:
+        return (131072, 16384)
+    # Qwen 3 max/plus
+    if "qwen3-max" in n or "qwen3-coder" in n:
+        return (131072, 16384)
+    # Qwen 3 base/open
+    if "qwen3" in n:
+        return (32768, 8192)
+    # QwQ / QvQ reasoning
+    if "qwq" in n or "qvq" in n:
+        return (131072, 16384)
+    # Qwen 2.5 variants
+    if "qwen2.5" in n:
+        return (131072, 8192)
+    # Qwen general (plus/max/turbo)
+    if "qwen-max" in n or "qwen-plus" in n:
+        return (131072, 8192)
+    if "qwen-turbo" in n or "qwen-flash" in n:
+        return (131072, 8192)
+    # Older qwen
+    if "qwen" in n:
+        return (32768, 4096)
+    return (0, 4096)
+
+
+# 已知支持 function calling 的模型前缀 (小写)
+_KNOWN_TOOL_MODELS = {
+    # Qwen 系列 (通义千问) — qwen3 及以上全系支持 tools
+    "qwen3", "qwen2.5", "qwen2", "qwen-max", "qwen-plus", "qwen-turbo", "qwen-long",
+    "qwq",  # QwQ 推理模型也支持 tools
+    # DeepSeek
+    "deepseek-v3", "deepseek-v2", "deepseek-chat", "deepseek-coder",
+    # GLM (智谱)
+    "glm-4", "glm-3",
+    # Kimi (Moonshot)
+    "kimi", "moonshot",
+    # MiniMax
+    "minimax",
+    # Mistral
+    "mistral-large", "mistral-medium", "mistral-small", "codestral",
+    # Meta Llama 3+
+    "llama-3", "llama-4",
+    # Cohere
+    "command-r", "command-a",
+    # xAI
+    "grok",
+}
+
+# 已知支持视觉的模型前缀 (非名称含 vl/vision 的)
+_KNOWN_VISION_MODELS = {
+    "qwen2.5-vl", "qwen2-vl", "qvq",
+    "glm-4v",
+    "kimi-vision",
+}
+
+
+def _guess_tags_from_name(model_name: str) -> list:
+    """根据模型名称猜测能力 tags"""
+    n = model_name.lower()
+    tags = []
+    # 多模态 (视觉)
+    if any(k in n for k in ("vl", "vision", "multimodal", "omni")):
+        tags.append("multimodal")
+    elif any(n.startswith(p) for p in _KNOWN_VISION_MODELS):
+        tags.append("multimodal")
+    # 推理
+    if any(k in n for k in ("think", "r1", "qwq", "qvq")):
+        tags.append("reasoning")
+    # 工具调用: 名称关键词 + 已知模型族
+    if any(k in n for k in ("tool", "agent", "function")):
+        tags.append("agents")
+    elif any(n.startswith(p) or n == p for p in _KNOWN_TOOL_MODELS):
+        tags.append("agents")
+    # 编码增强
+    if any(k in n for k in ("coder", "codestral", "codeqwen")):
+        tags.append("coding")
+    return tags
+
+
+# ==================== 模型能力知识库 (内置校准数据) ====================
+# 格式: {model_name_prefix: {supports_vision, supports_tools, is_reasoning}}
+# 用于校准端点批量写入 DB, 前缀匹配 (gpt-4o 匹配 gpt-4o-2024-08-06)
+# None 表示不覆盖该字段 (保留原值)
+_STATIC_MODEL_CAPABILITIES: Dict[str, Dict[str, Any]] = {
+    # ===== OpenAI =====
+    "gpt-4o": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "gpt-4o-mini": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "gpt-4": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "gpt-4-turbo": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "gpt-4.1": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "gpt-4.1-mini": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "gpt-4.1-nano": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "gpt-5": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "gpt-5-mini": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "gpt-5-codex": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "gpt-5.1": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "gpt-5.1-codex": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "gpt-5.2": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "o1": {"supports_vision": True, "supports_tools": True, "is_reasoning": True},
+    "o1-mini": {"supports_vision": False, "supports_tools": True, "is_reasoning": True},
+    "o3": {"supports_vision": True, "supports_tools": True, "is_reasoning": True},
+    "o3-mini": {"supports_vision": False, "supports_tools": True, "is_reasoning": True},
+    "o4-mini": {"supports_vision": True, "supports_tools": True, "is_reasoning": True},
+    # ===== Anthropic =====
+    "claude-3.5-sonnet": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "claude-3.7-sonnet": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "claude-sonnet-4": {"supports_vision": True, "supports_tools": True, "is_reasoning": True},
+    "claude-sonnet-4.5": {"supports_vision": True, "supports_tools": True, "is_reasoning": True},
+    "claude-opus-4": {"supports_vision": True, "supports_tools": True, "is_reasoning": True},
+    "claude-opus-4.5": {"supports_vision": True, "supports_tools": True, "is_reasoning": True},
+    "claude-opus-4.6": {"supports_vision": True, "supports_tools": True, "is_reasoning": True},
+    "claude-haiku-4.5": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    # ===== Google =====
+    "gemini-2.0-flash": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "gemini-2.5-pro": {"supports_vision": True, "supports_tools": True, "is_reasoning": True},
+    "gemini-3-flash": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "gemini-3-pro": {"supports_vision": True, "supports_tools": True, "is_reasoning": True},
+    # ===== xAI =====
+    "grok-3": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "grok-code-fast": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    # ===== DeepSeek =====
+    "deepseek-r1": {"supports_vision": False, "supports_tools": True, "is_reasoning": True},
+    "deepseek-v3": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "deepseek-chat": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "deepseek-coder": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    # ===== Qwen (通义千问) =====
+    "qwen3": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "qwen3-max": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "qwen3-plus": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "qwen3-coder": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "qwen3.5": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "qwen2.5": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "qwen2.5-vl": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "qwen-max": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "qwen-plus": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "qwen-turbo": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "qwen-long": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "qwq": {"supports_vision": False, "supports_tools": True, "is_reasoning": True},
+    "qvq": {"supports_vision": True, "supports_tools": False, "is_reasoning": True},
+    # ===== GLM (智谱) =====
+    "glm-4": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "glm-4v": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    # ===== Kimi (Moonshot) =====
+    "kimi": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "moonshot": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    # ===== MiniMax =====
+    "minimax": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    # ===== Mistral =====
+    "mistral-large": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "codestral": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    # ===== Meta =====
+    "llama-3": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "llama-4-scout": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    "llama-4-maverick": {"supports_vision": True, "supports_tools": True, "is_reasoning": False},
+    # ===== Microsoft =====
+    "phi-4": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    # ===== Cohere =====
+    "command-r": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+    "command-a": {"supports_vision": False, "supports_tools": True, "is_reasoning": False},
+}
+
+
 # ==================== Routes ====================
 
 @router.get("", response_model=List[ModelInfo])
@@ -652,6 +1114,10 @@ async def list_models(
         models = await _model_cache.get_models(force_refresh=refresh)
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"获取模型列表失败: {str(e)}")
+
+    # 始终重新应用 DB 能力覆盖, 确保用户修改立即生效
+    # (缓存中的模型可能带有过期的覆盖值)
+    await _apply_db_capability_overrides(models)
 
     # 筛选
     result = models
@@ -688,6 +1154,133 @@ async def refresh_models():
         return {"success": True, "count": len(models)}
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"刷新失败: {str(e)}")
+
+
+@router.post("/token-limits/refresh")
+async def refresh_capabilities_online():
+    """模型能力校准: 联网抓取 token 上限 + 内置知识库校准视觉/工具/推理能力"""
+    try:
+        online_limits = await _fetch_online_context_limits()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"在线抓取 token 上限失败: {str(e)}")
+
+    if not online_limits:
+        raise HTTPException(status_code=503, detail="在线来源未解析到可用 token 上限数据")
+
+    models = await _model_cache.get_models(force_refresh=False)
+    updated = 0
+    matched: list[str] = []
+
+    from sqlalchemy import select
+    from studio.backend.core.database import async_session_maker
+
+    async with async_session_maker() as db:
+        for m in models:
+            candidates = [
+                _normalize_model_key(m.id.removeprefix("copilot:")),
+                _normalize_model_key(m.name),
+            ]
+
+            found = None
+            for key in candidates:
+                if key in online_limits:
+                    found = online_limits[key]
+                    break
+                # 前缀匹配兜底（处理日期后缀, 如 gpt-4o-2024-08-06）
+                # 要求前缀后面紧跟分隔符 (-) 或到结尾, 避免 gpt-4 匹配 gpt-4o
+                import re as _re
+                for remote_key, val in online_limits.items():
+                    if key.startswith(remote_key) and (len(key) == len(remote_key) or key[len(remote_key)] == '-'):
+                        found = val
+                        break
+                    if remote_key.startswith(key) and (len(remote_key) == len(key) or remote_key[len(key)] == '-'):
+                        found = val
+                        break
+                if found:
+                    break
+
+            if not found:
+                continue
+
+            max_in, max_out = found
+            clean = m.id.removeprefix("copilot:").lower()
+
+            # 检查是否真正有变化
+            old_in, old_out = capability_cache.get_context_window(clean)
+            if old_in == max_in and old_out == max_out:
+                matched.append(clean)
+                continue  # 值相同,跳过写入
+
+            capability_cache._learned[clean] = (max_in, max_out)
+
+            result = await db.execute(
+                select(ModelCapabilityOverride).where(ModelCapabilityOverride.model_name == clean)
+            )
+            override = result.scalar_one_or_none()
+            if override:
+                override.max_input_tokens = max_in
+                override.max_output_tokens = max_out
+            else:
+                db.add(ModelCapabilityOverride(
+                    model_name=clean,
+                    max_input_tokens=max_in,
+                    max_output_tokens=max_out,
+                ))
+
+            capability_cache.set_db_override(clean, max_input=max_in, max_output=max_out)
+            updated += 1
+            matched.append(clean)
+
+        # === 第二步: 校准能力 (vision/tools/reasoning) ===
+        cap_updated = 0
+        for m in models:
+            clean = m.id.removeprefix("copilot:").lower()
+            caps = _STATIC_MODEL_CAPABILITIES.get(clean)
+            if not caps:
+                # 前缀匹配
+                for known_key, known_caps in _STATIC_MODEL_CAPABILITIES.items():
+                    if clean.startswith(known_key) and (len(clean) == len(known_key) or clean[len(known_key)] == '-'):
+                        caps = known_caps
+                        break
+            if not caps:
+                continue
+
+            # 检查是否需要更新
+            need_update = False
+            kw: Dict[str, Any] = {}
+            for field in ("supports_vision", "supports_tools", "is_reasoning"):
+                new_val = caps.get(field)
+                if new_val is None:
+                    continue
+                old_val = getattr(m, field, None)
+                if old_val != new_val:
+                    need_update = True
+                    kw[field] = new_val
+
+            if not need_update:
+                continue
+
+            result = await db.execute(
+                select(ModelCapabilityOverride).where(ModelCapabilityOverride.model_name == clean)
+            )
+            override = result.scalar_one_or_none()
+            if override:
+                for k, v in kw.items():
+                    setattr(override, k, v)
+            else:
+                db.add(ModelCapabilityOverride(model_name=clean, **kw))
+            cap_updated += 1
+
+        await db.commit()
+
+    return {
+        "success": True,
+        "source": _CONTEXT_LIMITS_SOURCE_URL,
+        "online_count": len(online_limits),
+        "updated_count": updated,
+        "cap_updated": cap_updated,
+        "matched_models": matched,
+    }
 
 
 @router.get("/capabilities/all")
@@ -909,15 +1502,14 @@ async def refresh_pricing():
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"抓取官方定价失败: {e}")
 
-    # 对比差异 (两列比较)
+    # 对比差异: 只检查变更和新增, 不报告删除 (未匹配的保留原样)
     changes: List[Dict[str, Any]] = []
-    all_models = set(list(_COPILOT_PREMIUM_COST.keys()) + list(scraped.keys()))
 
-    for model in sorted(all_models):
+    for model in sorted(scraped.keys()):
         old_entry = _COPILOT_PREMIUM_COST.get(model)
-        new_entry = scraped.get(model)
+        new_entry = scraped[model]
 
-        if old_entry is not None and new_entry is not None:
+        if old_entry is not None:
             if old_entry != new_entry:
                 changes.append({
                     "model": model,
@@ -928,17 +1520,7 @@ async def refresh_pricing():
                     "new_free": new_entry.get("free"),
                     "note": _format_pricing_change(old_entry, new_entry),
                 })
-        elif old_entry is not None and new_entry is None:
-            changes.append({
-                "model": model,
-                "type": "removed",
-                "old_paid": old_entry["paid"],
-                "new_paid": None,
-                "old_free": old_entry.get("free"),
-                "new_free": None,
-                "note": "文档中未列出 (可能已下线)",
-            })
-        elif new_entry is not None and old_entry is None:
+        else:
             free_note = f"免费x{new_entry['free']:g}" if new_entry.get("free") is not None else "需订阅"
             changes.append({
                 "model": model,
@@ -966,8 +1548,8 @@ class PricingApplyRequest(BaseModel):
 @router.post("/pricing/apply")
 async def apply_pricing(data: PricingApplyRequest):
     """
-    应用新的定价表 (运行时替换内存中的 _COPILOT_PREMIUM_COST)。
-    注意: 这只影响运行时，重启后会恢复为代码中的硬编码值。
+    应用新的定价表并持久化到数据库。
+    合并硬编码默认值 + DB 覆盖, 重启后自动加载。
     同时触发模型缓存刷新以使新定价生效。
     """
     global _COPILOT_PREMIUM_COST
@@ -981,7 +1563,34 @@ async def apply_pricing(data: PricingApplyRequest):
         else:
             new_pricing[model] = {"paid": float(entry), "free": None}
 
-    _COPILOT_PREMIUM_COST = new_pricing
+    # 持久化到 DB: 保存所有条目 (重启后完整替换硬编码)
+    from sqlalchemy import select
+    from studio.backend.core.database import async_session_maker
+    db_saved = 0
+    async with async_session_maker() as db:
+        for model_name, entry in new_pricing.items():
+            clean = model_name.lower()
+            result = await db.execute(
+                select(ModelCapabilityOverride).where(ModelCapabilityOverride.model_name == clean)
+            )
+            override = result.scalar_one_or_none()
+            paid_val = entry.get("paid")
+            free_val = entry.get("free")
+            # 用 -1 表示 free=None (需订阅), 因为 DB Column 无法区分 null 和 "未设"
+            free_db = free_val if free_val is not None else -1
+            if override:
+                override.premium_paid = paid_val
+                override.premium_free = free_db
+            else:
+                db.add(ModelCapabilityOverride(
+                    model_name=clean,
+                    premium_paid=paid_val,
+                    premium_free=free_db,
+                ))
+            db_saved += 1
+        await db.commit()
+
+    _COPILOT_PREMIUM_COST.update(new_pricing)  # 合并: 只更新/新增, 不删除未匹配的
     # 刷新模型缓存使新定价生效
     try:
         await _model_cache.get_models(force_refresh=True)
@@ -992,7 +1601,8 @@ async def apply_pricing(data: PricingApplyRequest):
         "ok": True,
         "old_count": old_count,
         "new_count": len(_COPILOT_PREMIUM_COST),
-        "message": "定价表已更新 (运行时生效，重启后恢复为代码默认值)",
+        "db_saved": db_saved,
+        "message": "定价表已更新并持久化到数据库",
     }
 
 

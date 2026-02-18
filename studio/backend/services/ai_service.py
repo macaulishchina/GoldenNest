@@ -30,6 +30,9 @@ import time
 import uuid
 from typing import List, Dict, Any, Optional, AsyncGenerator, Callable, Awaitable, Set
 
+from dataclasses import dataclass
+from typing import Literal
+
 import httpx
 
 from studio.backend.core.config import settings
@@ -178,6 +181,107 @@ def _get_models_headers() -> Dict[str, str]:
     }
 
 
+# ==================== 多服务商路由 ====================
+
+@dataclass
+class ProviderInfo:
+    """解析后的提供商信息"""
+    provider_type: Literal["github_models", "copilot", "openai_compatible"]
+    slug: str              # 提供商标识
+    actual_model: str      # 实际模型名 (去掉前缀)
+    base_url: str          # API 基地址
+    api_key: str           # API Key (openai_compatible)
+    icon: str              # 图标
+    name: str              # 提供商名称
+
+
+# 缓存已解析的提供商 (避免每次 DB 查询)
+_provider_cache: Dict[str, ProviderInfo] = {}
+_provider_cache_ts: float = 0
+_PROVIDER_CACHE_TTL = 60  # 60 秒缓存
+
+
+async def _resolve_provider(model_id: str) -> ProviderInfo:
+    """
+    根据模型 ID 解析提供商信息
+
+    模型 ID 格式:
+      - "gpt-4o"              → GitHub Models (无前缀)
+      - "copilot:gpt-4o"      → Copilot API
+      - "deepseek:deepseek-chat" → 第三方提供商
+    """
+    global _provider_cache, _provider_cache_ts
+
+    # 内置: copilot: 前缀
+    if model_id.startswith(COPILOT_PREFIX):
+        actual = model_id[len(COPILOT_PREFIX):]
+        return ProviderInfo(
+            provider_type="copilot",
+            slug="copilot",
+            actual_model=actual,
+            base_url=COPILOT_CHAT_URL,
+            api_key="",
+            icon="☁️",
+            name="Copilot",
+        )
+
+    # 检查是否有 slug: 前缀 (第三方提供商)
+    if ":" in model_id:
+        slug, actual = model_id.split(":", 1)
+
+        # 检查缓存
+        cache_key = f"{slug}:{actual}"
+        now = time.time()
+        if cache_key in _provider_cache and (now - _provider_cache_ts) < _PROVIDER_CACHE_TTL:
+            cached = _provider_cache[cache_key]
+            return ProviderInfo(
+                provider_type=cached.provider_type,
+                slug=cached.slug,
+                actual_model=actual,
+                base_url=cached.base_url,
+                api_key=cached.api_key,
+                icon=cached.icon,
+                name=cached.name,
+            )
+
+        # 查数据库
+        from studio.backend.api.provider_api import get_provider_by_slug
+        provider = await get_provider_by_slug(slug)
+        if provider and provider.enabled:
+            info = ProviderInfo(
+                provider_type=provider.provider_type,
+                slug=provider.slug,
+                actual_model=actual,
+                base_url=provider.base_url,
+                api_key=provider.api_key or "",
+                icon=provider.icon,
+                name=provider.name,
+            )
+            _provider_cache[cache_key] = info
+            _provider_cache_ts = now
+            return info
+        else:
+            logger.warning(f"提供商 '{slug}' 不存在或未启用, 回退到 GitHub Models")
+
+    # 默认: GitHub Models
+    return ProviderInfo(
+        provider_type="github_models",
+        slug="github",
+        actual_model=model_id,
+        base_url=GITHUB_MODELS_URL,
+        api_key=settings.github_token or "",
+        icon="🐙",
+        name="GitHub Models",
+    )
+
+
+def invalidate_provider_cache():
+    """清除提供商缓存 (配置变更后调用)"""
+    global _provider_cache, _provider_cache_ts
+    _provider_cache.clear()
+    _provider_cache_ts = 0
+
+
 def _build_api_messages(
     messages: List[Dict[str, Any]],
     system_prompt: str,
@@ -251,7 +355,7 @@ async def chat_stream(
     model: str = "gpt-4o",
     system_prompt: str = "",
     temperature: float = 0.7,
-    max_tokens: int = 4096,
+    max_tokens: int = 8192,
     tools: Optional[List[Dict[str, Any]]] = None,
     tool_executor: Optional[ToolExecutor] = None,
     request_id: str = "",
@@ -273,24 +377,34 @@ async def chat_stream(
     actual_model = _get_actual_model_name(model)
     is_reasoning = _is_reasoning_model(actual_model)
 
+    # 解析提供商信息
+    provider = await _resolve_provider(model)
+    actual_model = provider.actual_model
+    is_reasoning = _is_reasoning_model(actual_model)
+
     # 推理模型不支持 tools, 强制禁用
     if is_reasoning and tools:
         logger.info(f"推理模型 {actual_model} 不支持 tools, 跳过工具注入")
         tools = None
 
     # 验证认证
-    if use_copilot:
+    if provider.provider_type == "copilot":
         if not copilot_auth.is_authenticated:
             yield {"type": "error", "error": "❌ 未授权 Copilot，请在设置页面完成 OAuth 授权"}
             return
-    else:
+    elif provider.provider_type == "github_models":
         if not settings.github_token:
             yield {"type": "error", "error": "❌ 未配置 GITHUB_TOKEN，无法调用 AI 服务"}
+            return
+    elif provider.provider_type == "openai_compatible":
+        if not provider.api_key:
+            yield {"type": "error", "error": f"❌ {provider.name} 未配置 API Key，请在 AI 服务设置中配置"}
             return
 
     # 工具调用循环 — 模型可能多次调用工具
     current_messages = list(messages)  # 可追加 tool results
     total_tool_rounds = 0
+    seen_tool_calls: set = set()  # 检测重复调用 (name + args hash)
     all_tool_calls_collected: List[Dict[str, Any]] = []  # 收集所有轮次的 tool calls
 
     while True:
@@ -298,17 +412,24 @@ async def chat_stream(
         api_messages = _build_api_messages(current_messages, system_prompt, is_reasoning)
 
         # 获取请求头和 URL
-        if use_copilot:
+        if provider.provider_type == "copilot":
             try:
                 headers = await _get_copilot_headers(request_id=request_id)
             except Exception as e:
                 yield {"type": "error", "error": f"❌ Copilot 认证失败: {str(e)}"}
                 return
-            base_url = COPILOT_CHAT_URL
+            base_url = provider.base_url
             logger.info(f"Using Copilot API for model: {actual_model} (request_id: {request_id[:8]}...)" if request_id else f"Using Copilot API for model: {actual_model}")
+        elif provider.provider_type == "openai_compatible":
+            headers = {
+                "Authorization": f"Bearer {provider.api_key}",
+                "Content-Type": "application/json",
+            }
+            base_url = provider.base_url.rstrip("/")
+            logger.info(f"Using {provider.name} ({provider.slug}) for model: {actual_model}")
         else:
             headers = _get_models_headers()
-            base_url = GITHUB_MODELS_URL
+            base_url = provider.base_url
             logger.info(f"Using GitHub Models API for model: {actual_model}")
 
         # 构建 payload
@@ -396,7 +517,9 @@ async def chat_stream(
                         usage_data = None
                         # tool_calls 累积器 (流式中分片到达)
                         pending_tool_calls: Dict[int, Dict[str, Any]] = {}
+                        started_tool_calls: set = set()  # 已发送 tool_call_start 的 idx
                         response_has_content = False
+                        stream_finish_reason = None  # 跟踪流结束原因
 
                         async for line in response.aiter_lines():
                             if line.startswith("data: "):
@@ -405,7 +528,13 @@ async def chat_stream(
                                     break
                                 try:
                                     chunk = json.loads(data)
-                                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                    choice0 = chunk.get("choices", [{}])[0]
+                                    delta = choice0.get("delta", {})
+
+                                    # 跟踪 finish_reason
+                                    fr = choice0.get("finish_reason")
+                                    if fr:
+                                        stream_finish_reason = fr
 
                                     # 思考过程 (流式, Claude 等模型)
                                     thinking_delta = delta.get("reasoning_content") or delta.get("thinking") or ""
@@ -433,6 +562,10 @@ async def chat_stream(
                                             func = tc_delta.get("function", {})
                                             if func.get("name"):
                                                 tc["name"] = func["name"]
+                                                # ask_user 提前通知: 让前端尽早显示 loading 卡片
+                                                if func["name"] == "ask_user" and idx not in started_tool_calls and tc["id"]:
+                                                    started_tool_calls.add(idx)
+                                                    yield {"type": "tool_call_start", "tool_call": {"id": tc["id"], "name": "ask_user"}}
                                             if func.get("arguments"):
                                                 tc["arguments"] += func["arguments"]
 
@@ -452,6 +585,16 @@ async def chat_stream(
                                 "total_tokens": usage_data.get("total_tokens", 0),
                                 "tool_rounds": total_tool_rounds,
                             }}
+
+                        # 检测输出被截断 (max_tokens 耗尽)
+                        if stream_finish_reason == "length":
+                            if pending_tool_calls:
+                                # 工具调用参数被截断 (不完整), 丢弃并标记截断
+                                logger.info(f"模型 {actual_model} 输出因 max_tokens 截断 (finish_reason=length), 丢弃 {len(pending_tool_calls)} 个不完整的工具调用")
+                                pending_tool_calls.clear()
+                            if response_has_content:
+                                logger.info(f"模型 {actual_model} 输出因 max_tokens 截断 (finish_reason=length)")
+                                yield {"type": "truncated"}
 
                         # 检查是否有 tool calls 需要执行
                         if pending_tool_calls and tool_executor:
@@ -487,6 +630,11 @@ async def chat_stream(
                                 except json.JSONDecodeError:
                                     arguments = {"_raw": tc["arguments"]}
 
+                                # 检测重复工具调用 (防止模型陷入循环)
+                                call_sig = f"{tc['name']}:{json.dumps(arguments, sort_keys=True)}"
+                                is_duplicate = call_sig in seen_tool_calls
+                                seen_tool_calls.add(call_sig)
+
                                 # yield tool_call 事件
                                 yield {
                                     "type": "tool_call",
@@ -496,6 +644,24 @@ async def chat_stream(
                                         "arguments": arguments,
                                     },
                                 }
+
+                                # 重复调用: 直接返回提示, 不实际执行
+                                if is_duplicate:
+                                    result_text = "⚠️ 你已经读取过这个内容了，请直接使用之前的结果，不要重复读取。"
+                                    yield {
+                                        "type": "tool_result",
+                                        "tool_call_id": tc["id"],
+                                        "name": tc["name"],
+                                        "arguments": arguments,
+                                        "result": result_text,
+                                        "duration_ms": 0,
+                                    }
+                                    tool_results_messages.append({
+                                        "role": "tool",
+                                        "tool_call_id": tc["id"],
+                                        "content": result_text,
+                                    })
+                                    continue
 
                                 # 执行工具
                                 start_time = time.monotonic()
@@ -523,6 +689,7 @@ async def chat_stream(
                                         "type": "tool_result",
                                         "tool_call_id": tc["id"],
                                         "name": tc["name"],
+                                        "arguments": arguments,
                                         "result": result_text,
                                         "duration_ms": duration_ms,
                                     }
@@ -564,12 +731,32 @@ async def chat_stream(
                                         "content": error_msg,
                                     })
 
-                            # 追加 tool results 到消息列表, 继续循环
+                            # 追加 tool results 到消息列表
                             current_messages.extend(tool_results_messages)
+
+                            # 如果本轮调用了 ask_user，中断循环，等待用户回答
+                            has_ask_user = any(tc["name"] == "ask_user" for _, tc in sorted_tcs)
+                            if has_ask_user:
+                                yield {"type": "ask_user_pending"}
+                                # 不 continue — 直接结束流,等待用户回复后再触发新的对话
+                                return
+
                             continue  # 回到 while 循环, 重新调用模型
 
                         else:
-                            # 无 tool calls, 正常结束
+                            # 无 tool calls
+                            if not response_has_content:
+                                # 模型返回了空响应 (无内容也无工具调用)
+                                logger.warning(
+                                    f"模型 {actual_model} 返回空响应 "
+                                    f"(finish_reason={stream_finish_reason}, "
+                                    f"tool_rounds={total_tool_rounds}, "
+                                    f"msgs={len(current_messages)})"
+                                )
+                                yield {
+                                    "type": "content",
+                                    "content": "\n\n⚠️ AI 返回了空响应，请重新发送或换个说法试试。",
+                                }
                             return
 
         except httpx.TimeoutException:
@@ -586,7 +773,7 @@ async def chat_complete(
     model: str = "gpt-4o",
     system_prompt: str = "",
     temperature: float = 0.7,
-    max_tokens: int = 4096,
+    max_tokens: int = 8192,
 ) -> str:
     """同步 AI 对话 (非流式, 用于生成 plan 等) — 只返回 content 文本"""
     result = []

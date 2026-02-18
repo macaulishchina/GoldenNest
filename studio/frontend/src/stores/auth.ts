@@ -9,9 +9,20 @@ interface StudioUser {
   main_user_id?: number | null
 }
 
+const USER_STORAGE_KEY = 'studio_user'
+
+function loadStoredUser(): StudioUser | null {
+  try {
+    const raw = localStorage.getItem(USER_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
 export const useAuthStore = defineStore('studioAuth', () => {
   const token = ref<string | null>(localStorage.getItem('studio_token'))
-  const user = ref<StudioUser | null>(null)
+  const user = ref<StudioUser | null>(loadStoredUser())
   const loading = ref(false)
 
   const isLoggedIn = computed(() => !!token.value)
@@ -21,12 +32,14 @@ export const useAuthStore = defineStore('studioAuth', () => {
     token.value = newToken
     user.value = userInfo
     localStorage.setItem('studio_token', newToken)
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userInfo))
   }
 
   function logout() {
     token.value = null
     user.value = null
     localStorage.removeItem('studio_token')
+    localStorage.removeItem(USER_STORAGE_KEY)
   }
 
   /**
@@ -41,6 +54,7 @@ export const useAuthStore = defineStore('studioAuth', () => {
       try {
         const { data } = await studioAuthApi.me()
         user.value = data
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data))
         return true
       } catch {
         // token 无效, 清除

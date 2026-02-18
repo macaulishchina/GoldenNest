@@ -9,7 +9,7 @@
 """
 import os
 import logging
-from typing import Optional
+from typing import Optional, Union, Tuple, List
 
 from studio.backend.core.config import settings
 from studio.backend.core.token_utils import estimate_tokens
@@ -35,6 +35,102 @@ KEY_DIRS = [
     "frontend/src/components",
     "frontend/src/stores",
 ]
+
+# ======================== Legacy 硬编码 Prompts ========================
+# 兼容 skill_id=NULL 的旧项目, 新项目应通过 Skill 配置
+
+LEGACY_ROLE_PROMPT = """你是一位资深产品经理和需求分析师，正在「设计院」中和用户讨论一个产品需求。
+
+## 核心原则：需求探讨优先，实现细节靠后
+
+你的首要任务是帮助用户把需求想清楚、说明白，而不是急于给出技术方案。
+
+### 对话策略
+1. **主动提问** — 用户描述需求后，立即用 `ask_user` 工具提出 3-5 个关键问题来澄清需求。不要等用户问你，你应该主动追问。
+2. **聚焦「做什么」** — 讨论应围绕：用户故事、交互流程、业务规则、边界条件、优先级。避免主动讨论技术实现细节（数据库设计、API 路径等），除非用户明确要求。
+3. **连续提问** — 如果一轮回答后仍有不明确的地方，继续用 `ask_user` 追问。宁可多问几轮，也不要带着模糊需求就敲定方案。
+4. **总结确认** — 每轮问答后，简要总结你对需求的理解，让用户确认或纠正。
+5. **循循善诱** — 帮助用户发现他们没想到的需求场景，如：异常流程、权限控制、数据一致性、并发场景。
+
+### 什么时候讨论技术
+- ✅ 用户主动问"这个用什么技术实现"时
+- ✅ 需要查看代码来理解现有功能时
+- ✅ 技术约束会影响需求可行性时（如实时推送需要 WebSocket）
+- ❌ 不要主动建议数据库表结构、API 设计、组件拆分等
+- ❌ 不要在用户只描述了大概想法时就给出完整技术方案
+
+## 项目概况
+这是一个家庭财富管理 Web 应用 (GoldenNest / 小金库)，使用 Vue 3 + TypeScript + Naive UI (前端) + FastAPI + SQLAlchemy 2.0 + SQLite (后端)"""
+
+LEGACY_FINALIZATION_PROMPT = """## 关于敲定方案
+当用户说"敲定"时，系统会自动基于讨论历史生成需求规格书（Plan）。
+你不需要在对话中输出 Plan 格式，只需确保讨论充分、需求明确即可。
+在敲定之前，你应该主动确认：所有关键需求是否都已讨论清楚。"""
+
+LEGACY_OUTPUT_GENERATION_PROMPT = """基于以下讨论内容，生成一份结构化的 **需求规格书（Plan）**。
+
+## 写作原则
+
+1. **聚焦「做什么」而非「怎么做」**：详细描述功能需求、业务规则、用户交互流程、边界条件、验收标准。不要给出具体的技术实现方案（如数据库表结构、API 路径设计、组件拆分方式），除非用户在讨论中明确要求了特定实现方式。
+2. **保留用户的明确技术决策**：如果用户在讨论中主动提出了技术选型、架构约束或实现偏好，必须原样保留并标注为「用户指定」。
+3. **需求要可验证**：每个功能点应有明确的完成标准，让实现者能判断"做到了没有"。
+4. **消除歧义**：对讨论中模糊或有多种理解的地方，选择最合理的解释并明确写出，或标注为「待确认」。
+5. **不要添加臆测**：严格基于讨论内容，不添加讨论中未涉及的功能或技术假设。
+
+## 输出格式
+
+### 项目概述
+一段话描述项目目标和核心价值。
+
+### 功能需求
+按优先级分组，每个功能包含：
+- **功能名称**
+- **用户故事**: 作为 [角色]，我希望 [做什么]，以便 [达到什么目的]
+- **详细描述**: 具体的交互流程、业务规则
+- **边界条件**: 异常情况如何处理
+- **验收标准**: 可检验的完成条件列表
+
+### 非功能需求
+性能、安全、兼容性等约束（仅包含讨论中提及的）。
+
+### 用户指定的技术约束
+仅列出用户在讨论中**主动要求**的技术决策（如指定某框架、某种数据格式等）。如果没有，写「无特定技术约束，由实现者自行决定最佳方案」。
+
+### 待确认事项
+讨论中未完全明确的问题。
+
+---
+
+讨论内容：
+{discussion_summary}
+
+请直接输出需求规格书内容（不需要代码块包裹）:"""
+
+DEFAULT_TOOL_STRATEGY = """## 工具使用策略
+
+### 重要原则
+- **直接调用工具，不要描述意图**。不要说"让我查看一下…"然后停止——直接调用对应工具。
+- 每次回复中，要么调用工具，要么输出有实际内容的文本。**不要输出空响应。**
+
+### ask_user — 主动提问澄清（最重要的工具）
+- 用户描述内容后，**立即**用 `ask_user` 提出澄清问题
+- 每个问题附带 2-5 个选项（对象格式：label + 可选 description + recommended 标记）
+- **按推荐度排序**: 最推荐的选项放在最前面，设置 `recommended: true`
+- **单选/多选**: 通过 `type: "single"` 或 `type: "multi"` 控制
+- 单选题：最后一项通常是"其他（请说明）"自定义选项，严格几选一可省略
+- 多选题：适用于允许组合的场景（如：需要支持哪些功能？）
+- 调用 `ask_user` 后，你**必须停止输出**等待用户回答。不要自行假设答案继续推进
+- 可以一次提多个问题，也可以分多轮逐步深入
+- 问题应聚焦于：用户场景、业务规则、边界条件、优先级、兼容性
+
+### 代码查看工具（按需使用）
+1. **先搜后读** — 用 search_text 定位（返回文件路径 + 行号），再用 read_file 的 start_line 跳转精确读取
+2. **缩小范围** — search_text 务必指定 include_pattern（如 `*.py`、`*.vue`）
+3. **一次读够** — read_file 最多 200 行，小文件直接一次读完
+4. **不要重复** — 已读过的内容不要再次读取
+5. **先概览后细节** — 先 get_file_tree 了解结构，再针对性查看
+- **当用户询问代码实现细节时，必须先用工具查看相关源码，再回答**。不要猜测。
+- 使用中文回答"""
 
 
 def get_tree(path: str, max_depth: int = 3, prefix: str = "", current_depth: int = 0) -> str:
@@ -93,18 +189,27 @@ def list_dir_files(dirpath: str) -> str:
         return "(目录不存在)"
 
 
-def build_project_context(extra_context: str = "", budget_tokens: int = 0) -> str:
+def build_project_context(
+    skill=None,
+    extra_context: str = "",
+    budget_tokens: int = 0,
+    return_sections: bool = False,
+    tool_permissions: set = None,
+) -> Union[str, Tuple[str, List]]:
     """
     构建项目上下文用于 AI system prompt
 
     Args:
+        skill: Skill ORM 对象 (None = 使用 legacy 硬编码)
         extra_context: 额外上下文 (需求标题/描述等)
         budget_tokens: system prompt token 预算 (0 = 不限制, 使用最大内容)
+        return_sections: 是否额外返回各段明细 (用于前端上下文检查器)
+        tool_permissions: 项目工具权限集合 (用于条件化工具策略)
 
-    自适应策略:
-        budget <= 0 或 > 32K  → 完整内容 (CLAUDE.md 300行 + 5个文件)
-        8K < budget <= 32K    → 中等内容 (目录树 + 目录列表 + 少量代码)
-        budget <= 8K          → 最小内容 (仅角色定义 + plan 格式)
+    Returns:
+        str (when return_sections=False)
+        (str, list) (when return_sections=True)
+            list 中每项: {"name": "段名", "tokens": 123, "content": "...", "children": [...]}
     """
     ws = settings.workspace_path
 
@@ -127,14 +232,13 @@ def build_project_context(extra_context: str = "", budget_tokens: int = 0) -> st
             fp = os.path.join(ws, f)
             if os.path.exists(fp):
                 content = read_file_safe(fp, max_lines=100 if f != "CLAUDE.md" else 300)
-                key_file_contents.append(f"### {f}\n```\n{content}\n```")
+                key_file_contents.append((f, content, f"### {f}\n```\n{content}\n```"))
     elif level == "medium":
-        # 中等模式: 只取 CLAUDE.md 前 50 行 + docker-compose
         for f in ["CLAUDE.md", "docker-compose.yml"]:
             fp = os.path.join(ws, f)
             if os.path.exists(fp):
                 content = read_file_safe(fp, max_lines=50)
-                key_file_contents.append(f"### {f}\n```\n{content}\n```")
+                key_file_contents.append((f, content, f"### {f}\n```\n{content}\n```"))
 
     # 关键目录 (medium + full)
     key_dir_contents = []
@@ -144,72 +248,76 @@ def build_project_context(extra_context: str = "", budget_tokens: int = 0) -> st
             if os.path.isdir(dp):
                 key_dir_contents.append(f"- `{d}/`: {list_dir_files(dp)}")
 
-    # 基础角色定义 (所有级别都包含)
-    parts = ["""你是 GoldenNest (小金库) 项目的高级产品设计师和软件架构师。
-你正在「设计院」中和产品负责人讨论一个新需求。
+    # ---- 从 Skill 或 legacy 获取 prompts ----
+    if skill:
+        role_text = skill.role_prompt or ""
+        strategy_text = skill.strategy_prompt or ""
+        finalization_text = skill.finalization_prompt or ""
+        tool_strategy_text = skill.tool_strategy_prompt or ""
+    else:
+        role_text = LEGACY_ROLE_PROMPT
+        strategy_text = ""  # legacy 把 strategy 合并在 role_text 里了
+        finalization_text = LEGACY_FINALIZATION_PROMPT
+        tool_strategy_text = ""
 
-## 你的职责
-1. **深入理解需求**: 主动提问，澄清模糊点，挖掘隐含需求
-2. **架构设计**: 基于项目现有架构提出合理的实现方案
-3. **全栈考虑**: 分析前后端影响、数据库变更、API 设计、兼容性
-4. **风险评估**: 指出潜在风险和注意事项
-5. **Plan 输出**: 讨论成熟后，生成结构化的实施计划 (plan.md)
+    # 如果 skill 没有自定义工具策略, 使用系统默认
+    if not tool_strategy_text.strip():
+        tool_strategy_text = DEFAULT_TOOL_STRATEGY
 
-## 项目概况
-这是一个家庭财富管理 Web 应用，使用 Vue 3 + TypeScript + Naive UI (前端) + FastAPI + SQLAlchemy 2.0 + SQLite (后端)"""]
+    # 根据 tool_permissions 条件修改工具策略
+    _perms = tool_permissions or set()
+    if _perms and "ask_user" not in _perms:
+        # ask_user 未开启: 替换提问工具段落, 告知 AI 用文本提问
+        tool_strategy_text = tool_strategy_text.replace(
+            "### ask_user — 主动提问澄清（最重要的工具）",
+            "### 提问方式（ask_user 工具未开启）"
+        )
+        # 在工具策略最前面追加提示
+        ask_disabled_notice = (
+            "⚠️ **ask_user 工具当前未开启**。\n"
+            "- 如需向用户提问，请直接用**普通文本**提出问题和选项，不要尝试调用 ask_user 工具。\n"
+            "- 用 Markdown 列表列出选项，标注推荐项。\n\n"
+        )
+        tool_strategy_text = ask_disabled_notice + tool_strategy_text
 
-    # 项目结构 (medium + full)
+    # ---- 构建各段 (带跟踪) ----
+    named_parts = []
+
+    # 角色 + 策略: skill 模式分段, legacy 模式合并
+    if skill:
+        named_parts.append(("角色定义", role_text))
+        if strategy_text:
+            named_parts.append(("对话策略", strategy_text))
+    else:
+        named_parts.append(("角色定义 & 对话策略", role_text))
+
     if tree:
-        parts.append(f"## 项目结构\n```\n{tree}\n```")
+        tree_text = f"## 项目结构\n```\n{tree}\n```"
+        named_parts.append(("项目结构", tree_text))
 
-    # 关键目录 (medium + full)
     if key_dir_contents:
-        parts.append(f"## 关键目录内容\n{chr(10).join(key_dir_contents)}")
+        dir_text = f"## 关键目录内容\n{chr(10).join(key_dir_contents)}"
+        named_parts.append(("关键目录", dir_text))
 
-    # 关键文件 (medium: 精简, full: 完整)
     if key_file_contents:
-        parts.append(f"## 关键文件内容摘要\n{chr(10).join(key_file_contents)}")
+        files_text = f"## 关键文件内容摘要\n{chr(10).join(item[2] for item in key_file_contents)}"
+        named_parts.append(("关键文件摘要", files_text))
 
-    # Plan 输出格式 (所有级别)
-    parts.append("""## 实施计划 (Plan) 输出格式
-当用户要求敲定方案时，请输出如下格式的 plan.md:
-
-```markdown
-# [需求标题]
-
-## 1. 需求概述
-简明描述需求目标和范围
-
-## 2. 技术方案
-### 2.1 后端变更
-### 2.2 前端变更
-### 2.3 其他变更
-
-## 3. 实施步骤 (按顺序)
-1. [ ] 步骤1 ...
-
-## 4. 注意事项
-
-## 5. 影响范围
-```""")
+    if finalization_text:
+        named_parts.append(("敲定方案提示", finalization_text))
 
     if extra_context:
-        parts.append(extra_context)
+        label = "项目上下文"
+        if skill and skill.ui_labels:
+            noun = skill.ui_labels.get("project_noun", "需求")
+            label = f"{noun}上下文"
+        named_parts.append((label, extra_context))
 
-    parts.append("""## 工具使用指引
-- 你拥有以下工具，可以主动调用来查看项目源码:
-  - `read_file`: 读取文件内容 (可指定行范围)
-  - `search_text`: 全文搜索文本或正则
-  - `list_directory`: 列出目录内容
-  - `get_file_tree`: 获取目录树结构
-- **当用户询问代码实现细节时，必须先用工具查看相关源码，再回答**
-- 不要在没有查看代码的情况下猜测实现细节
-- 先用 `get_file_tree` 了解项目结构，再用 `read_file` 深入具体文件
-- 搜索时优先使用精确文件名或函数名，避免过于宽泛的搜索
-- 回答要具体到代码层面，不要泛泛而谈
-- 使用中文回答""")
+    named_parts.append(("工具使用策略", tool_strategy_text))
 
-    context = "\n\n".join(parts)
+    # 组装最终 prompt
+    parts_text = [text for (_, text) in named_parts]
+    context = "\n\n".join(parts_text)
 
     # 最终 token 检查: 如果仍然超预算则截断
     if budget_tokens > 0:
@@ -222,21 +330,31 @@ def build_project_context(extra_context: str = "", budget_tokens: int = 0) -> st
             from studio.backend.core.token_utils import truncate_text
             context = truncate_text(context, budget_tokens)
 
-    return context
+    if not return_sections:
+        return context
+
+    # 构建分段明细树
+    sections = []
+    for name, text in named_parts:
+        section = {"name": name, "tokens": estimate_tokens(text), "content": text}
+        # 为"关键文件摘要"段添加子节点 (每个文件)
+        if name == "关键文件摘要" and key_file_contents:
+            children = []
+            for fname, fcontent, _ in key_file_contents:
+                children.append({
+                    "name": fname,
+                    "tokens": estimate_tokens(fcontent),
+                    "content": fcontent,
+                })
+            section["children"] = children
+        sections.append(section)
+
+    return context, sections
 
 
-def build_plan_generation_prompt(discussion_summary: str) -> str:
-    """构建从讨论生成 plan.md 的 prompt"""
-    return f"""基于以下讨论内容，生成一份详尽的实施计划 (plan.md)。
-
-要求：
-1. 严格按照上面定义的 Plan 输出格式
-2. 实施步骤要具体到文件和代码层面
-3. 列出所有需要修改的文件
-4. 考虑数据库迁移（如果有 schema 变更）
-5. 考虑前后端兼容性
-
-讨论内容摘要：
-{discussion_summary}
-
-请直接输出 plan.md 内容（不需要代码块包裹）:"""
+def build_plan_generation_prompt(discussion_summary: str, skill=None) -> str:
+    """构建从讨论生成产出文档的 prompt, 根据 skill 配置动态选择模板"""
+    if skill and skill.output_generation_prompt:
+        return skill.output_generation_prompt.replace("{discussion_summary}", discussion_summary)
+    # legacy fallback
+    return LEGACY_OUTPUT_GENERATION_PROMPT.replace("{discussion_summary}", discussion_summary)

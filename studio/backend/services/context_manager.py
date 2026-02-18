@@ -333,9 +333,14 @@ async def _generate_summary(
         return None
 
 
-def build_usage_summary(usage_info: dict) -> dict:
+def build_usage_summary(usage_info: dict, system_sections: list = None, history_messages: list = None) -> dict:
     """
-    构建前端可用的上下文使用情况摘要 (用于饼图/进度条)
+    构建前端可用的上下文使用情况摘要 (用于饼图/进度条/树形检查器)
+
+    Args:
+        usage_info: 上下文管理器返回的使用信息
+        system_sections: system prompt 分段明细 (来自 build_project_context)
+        history_messages: 保留的对话消息列表 (用于每条消息的 token 明细)
 
     Returns:
         {
@@ -348,6 +353,8 @@ def build_usage_summary(usage_info: dict) -> dict:
                 "tools": 工具定义占用,
                 "history": 对话历史占用,
             },
+            "system_sections": [{"name": ..., "tokens": ..., "children": [...]}],
+            "history_detail": [{"role": ..., "tokens": ..., "preview": ...}],
             "messages": {
                 "kept": 保留消息数,
                 "dropped": 丢弃消息数,
@@ -360,7 +367,7 @@ def build_usage_summary(usage_info: dict) -> dict:
     available = max(0, max_input - total_used)
     percentage = min(100, total_used * 100 // max(max_input, 1))
 
-    return {
+    result = {
         "total": max_input,
         "used": total_used,
         "available": available,
@@ -376,3 +383,41 @@ def build_usage_summary(usage_info: dict) -> dict:
             "total": usage_info.get("messages_total", 0),
         },
     }
+
+    # 添加 system prompt 分段明细 (保留 content 用于前端查看，截断过长内容)
+    if system_sections:
+        MAX_CONTENT = 5000  # 单段最大字符数
+
+        def _slim_section(sec):
+            content = sec.get("content", "")
+            out = {
+                "name": sec["name"],
+                "tokens": sec["tokens"],
+                "content": content[:MAX_CONTENT] + ("…" if len(content) > MAX_CONTENT else ""),
+            }
+            if sec.get("children"):
+                out["children"] = [_slim_section(c) for c in sec["children"]]
+            return out
+        result["system_sections"] = [_slim_section(s) for s in system_sections]
+
+    # 添加对话历史每条消息的 token 占用
+    if history_messages:
+        detail = []
+        for msg in history_messages:
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                # 多模态消息
+                text_parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+                content_text = " ".join(text_parts)
+            else:
+                content_text = str(content)
+            tokens = estimate_tokens(content_text)
+            preview = content_text[:60].replace("\n", " ") if content_text else ""
+            detail.append({
+                "role": msg.get("role", "?"),
+                "tokens": tokens,
+                "preview": preview,
+            })
+        result["history_detail"] = detail
+
+    return result

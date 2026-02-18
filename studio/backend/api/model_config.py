@@ -517,6 +517,7 @@ async def get_merged_model_capabilities(
             "premium_multiplier": m.premium_multiplier,
             "free_multiplier": m.free_multiplier,
             "is_custom": m.is_custom,
+            "provider_slug": m.provider_slug,
             # 自动检测值
             "auto_max_input": m.max_input_tokens,
             "auto_max_output": m.max_output_tokens,

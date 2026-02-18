@@ -33,8 +33,9 @@ from studio.backend.core.security import get_studio_user, get_optional_studio_us
 from studio.backend.models import Project, Message, MessageRole, MessageType, ProjectStatus
 from studio.backend.services import ai_service, context_service
 from studio.backend.services.ai_service import new_request_id
-from studio.backend.services.context_manager import prepare_context, build_usage_summary, summarize_context_if_needed
+from studio.backend.services.context_manager import prepare_context, build_usage_summary, summarize_context_if_needed, _generate_summary
 from studio.backend.services.tool_registry import get_tool_definitions, execute_tool, DEFAULT_PERMISSIONS
+from studio.backend.core.token_utils import estimate_tokens, truncate_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/studio-api/projects", tags=["Discussion"])
@@ -244,6 +245,9 @@ async def discuss(
     # 构建 AI 消息列表
     ai_messages = []
     for msg in history_msgs:
+        # 跳过 plan_final 消息 — 已通过系统提示词注入，避免重复占用上下文
+        if msg.message_type == MessageType.plan_final:
+            continue
         entry = {"role": msg.role.value, "content": msg.content}
         # 处理图片附件
         if msg.attachments:
@@ -265,20 +269,31 @@ async def discuss(
     # system prompt 预算: 上下文窗口的 15%, 至少 2000 tokens
     system_budget = max(int(max_input * 0.15), 2000)
 
-    # 构建额外上下文: 需求 + 当前设计稿
-    extra_parts = [f"\n## 当前需求\n标题: {project.title}\n描述: {project.description}"]
+    # 构建额外上下文: 需求 + 当前设计稿 (标签名来自 skill)
+    skill = project.skill
+    _labels = (skill.ui_labels if skill and skill.ui_labels else None) or {}
+    _pn = _labels.get("project_noun", "需求")
+    _on = _labels.get("output_noun", "设计稿")
+    extra_parts = [f"\n## 当前{_pn}\n标题: {project.title}\n描述: {project.description}"]
     plan_summary = ""
     if project.plan_content and project.plan_content.strip():
         plan_summary = project.plan_content.strip()
         extra_parts.append(
-            f"\n## 当前设计稿 (v{project.plan_version})\n"
-            f"以下是当前最新的实施方案，用户可能正在同步编辑它。"
-            f"请结合设计稿内容和讨论进行回复。\n\n{plan_summary}"
+            f"\n## 当前{_on} (v{project.plan_version})\n"
+            f"以下是当前最新的{_on}，用户可能正在同步编辑它。"
+            f"请结合{_on}内容和讨论进行回复。\n\n{plan_summary}"
         )
 
-    system_prompt = context_service.build_project_context(
+    # 提前计算工具权限 (build_project_context 需要知道 ask_user 是否开启)
+    raw_perms = getattr(project, 'tool_permissions', None)
+    tool_permissions = set(raw_perms) if raw_perms else set()
+
+    system_prompt, system_sections = context_service.build_project_context(
+        skill=skill,
         extra_context="\n".join(extra_parts),
         budget_tokens=system_budget,
+        return_sections=True,
+        tool_permissions=tool_permissions,
     )
 
     # 上下文自动总结: 使用率 > 90% 时触发
@@ -311,19 +326,15 @@ async def discuss(
                     import asyncio
                     await asyncio.sleep(0.5)
 
-    # 上下文管理: 截断历史消息以适应模型窗口
     # 获取工具定义 (根据项目权限 + 模型能力)
-    # ⚠️ 工具默认关闭 — 每轮工具调用 = 额外 1 次 Copilot API 调用 (premium request)
-    raw_perms = getattr(project, 'tool_permissions', None)
-    tool_permissions = set(raw_perms) if raw_perms else set()  # None/[] → 不注入工具
-
     # 检查模型是否支持 tool calling — 不支持则跳过工具注入
     model_supports_tools = await _check_model_supports_tools(model)
     if not model_supports_tools:
-        tool_permissions = set()  # 清空权限, 不注入工具
+        tool_permissions = set()  # 清空权限, 不注入代码工具
         logger.info(f"模型 {model} 不支持 tool calling, 已跳过工具注入")
-
-    tool_defs = get_tool_definitions(tool_permissions) if tool_permissions else []
+        tool_defs = []
+    else:
+        tool_defs = get_tool_definitions(tool_permissions)
 
     managed_messages, usage_info = prepare_context(
         messages=ai_messages,
@@ -346,72 +357,141 @@ async def discuss(
         token_usage = None
         collected_tool_calls = []
         collected_errors = []  # 收集错误信息用于持久化
+        current_managed_messages = managed_messages
+        current_usage_info = usage_info
+        is_truncated = False  # 跟踪是否被截断
         try:
             # 发送上下文管理信息
-            context_summary = build_usage_summary(usage_info)
+            context_summary = build_usage_summary(current_usage_info, system_sections=system_sections, history_messages=current_managed_messages)
             yield f"data: {json.dumps({'type': 'context', 'context': context_summary}, ensure_ascii=False)}\n\n"
 
             # 通知前端如果触发了上下文总结
             if summary_text:
                 yield f"data: {json.dumps({'type': 'summary', 'summary': summary_text}, ensure_ascii=False)}\n\n"
 
-            async for event in ai_service.chat_stream(
-                messages=managed_messages,
-                model=model,
-                system_prompt=system_prompt,
-                tools=tool_defs if tool_defs else None,
-                tool_executor=_tool_executor,
-                request_id=new_request_id(),
-                max_tool_rounds=data.max_tool_rounds,
-            ):
-                if not isinstance(event, dict):
-                    continue
-                event_type = event.get("type", "")
+            # 自动重试循环 (上下文超限时压缩后重试一次)
+            for _attempt in range(2):
+                overflow_retry = False
 
-                if event_type == "content":
-                    full_response.append(event["content"])
-                    yield f"data: {json.dumps({'type': 'content', 'content': event['content']}, ensure_ascii=False)}\n\n"
+                async for event in ai_service.chat_stream(
+                    messages=current_managed_messages,
+                    model=model,
+                    system_prompt=system_prompt,
+                    tools=tool_defs if tool_defs else None,
+                    tool_executor=_tool_executor,
+                    request_id=new_request_id(),
+                    max_tool_rounds=data.max_tool_rounds,
+                ):
+                    if not isinstance(event, dict):
+                        continue
+                    event_type = event.get("type", "")
 
-                elif event_type == "thinking":
-                    thinking_parts.append(event["content"])
-                    yield f"data: {json.dumps({'type': 'thinking', 'content': event['content']}, ensure_ascii=False)}\n\n"
+                    if event_type == "content":
+                        full_response.append(event["content"])
+                        yield f"data: {json.dumps({'type': 'content', 'content': event['content']}, ensure_ascii=False)}\n\n"
 
-                elif event_type == "tool_call":
-                    yield f"data: {json.dumps({'type': 'tool_call', 'tool_call': event['tool_call']}, ensure_ascii=False)}\n\n"
+                    elif event_type == "thinking":
+                        thinking_parts.append(event["content"])
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': event['content']}, ensure_ascii=False)}\n\n"
 
-                elif event_type == "tool_result":
-                    collected_tool_calls.append({
-                        "id": event["tool_call_id"],
-                        "name": event["name"],
-                        "arguments": event.get("arguments", {}),
-                        "result": event["result"],
-                        "duration_ms": event.get("duration_ms", 0),
-                    })
-                    yield f"data: {json.dumps({'type': 'tool_result', 'tool_call_id': event['tool_call_id'], 'name': event['name'], 'result': event['result'], 'duration_ms': event.get('duration_ms', 0)}, ensure_ascii=False)}\n\n"
+                    elif event_type == "tool_call_start":
+                        yield f"data: {json.dumps({'type': 'tool_call_start', 'tool_call': event['tool_call']}, ensure_ascii=False)}\n\n"
 
-                elif event_type == "tool_error":
-                    collected_tool_calls.append({
-                        "id": event["tool_call_id"],
-                        "name": event["name"],
-                        "arguments": {},
-                        "result": f"ERROR: {event['error']}",
-                        "duration_ms": 0,
-                    })
-                    yield f"data: {json.dumps({'type': 'tool_error', 'tool_call_id': event['tool_call_id'], 'name': event['name'], 'error': event['error']}, ensure_ascii=False)}\n\n"
+                    elif event_type == "tool_call":
+                        yield f"data: {json.dumps({'type': 'tool_call', 'tool_call': event['tool_call']}, ensure_ascii=False)}\n\n"
 
-                elif event_type == "usage":
-                    token_usage = event["usage"]
-                    yield f"data: {json.dumps({'type': 'usage', 'usage': token_usage}, ensure_ascii=False)}\n\n"
+                    elif event_type == "tool_result":
+                        collected_tool_calls.append({
+                            "id": event["tool_call_id"],
+                            "name": event["name"],
+                            "arguments": event.get("arguments", {}),
+                            "result": event["result"],
+                            "duration_ms": event.get("duration_ms", 0),
+                        })
+                        yield f"data: {json.dumps({'type': 'tool_result', 'tool_call_id': event['tool_call_id'], 'name': event['name'], 'result': event['result'], 'duration_ms': event.get('duration_ms', 0)}, ensure_ascii=False)}\n\n"
 
-                elif event_type == "error":
-                    collected_errors.append(event['error'])
-                    error_data: dict = {'type': 'error', 'error': event['error']}
-                    if event.get('error_meta'):
-                        error_data['error_meta'] = event['error_meta']
-                        # 同步更新后端能力缓存
-                        from studio.backend.core.model_capabilities import capability_cache
-                        capability_cache.learn_from_error(model, event['error'])
-                    yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+                    elif event_type == "tool_error":
+                        collected_tool_calls.append({
+                            "id": event["tool_call_id"],
+                            "name": event["name"],
+                            "arguments": {},
+                            "result": f"ERROR: {event['error']}",
+                            "duration_ms": 0,
+                        })
+                        yield f"data: {json.dumps({'type': 'tool_error', 'tool_call_id': event['tool_call_id'], 'name': event['name'], 'error': event['error']}, ensure_ascii=False)}\n\n"
+
+                    elif event_type == "usage":
+                        token_usage = event["usage"]
+                        yield f"data: {json.dumps({'type': 'usage', 'usage': token_usage}, ensure_ascii=False)}\n\n"
+
+                    elif event_type == "truncated":
+                        is_truncated = True
+                        yield f"data: {json.dumps({'type': 'truncated'}, ensure_ascii=False)}\n\n"
+
+                    elif event_type == "ask_user_pending":
+                        yield f"data: {json.dumps({'type': 'ask_user_pending'}, ensure_ascii=False)}\n\n"
+
+                    elif event_type == "error":
+                        error_meta = event.get('error_meta', {})
+                        # 上下文超限 + 无已生成内容 + 首次尝试 → 自动压缩重试
+                        if (error_meta.get('error_type') == 'context_overflow'
+                                and not full_response and _attempt == 0):
+                            logger.info("上下文超限，自动压缩后重试...")
+                            compress_notice = json.dumps({'type': 'content', 'content': '\n\n⏳ 上下文超限，正在自动压缩后重试...\n\n'}, ensure_ascii=False)
+                            yield f"data: {compress_notice}\n\n"
+                            # 强制总结
+                            try:
+                                min_keep = min(len(ai_messages), 4)
+                                to_summarize_part = ai_messages[:-min_keep] if min_keep < len(ai_messages) else []
+                                recent_part = ai_messages[-min_keep:]
+                                if to_summarize_part:
+                                    compress_summary = await _generate_summary(to_summarize_part, model)
+                                    if compress_summary:
+                                        compressed = [{"role": "system", "content": f"[对话历史总结]\n\n{compress_summary}"}] + recent_part
+                                        current_managed_messages, current_usage_info = prepare_context(
+                                            messages=compressed, system_prompt=system_prompt,
+                                            model=model, tool_definitions=tool_defs,
+                                        )
+                                        context_summary = build_usage_summary(current_usage_info, system_sections=system_sections, history_messages=current_managed_messages)
+                                        yield f"data: {json.dumps({'type': 'context', 'context': context_summary}, ensure_ascii=False)}\n\n"
+                                        # 保存总结到 DB
+                                        from studio.backend.core.database import async_session_maker
+                                        try:
+                                            async with async_session_maker() as save_db:
+                                                summary_db_msg = Message(
+                                                    project_id=project_id, role=MessageRole.system,
+                                                    sender_name="Context Summary",
+                                                    content=f"[对话历史总结]\n\n{compress_summary}",
+                                                    message_type=MessageType.chat, model_used=model,
+                                                )
+                                                save_db.add(summary_db_msg)
+                                                await save_db.commit()
+                                        except Exception as se:
+                                            logger.warning(f"保存压缩总结失败: {se}")
+                                        overflow_retry = True
+                                        full_response.clear()
+                                        break  # 退出内层循环，重试
+                            except Exception as ce:
+                                logger.warning(f"自动压缩失败: {ce}")
+                            if not overflow_retry:
+                                # 压缩失败，正常报错
+                                collected_errors.append(event['error'])
+                                error_data: dict = {'type': 'error', 'error': event['error']}
+                                if event.get('error_meta'):
+                                    error_data['error_meta'] = event['error_meta']
+                                yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+                        else:
+                            collected_errors.append(event['error'])
+                            error_data: dict = {'type': 'error', 'error': event['error']}
+                            if event.get('error_meta'):
+                                error_data['error_meta'] = event['error_meta']
+                                # 同步更新后端能力缓存
+                                from studio.backend.core.model_capabilities import capability_cache
+                                capability_cache.learn_from_error(model, event['error'])
+                            yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+
+                if not overflow_retry:
+                    break  # 正常结束，退出重试循环
 
             # 保存 AI 回复 (带重试)
             ai_content = "".join(full_response)
@@ -528,6 +608,96 @@ async def delete_message(
     return {"ok": True}
 
 
+@router.post("/{project_id}/summarize-context")
+async def manual_summarize_context(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_optional_studio_user),
+):
+    """
+    手动触发上下文总结: 将旧消息压缩为一条总结，保留最近消息
+    """
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    model = project.discussion_model or "gpt-4o"
+
+    msg_result = await db.execute(
+        select(Message).where(Message.project_id == project_id).order_by(Message.created_at)
+    )
+    history_msgs = list(msg_result.scalars().all())
+    if len(history_msgs) < 4:
+        raise HTTPException(status_code=400, detail="消息太少，无需总结")
+
+    # 保留最近 4 条，其余进行总结
+    min_keep = min(len(history_msgs), 4)
+    to_summarize_msgs = [{"role": msg.role.value, "content": msg.content} for msg in history_msgs[:-min_keep]]
+    keep_msgs = history_msgs[-min_keep:]
+
+    if not to_summarize_msgs:
+        raise HTTPException(status_code=400, detail="消息太少，无需总结")
+
+    summary_text = await _generate_summary(to_summarize_msgs, model)
+    if not summary_text:
+        raise HTTPException(status_code=500, detail="总结生成失败，请重试")
+
+    # 删除被总结的旧消息
+    keep_ids = {m.id for m in keep_msgs}
+    for msg in history_msgs:
+        if msg.id not in keep_ids:
+            await db.delete(msg)
+
+    # 插入总结消息
+    summary_msg = Message(
+        project_id=project_id,
+        role=MessageRole.system,
+        sender_name="Context Summary",
+        content=f"[对话历史总结]\n\n{summary_text}",
+        message_type=MessageType.chat,
+        model_used=model,
+    )
+    db.add(summary_msg)
+    await db.commit()
+
+    # 返回最新消息列表
+    msg_result = await db.execute(
+        select(Message).where(Message.project_id == project_id).order_by(Message.created_at)
+    )
+    new_msgs = msg_result.scalars().all()
+
+    return {
+        "ok": True,
+        "summarized_count": len(to_summarize_msgs),
+        "remaining_count": len(list(new_msgs)),
+        "summary": summary_text,
+    }
+
+
+@router.delete("/{project_id}/clear-context")
+async def clear_context(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_optional_studio_user),
+):
+    """
+    清空项目所有讨论消息
+    """
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    from sqlalchemy import delete as sql_delete
+    del_result = await db.execute(
+        sql_delete(Message).where(Message.project_id == project_id)
+    )
+    await db.commit()
+
+    return {"ok": True, "deleted_count": del_result.rowcount}
+
+
 @router.delete("/{project_id}/messages/{message_id}/and-after")
 async def delete_message_and_after(
     project_id: int,
@@ -582,18 +752,24 @@ async def finalize_plan(
     if not messages:
         raise HTTPException(status_code=400, detail="还没有讨论内容")
 
-    # 构建讨论摘要
+    model = project.discussion_model or "gpt-4o"
+
+    # 构建讨论摘要 (自适应截断，防止超出模型上下文)
     discussion_text = "\n".join(
         f"[{msg.sender_name}]: {msg.content}" for msg in messages
     )
-
-    model = project.discussion_model or "gpt-4o"
+    max_input = capability_cache.get_max_input(model)
+    # 给 system prompt + plan prompt + 输出预留空间
+    discussion_budget = max(max_input - 12000, max_input // 2)
+    if estimate_tokens(discussion_text) > discussion_budget:
+        logger.info(f"敲定 plan: 讨论内容 ({estimate_tokens(discussion_text)} tokens) 超出预算 ({discussion_budget}), 截断")
+        discussion_text = truncate_text(discussion_text, discussion_budget)
 
     # 构建生成 plan 的 prompt — 自适应压缩
     max_input = capability_cache.get_max_input(model)
     system_budget = max(int(max_input * 0.15), 2000)
-    system_prompt = context_service.build_project_context(budget_tokens=system_budget)
-    plan_prompt = context_service.build_plan_generation_prompt(discussion_text)
+    system_prompt = context_service.build_project_context(skill=project.skill, budget_tokens=system_budget, tool_permissions=set())
+    plan_prompt = context_service.build_plan_generation_prompt(discussion_text, skill=project.skill)
 
     async def event_stream():
         full_plan = []
@@ -759,6 +935,9 @@ async def check_context_on_model_switch(
     # 构建 AI 消息列表
     ai_messages = []
     for msg in history_msgs:
+        # 跳过 plan_final 消息 — 已通过系统提示词注入
+        if msg.message_type == MessageType.plan_final:
+            continue
         entry = {"role": msg.role.value, "content": msg.content}
         if msg.attachments:
             images = []
@@ -772,21 +951,43 @@ async def check_context_on_model_switch(
     # 构建 system prompt
     max_input = capability_cache.get_max_input(model)
     system_budget = max(int(max_input * 0.15), 2000)
-    extra_parts = [f"\n## 当前需求\n标题: {project.title}\n描述: {project.description}"]
+    _chk_labels = (project.skill.ui_labels if project.skill and project.skill.ui_labels else None) or {}
+    _chk_pn = _chk_labels.get("project_noun", "需求")
+    _chk_on = _chk_labels.get("output_noun", "设计稿")
+    extra_parts = [f"\n## 当前{_chk_pn}\n标题: {project.title}\n描述: {project.description}"]
     if project.plan_content and project.plan_content.strip():
-        extra_parts.append(f"\n## 当前设计稿 (v{project.plan_version})\n{project.plan_content.strip()}")
-    system_prompt = context_service.build_project_context(
+        extra_parts.append(f"\n## 当前{_chk_on} (v{project.plan_version})\n{project.plan_content.strip()}")
+    chk_raw_perms = getattr(project, 'tool_permissions', None)
+    chk_tool_permissions = set(chk_raw_perms) if chk_raw_perms else set()
+    system_prompt, check_system_sections = context_service.build_project_context(
+        skill=project.skill,
         extra_context="\n".join(extra_parts),
         budget_tokens=system_budget,
+        return_sections=True,
+        tool_permissions=chk_tool_permissions,
     )
 
-    # 检查是否需要总结 (仅计算, 不保存到 DB — 实际发送时 discuss 端点执行保存)
+    # 检查是否需要总结 — 超限时自动总结并保存到 DB
     compressed_messages, summary_text = await summarize_context_if_needed(
         messages=ai_messages,
         system_prompt=system_prompt,
         model=model,
     )
-    # 注意: 不保存 summary 到 DB, 避免重复切换模型时产生大量冠余总结消息
+    # 如果触发了总结, 保存到 DB (用户切到小窗口模型时自动压缩)
+    if summary_text:
+        try:
+            summary_db_msg = Message(
+                project_id=project_id,
+                role=MessageRole.system,
+                sender_name="Context Summary",
+                content=f"[对话历史总结]\n\n{summary_text}",
+                message_type=MessageType.chat,
+                model_used=model,
+            )
+            db.add(summary_db_msg)
+            await db.commit()
+        except Exception as se:
+            logger.warning(f"保存模型切换总结失败: {se}")
 
     # 计算新模型下的上下文使用率
     tool_defs = []
@@ -794,7 +995,7 @@ async def check_context_on_model_switch(
     if model_supports_tools:
         raw_perms = getattr(project, 'tool_permissions', None)
         tool_permissions = set(raw_perms) if raw_perms else set()
-        tool_defs = get_tool_definitions(tool_permissions) if tool_permissions else []
+        tool_defs = get_tool_definitions(tool_permissions)
 
     _, usage_info = prepare_context(
         messages=compressed_messages,
@@ -803,7 +1004,7 @@ async def check_context_on_model_switch(
         tool_definitions=tool_defs,
     )
 
-    context_summary = build_usage_summary(usage_info)
+    context_summary = build_usage_summary(usage_info, system_sections=check_system_sections, history_messages=compressed_messages)
 
     return {
         "context": context_summary,

@@ -20,8 +20,7 @@ const router = createRouter({
         },
         {
           path: 'projects',
-          name: 'ProjectList',
-          component: () => import('@/views/ProjectList.vue'),
+          redirect: '/',
         },
         {
           path: 'projects/:id',
@@ -51,7 +50,13 @@ router.beforeEach(async (to, _from, next) => {
   const { useAuthStore } = await import('@/stores/auth')
   const authStore = useAuthStore()
 
-  if (authStore.isLoggedIn) return next()
+  if (authStore.isLoggedIn && authStore.user) return next()
+
+  // 有 token 但用户信息缺失/陈旧时，补一次自动认证
+  if (authStore.isLoggedIn && !authStore.user) {
+    const ok = await authStore.autoAuth()
+    if (ok) return next()
+  }
 
   // 尝试自动认证 (studio token 或主项目 session)
   const ok = await authStore.autoAuth()

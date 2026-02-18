@@ -74,6 +74,9 @@ export const discussionApi = {
   getStreamingStatus: (projectId: number) => api.get(`/projects/${projectId}/streaming-status`),
   // 切换模型时上下文检查
   checkContext: (projectId: number, model: string) => api.post(`/projects/${projectId}/context-check`, { model }),
+  // 手动总结/清空上下文
+  summarizeContext: (projectId: number) => api.post(`/projects/${projectId}/summarize-context`, null, { timeout: 60000 }),
+  clearContext: (projectId: number) => api.delete(`/projects/${projectId}/clear-context`),
 }
 
 // ==================== 实施 ====================
@@ -117,6 +120,7 @@ export const modelApi = {
   refreshPricing: () => api.post('/models/pricing/refresh', null, { timeout: 30000 }),
   applyPricing: (scraped: Record<string, any>) => api.post('/models/pricing/apply', { scraped }),
   currentPricing: () => api.get('/models/pricing/current'),
+  refreshTokenLimits: () => api.post('/models/token-limits/refresh', null, { timeout: 45000 }),
 }
 
 // ==================== 模型配置管理 ====================
@@ -164,6 +168,27 @@ export const endpointProbeApi = {
     api.post('/endpoint-probe/test-all', null, { params: timeout ? { timeout } : {}, timeout: 120000 }),
   testOne: (endpointId: string, timeout?: number) =>
     api.post(`/endpoint-probe/test-one/${endpointId}`, null, { params: timeout ? { timeout } : {}, timeout: 60000 }),
+}
+
+// ==================== AI 服务提供商 ====================
+export const providerApi = {
+  list: () => api.get('/providers'),
+  create: (data: any) => api.post('/providers', data),
+  update: (slug: string, data: any) => api.patch(`/providers/${slug}`, data),
+  delete: (slug: string) => api.delete(`/providers/${slug}`),
+  test: (slug: string) => api.post(`/providers/${slug}/test`),
+  fetchModels: (slug: string) => api.get(`/providers/${slug}/models`),
+  seedReset: () => api.post('/providers/seed-reset'),
+}
+
+// ==================== 技能管理 ====================
+export const skillApi = {
+  list: (params?: { enabled_only?: boolean }) => api.get('/skills', { params }),
+  get: (id: number) => api.get(`/skills/${id}`),
+  create: (data: any) => api.post('/skills', data),
+  update: (id: number, data: any) => api.put(`/skills/${id}`, data),
+  delete: (id: number) => api.delete(`/skills/${id}`),
+  duplicate: (id: number) => api.post(`/skills/${id}/duplicate`),
 }
 
 export default api

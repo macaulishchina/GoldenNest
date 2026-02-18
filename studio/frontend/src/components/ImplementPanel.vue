@@ -3,9 +3,12 @@
     <!-- 模型选择与控制 -->
     <n-space align="center" style="margin-bottom: 16px" :wrap="true">
       <n-radio-group v-model:value="modelSourceFilter" size="small">
-        <n-radio-button value="all">全部</n-radio-button>
-        <n-radio-button value="models">Models</n-radio-button>
-        <n-radio-button value="copilot">Copilot ☁️</n-radio-button>
+        <n-radio-button v-for="f in providerFilters" :key="f.value" :value="f.value">
+          <span style="display:inline-flex;align-items:center;gap:3px">
+            <span v-if="f.icon" v-html="f.icon"></span>
+            <span>{{ f.label }}</span>
+          </span>
+        </n-radio-button>
       </n-radio-group>
       <n-select
         v-model:value="implModel"
@@ -114,6 +117,7 @@ import { ref, computed, onMounted, onUnmounted, h } from 'vue'
 import { useMessage } from 'naive-ui'
 import { implementationApi, modelApi, projectApi } from '@/api'
 import { useStudioConfigStore } from '@/stores/studioConfig'
+import { getProviderIcon } from '@/utils/providerIcons'
 import type { Project } from '@/stores/project'
 
 const props = defineProps<{ project: Project }>()
@@ -131,7 +135,29 @@ const diffData = ref<any>(null)
 const models = ref<any[]>([])
 let pollTimer: any = null
 const loadingModels = ref(false)
-const modelSourceFilter = ref<'all' | 'models' | 'copilot'>('all')
+const modelSourceFilter = ref('all')
+
+const providerFilters = computed(() => {
+  const filters: Array<{value: string; label: string; icon: string}> = [
+    { value: 'all', label: '全部', icon: '' },
+    { value: 'github', label: 'GitHub', icon: getProviderIcon('github', 'G', 12) },
+  ]
+  if (models.value.some(m => m.api_backend === 'copilot')) {
+    filters.push({ value: 'copilot', label: 'Copilot', icon: getProviderIcon('copilot', 'C', 12) })
+  }
+  const seen = new Set<string>()
+  for (const m of models.value) {
+    const slug = m.provider_slug || ''
+    if (slug && slug !== 'github' && slug !== 'copilot' && !seen.has(slug)) {
+      seen.add(slug)
+      filters.push({ value: slug, label: m.publisher || slug, icon: getProviderIcon(slug, m.publisher || slug, 12) })
+    }
+  }
+  if (studioConfig.customModelsEnabled) {
+    filters.push({ value: 'custom', label: '补充', icon: '' })
+  }
+  return filters
+})
 
 const repoName = 'macaulishchina/GoldenNest'
 
@@ -139,71 +165,67 @@ const modelOptions = computed(() => {
   const byCategory = models.value.filter(m => m.category === 'implementation' || m.category === 'both')
   const filtered = modelSourceFilter.value === 'all'
     ? byCategory
-    : modelSourceFilter.value === 'copilot'
-      ? byCategory.filter(m => m.api_backend === 'copilot')
-      : byCategory.filter(m => m.api_backend !== 'copilot')
+    : modelSourceFilter.value === 'custom'
+      ? byCategory.filter(m => m.is_custom)
+      : modelSourceFilter.value === 'github'
+        ? byCategory.filter(m => m.provider_slug === 'github' || (!m.provider_slug && m.api_backend === 'models'))
+        : modelSourceFilter.value === 'copilot'
+          ? byCategory.filter(m => m.provider_slug === 'copilot' || m.api_backend === 'copilot')
+          : byCategory.filter(m => m.provider_slug === modelSourceFilter.value)
 
-  const modelsApi = filtered.filter(m => m.api_backend !== 'copilot')
-  const copilotApi = filtered.filter(m => m.api_backend === 'copilot')
-
-  const classifyFamily = (m: any): string => {
-    const n = String(m.id || m.name || '').replace(/^copilot:/, '').toLowerCase()
-    if (n.includes('claude') || n.includes('anthropic')) return 'Anthropic'
-    if (n.includes('gpt') || n.startsWith('o1') || n.startsWith('o3') || n.startsWith('o4')) return 'OpenAI'
-    if (n.includes('gemini') || n.includes('google')) return 'Google'
-    if (n.includes('deepseek')) return 'DeepSeek'
-    if (n.includes('mistral')) return 'Mistral AI'
-    if (n.includes('meta')) return 'Meta'
-    if (n.includes('microsoft')) return 'Microsoft'
-    if (n.includes('cohere')) return 'Cohere'
-    if (n.includes('xai')) return 'xAI'
-    return m.publisher || '其他'
-  }
-
-  const buildGroups = (list: any[], suffix: string = '') => {
-    const groups: Record<string, any[]> = {}
-    for (const m of list) {
-      const pub = classifyFamily(m) + suffix
-      if (!groups[pub]) groups[pub] = []
-      groups[pub].push(m)
-    }
-    return groups
-  }
-
+  // 保留 API 返回顺序, 按 model_family 分组
   const mapOpt = (m: any) => ({
     label: m.name, value: m.id,
     supports_vision: m.supports_vision, supports_tools: m.supports_tools,
     is_reasoning: m.is_reasoning, api_backend: m.api_backend,
+    is_custom: m.is_custom,
+    provider_slug: m.provider_slug || (m.api_backend === 'copilot' ? 'copilot' : 'github'),
     pricing_tier: m.pricing_tier, premium_multiplier: m.premium_multiplier,
     is_deprecated: m.is_deprecated, pricing_note: m.pricing_note,
   })
-  const options: any[] = []
-  for (const [pub, items] of Object.entries(buildGroups(modelsApi))) {
-    options.push({ type: 'group', label: pub, key: pub, children: items.map(mapOpt) })
-  }
-  if (copilotApi.length) {
-    for (const [pub, items] of Object.entries(buildGroups(copilotApi, ' ☁️'))) {
-      options.push({ type: 'group', label: pub, key: 'copilot-' + pub, children: items.map(mapOpt) })
+  const groups: Array<{ key: string; label: string; slug: string; items: any[] }> = []
+  const groupMap: Record<string, typeof groups[0]> = {}
+  for (const m of filtered) {
+    const family = m.model_family || m.publisher || m.provider_slug || 'Other'
+    const slug = m.provider_slug || (m.api_backend === 'copilot' ? 'copilot' : 'github')
+    const gKey = slug + ':' + family
+    if (!groupMap[gKey]) {
+      const g = { key: gKey, label: family, slug, items: [] as any[] }
+      groups.push(g)
+      groupMap[gKey] = g
     }
+    groupMap[gKey].items.push(m)
   }
-  return options
+  return groups.map(g => ({
+    type: 'group', label: g.label, key: g.key, provider_slug: g.slug,
+    children: g.items.map(mapOpt),
+  }))
 })
 
 function renderModelLabel(option: any, selected: boolean) {
-  if (option.type === 'group') return option.label
+  if (option.type === 'group') {
+    const iconHtml = getProviderIcon(option.provider_slug || 'github', option.label, 14)
+    return h('span', { style: 'display:inline-flex;align-items:center;gap:4px' }, [
+      h('span', { innerHTML: iconHtml, style: 'display:inline-flex' }),
+      option.label,
+    ])
+  }
   const caps: string[] = []
   if (option.is_reasoning) caps.push('🧠')
   if (option.supports_vision) caps.push('👁️')
   if (option.supports_tools) caps.push('🔧')
   const depStr = option.is_deprecated ? ' ⚠️' : ''
   const capStr = caps.length ? ` ${caps.join('')}` : ''
+  const iconHtml = getProviderIcon(option.provider_slug || 'github', '', 12)
+  const iconVNode = h('span', { innerHTML: iconHtml, style: 'display:inline-flex;vertical-align:middle;margin:0 2px' })
+  const customStr = option.is_custom ? ' 🧩' : ''
   const priceText = option.pricing_note || 'x0'
   const nameStyle = selected ? 'font-weight:600' : ''
   const priceStyle = selected
     ? 'color:#18a058;font-size:11px;flex-shrink:0;margin-left:12px;font-weight:600'
     : 'color:#888;font-size:11px;flex-shrink:0;margin-left:12px'
   return h('div', { style: 'display:flex;justify-content:space-between;align-items:center;width:100%' }, [
-    h('span', { style: nameStyle }, [selected ? '● ' : '', option.label as string, capStr, depStr]),
+    h('span', { style: nameStyle }, [selected ? '● ' : '', option.label as string, ' ', iconVNode, customStr, capStr, depStr]),
     h('span', { style: priceStyle }, priceText),
   ])
 }

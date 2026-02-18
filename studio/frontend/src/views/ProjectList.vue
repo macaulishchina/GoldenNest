@@ -1,10 +1,10 @@
 <template>
   <div>
     <n-space justify="space-between" align="center" style="margin-bottom: 16px">
-      <n-h3 style="margin: 0">📋 需求项目</n-h3>
+      <n-h3 style="margin: 0">📋 项目</n-h3>
       <n-button type="primary" @click="$router.push('/')">
         <template #icon><n-icon :component="AddOutline" /></template>
-        新建需求
+        新建项目
       </n-button>
     </n-space>
 
@@ -16,53 +16,59 @@
         clearable
         style="width: 180px"
       />
+      <n-select
+        v-model:value="skillFilter"
+        :options="skillFilterOptions"
+        placeholder="按技能筛选"
+        clearable
+        style="width: 180px"
+      />
+      <n-switch v-model:value="showArchived" />
+      <n-text depth="3" style="font-size: 12px">显示已归档</n-text>
     </n-space>
 
     <n-spin :show="store.loading">
-      <n-grid :cols="1" :y-gap="12" v-if="filteredProjects.length">
-        <n-gi v-for="p in filteredProjects" :key="p.id">
-          <n-card
-            hoverable
-            size="small"
-            style="background: #16213e; cursor: pointer"
-            @click="$router.push(`/projects/${p.id}`)"
-          >
-            <n-space justify="space-between" align="center">
-              <n-space vertical :size="4">
-                <n-space align="center">
-                  <n-text strong style="font-size: 16px">{{ p.title }}</n-text>
-                  <n-tag :type="statusType(p.status)" size="small" round>
-                    {{ statusLabel(p.status) }}
-                  </n-tag>
-                </n-space>
-                <n-text depth="3" style="font-size: 13px">
-                  {{ p.description.slice(0, 120) }}{{ p.description.length > 120 ? '...' : '' }}
-                </n-text>
-              </n-space>
-              <n-space align="center">
-                <n-tag v-if="p.github_pr_number" size="small" :bordered="false" type="info">
-                  PR #{{ p.github_pr_number }}
-                </n-tag>
-                <n-text depth="3" style="font-size: 12px">
-                  💬 {{ p.message_count }} · {{ formatDate(p.updated_at) }}
-                </n-text>
-              </n-space>
-            </n-space>
-          </n-card>
-        </n-gi>
-      </n-grid>
+      <n-list v-if="filteredProjects.length" bordered style="background: #16213e">
+        <n-list-item
+          v-for="p in filteredProjects"
+          :key="p.id"
+          style="padding: 0; position: relative"
+        >
+          <LogItem :item="p" @click="$router.push(`/projects/${p.id}`)" />
+          <!-- 归档 / PR 角标区 -->
+          <div class="item-actions">
+            <n-tag v-if="p.github_pr_number" size="small" :bordered="false" type="info" style="cursor:default">
+              PR #{{ p.github_pr_number }}
+            </n-tag>
+            <n-button
+              size="tiny"
+              :type="p.is_archived ? 'warning' : 'default'"
+              @click.stop="toggleArchive(p)"
+            >
+              {{ p.is_archived ? '取消归档' : '归档' }}
+            </n-button>
+          </div>
+        </n-list-item>
+      </n-list>
       <n-empty v-else description="暂无项目" />
     </n-spin>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { AddOutline } from '@vicons/ionicons5'
+import { useMessage } from 'naive-ui'
 import { useProjectStore } from '@/stores/project'
+import { useSkillStore } from '@/stores/skill'
+import LogItem from '@/components/LogItem.vue'
 
 const store = useProjectStore()
+const skillStore = useSkillStore()
+const message = useMessage()
 const statusFilter = ref<string | null>(null)
+const skillFilter = ref<number | null>(null)
+const showArchived = ref(false)
 
 const filterOptions = [
   { label: '草稿', value: 'draft' },
@@ -75,30 +81,55 @@ const filterOptions = [
   { label: '已回滚', value: 'rolled_back' },
 ]
 
+const skillFilterOptions = computed(() =>
+  skillStore.skills.map(s => ({ label: `${s.icon} ${s.name}`, value: s.id }))
+)
+
 const filteredProjects = computed(() => {
-  if (!statusFilter.value) return store.projects
-  return store.projects.filter(p => p.status === statusFilter.value)
+  let list = store.projects
+  if (statusFilter.value) list = list.filter(p => p.status === statusFilter.value)
+  if (skillFilter.value) list = list.filter(p => p.skill_id === skillFilter.value)
+  return list
 })
-
-function statusType(s: string) {
-  const m: Record<string, any> = {
-    draft:'default', discussing:'info', planned:'warning', implementing:'warning',
-    reviewing:'info', deploying:'warning', deployed:'success', rolled_back:'error', closed:'default',
-  }
-  return m[s] || 'default'
-}
-
-function statusLabel(s: string) {
-  const m: Record<string, string> = {
-    draft:'草稿', discussing:'讨论中', planned:'已定稿', implementing:'实施中',
-    reviewing:'审核中', deploying:'部署中', deployed:'已部署', rolled_back:'已回滚', closed:'已关闭',
-  }
-  return m[s] || s
-}
 
 function formatDate(d: string) {
   return new Date(d).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })
 }
 
-onMounted(() => store.fetchProjects())
+async function toggleArchive(p: any) {
+  const nextArchived = !p.is_archived
+  try {
+    await store.updateProject(p.id, { is_archived: nextArchived })
+    message.success(nextArchived ? '已归档' : '已取消归档')
+    await store.fetchProjects({ include_archived: showArchived.value })
+  } catch {
+    message.error('操作失败')
+  }
+}
+
+onMounted(() => {
+  store.fetchProjects()
+  skillStore.fetchSkills()
+})
+watch(showArchived, (val) => {
+  store.fetchProjects({ include_archived: val })
+})
 </script>
+
+<style scoped>
+/* 使 LogItem 撑满 n-list-item，并把 action 按钮绝对定位在右下 */
+:deep(.n-list-item) {
+  padding: 0 !important;
+}
+.item-actions {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  pointer-events: auto;
+  z-index: 1;
+}
+</style>

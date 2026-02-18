@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, Boolean, Enum, ForeignKey, JSON,
+    Column, Integer, String, Text, DateTime, Boolean, Float, Enum, ForeignKey, JSON,
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
@@ -61,6 +61,35 @@ class DeployStatus(str, enum.Enum):
 
 # ======================== Models ========================
 
+class Skill(Base):
+    """AI 技能定义 — 数据驱动的工作流配置"""
+    __tablename__ = "skills"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)
+    icon = Column(String(10), default="🎯")
+    description = Column(Text, default="")
+    is_builtin = Column(Boolean, default=False)
+    is_enabled = Column(Boolean, default=True)
+
+    # AI 对话配置
+    role_prompt = Column(Text, nullable=False, default="")
+    strategy_prompt = Column(Text, nullable=False, default="")
+    tool_strategy_prompt = Column(Text, default="")
+    finalization_prompt = Column(Text, default="")
+    output_generation_prompt = Column(Text, default="")
+
+    # 阶段流程配置 [{"key": "draft", "label": "草稿", "status": "draft"}, ...]
+    stages = Column(JSON, nullable=False, default=list)
+
+    # UI 文案配置 {"project_noun": "需求", "create_title": "...", ...}
+    ui_labels = Column(JSON, default=lambda: {})
+
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Project(Base):
     """需求项目"""
     __tablename__ = "projects"
@@ -89,9 +118,16 @@ class Project(Base):
     # AI 禁言 (群聊模式: 禁言时 AI 不自动回复)
     ai_muted = Column(Boolean, default=False)
 
+    # 技能关联
+    skill_id = Column(Integer, ForeignKey("skills.id"), nullable=True)
+
+    # 归档
+    is_archived = Column(Boolean, default=False)
+    archived_at = Column(DateTime, nullable=True)
+
     # 工具权限 (讨论阶段 AI 可用的代码查看工具)
     # ⚠️ 默认关闭 — 每轮工具调用消耗额外 1 次 premium request
-    tool_permissions = Column(JSON, default=lambda: [])
+    tool_permissions = Column(JSON, default=lambda: ["ask_user"])
 
     # 元信息
     created_by = Column(String(100), default="admin")
@@ -99,6 +135,7 @@ class Project(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # 关系
+    skill = relationship("Skill", lazy="joined")
     messages = relationship("Message", back_populates="project", cascade="all, delete-orphan",
                             order_by="Message.created_at")
     deployments = relationship("Deployment", back_populates="project", cascade="all, delete-orphan",
@@ -214,4 +251,36 @@ class ModelCapabilityOverride(Base):
     supports_vision = Column(Boolean, nullable=True)        # null = 自动检测, true/false = 手动覆盖
     supports_tools = Column(Boolean, nullable=True)
     is_reasoning = Column(Boolean, nullable=True)
+    premium_paid = Column(Float, nullable=True)              # Copilot 付费用户定价倍率 (null = 用硬编码)
+    premium_free = Column(Float, nullable=True)              # Copilot 免费用户定价倍率 (null = 用硬编码, -1 = 需订阅)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AIProvider(Base):
+    """
+    AI 服务提供商配置
+
+    支持三种类型:
+    - github_models: GitHub Models API (内置, 用 GITHUB_TOKEN)
+    - copilot: GitHub Copilot API (内置, 用 OAuth Device Flow)
+    - openai_compatible: 第三方 OpenAI 兼容 API (用用户提供的 API Key)
+
+    内置提供商 (is_builtin=True) 不可删除、不可改 base_url。
+    预设提供商 (is_preset=True) 默认禁用, 用户填入 API Key 后启用。
+    """
+    __tablename__ = "ai_providers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    slug = Column(String(50), nullable=False, unique=True)       # 唯一标识 (如 "deepseek", "qwen")
+    name = Column(String(100), nullable=False)                   # 显示名 (如 "DeepSeek")
+    provider_type = Column(String(50), nullable=False)           # github_models / copilot / openai_compatible
+    base_url = Column(String(500), default="")                   # API base URL
+    api_key = Column(String(500), default="")                    # API Key (明文存储, GET 时脱敏)
+    enabled = Column(Boolean, default=False)                     # 是否启用
+    is_builtin = Column(Boolean, default=False)                  # 内置 (不可删除)
+    is_preset = Column(Boolean, default=False)                   # 预设第三方 (不可删 base_url)
+    icon = Column(String(20), default="🔌")                     # Emoji 图标
+    description = Column(String(500), default="")                # 说明
+    default_models = Column(JSON, default=list)                  # 预设模型列表 [{name, friendly_name, ...}]
+    created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

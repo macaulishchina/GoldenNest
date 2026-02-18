@@ -1,7 +1,59 @@
 <template>
   <div style="display: flex; flex-direction: column; height: 100%; min-height: 400px">
-    <!-- 消息列表 -->
-    <div ref="messageListRef" style="flex: 1; overflow-y: auto; padding: 4px 0">
+    <!-- 项目信息栏 -->
+    <div class="project-info-bar" @click="showProjectEdit = true">
+      <n-ellipsis :line-clamp="1" :tooltip="false" style="flex: 1; min-width: 0">
+        <span class="project-info-title">{{ props.project.title }}</span>
+        <span v-if="props.project.description" class="project-info-sep">—</span>
+        <span v-if="props.project.description" class="project-info-desc">{{ props.project.description }}</span>
+        <span v-else class="project-info-desc" style="opacity: 0.35">点击添加需求描述...</span>
+      </n-ellipsis>
+      <span class="project-info-edit-icon">✏️</span>
+    </div>
+
+    <!-- 项目信息编辑弹窗 -->
+    <n-modal v-model:show="showProjectEdit" preset="card" title="编辑项目信息" style="width: 520px; max-width: 90vw" :mask-closable="true">
+      <n-form label-placement="top" :show-feedback="false">
+        <n-form-item label="项目名称">
+          <n-input v-model:value="editProjectTitle" placeholder="项目名称" />
+        </n-form-item>
+        <n-form-item label="需求描述" style="margin-top: 12px">
+          <n-input v-model:value="editProjectDesc" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" placeholder="详细描述你的需求..." />
+        </n-form-item>
+      </n-form>
+      <n-text depth="3" style="font-size: 11px; display: block; margin-top: 8px">需求描述会注入到每次 AI 对话的上下文中</n-text>
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end; gap: 8px">
+          <n-button @click="showProjectEdit = false">取消</n-button>
+          <n-button type="primary" @click="saveProjectInfo" :loading="savingProject">保存</n-button>
+        </div>
+      </template>
+    </n-modal>
+
+    <!-- 中间区域: 消息 + 右侧 slot (设计稿) 并排 -->
+    <div style="flex: 1; display: flex; overflow: hidden; min-height: 0">
+      <!-- 消息列表 -->
+      <div ref="messageListRef" style="flex: 1; overflow-y: auto; padding: 4px 0; min-width: 0">
+
+      <!-- 空对话欢迎状态 -->
+      <div v-if="!messages.length && !streaming" class="empty-chat-welcome">
+        <div class="empty-chat-icon">{{ props.project.skill?.icon || '💬' }}</div>
+        <div class="empty-chat-title">{{ props.project.skill?.name || '讨论' }}</div>
+        <div class="empty-chat-desc">{{ props.project.title }}</div>
+        <n-button
+          type="primary"
+          size="large"
+          :loading="startingChat"
+          :disabled="aiMuted"
+          style="margin-top: 20px; border-radius: 20px; padding: 0 32px"
+          @click="handleStartChat"
+        >
+          <template #icon><span style="font-size: 16px">✨</span></template>
+          开始对话
+        </n-button>
+        <n-text v-if="aiMuted" depth="3" style="font-size: 12px; margin-top: 8px">AI 已禁言，请先解除禁言</n-text>
+      </div>
+
       <div v-for="msg in messages" :key="msg.id" style="margin-bottom: 6px">
         <!-- 系统消息 (上下文总结) -->
         <div v-if="msg.role === 'system'" style="display: flex; justify-content: center">
@@ -21,6 +73,26 @@
               </n-collapse-item>
             </n-collapse>
           </n-card>
+        </div>
+
+        <!-- ask_user 回答: 紧凑指示器 (不重复显示已在卡片中展示的内容) -->
+        <div
+          v-else-if="msg.role === 'user' && msg.content?.startsWith('<!-- ask_user_response -->')"
+          style="display: flex; justify-content: flex-end"
+          @mouseenter="hoveredMessageId = msg.id"
+          @mouseleave="hoveredMessageId = null"
+        >
+          <div class="ask-user-reply-indicator">
+            <span style="opacity: 0.5">💬</span>
+            <span>已提交回答</span>
+            <n-popover trigger="click" placement="bottom" style="max-width: 400px">
+              <template #trigger>
+                <span class="ask-reply-detail-link">查看</span>
+              </template>
+              <div class="markdown-body" v-html="renderMarkdown(msg.content.replace('<!-- ask_user_response -->\n', ''))" />
+            </n-popover>
+            <n-text depth="3" style="font-size: 10px; margin-left: 4px">{{ formatTime(msg.created_at) }}</n-text>
+          </div>
         </div>
 
         <!-- 用户/AI 消息 -->
@@ -86,39 +158,105 @@
               </n-collapse-item>
             </n-collapse>
 
-            <!-- 工具调用记录 (已保存的消息) -->
-            <n-collapse v-if="msg.tool_calls?.length" style="margin-bottom: 6px">
-              <n-collapse-item name="tools">
-                <template #header>
-                  <n-space align="center" :size="4">
-                    <span>🔧</span>
-                    <n-text style="font-size: 11px; color: #18a058">
-                      工具调用 ×{{ msg.tool_calls.length }}
-                    </n-text>
-                  </n-space>
-                </template>
-                <div v-for="tc in msg.tool_calls" :key="tc.id" class="tool-call-item">
-                  <div class="tool-call-header">
+            <!-- 工具调用记录 (已保存消息, 折叠显示, 不含 ask_user) -->
+            <div v-if="getRegularToolCalls(msg.tool_calls).length" style="margin-bottom: 4px">
+              <div class="tool-group-header" @click="toggleToolGroup(msg.id)">
+                <span class="tool-group-arrow" :class="{ open: expandedToolGroups[msg.id] }">▶</span>
+                <span class="tool-group-icon">🛠️</span>
+                <span class="tool-group-count">{{ getRegularToolCalls(msg.tool_calls).length }} 轮工具调用</span>
+              </div>
+              <div v-if="expandedToolGroups[msg.id]" class="tool-group-body">
+                <template v-for="tc in getRegularToolCalls(msg.tool_calls)" :key="tc.id">
+                  <div class="tool-inline">
                     <span :class="tc.result?.startsWith('ERROR:') ? 'tool-icon-error' : 'tool-icon-ok'">
                       {{ tc.result?.startsWith('ERROR:') ? '❌' : '✅' }}
                     </span>
-                    <n-text strong style="font-size: 12px; color: #e0e0e0">{{ toolDisplayName(tc.name) }}</n-text>
-                    <n-text depth="3" style="font-size: 11px">({{ tc.duration_ms || 0 }}ms)</n-text>
-                  </div>
-                  <div v-if="tc.arguments" class="tool-call-args">
-                    <code>{{ formatToolArgs(tc.name, tc.arguments) }}</code>
-                  </div>
-                  <n-collapse>
-                    <n-collapse-item title="查看结果" name="result">
+                    <span class="tool-inline-name">{{ toolDisplayName(tc.name) }}</span>
+                    <code v-if="tc.arguments" class="tool-inline-args">{{ formatToolArgs(tc.name, tc.arguments) }}</code>
+                    <span v-if="tc.duration_ms" class="tool-inline-time">({{ tc.duration_ms }}ms)</span>
+                    <n-popover trigger="click" placement="bottom" style="max-width: 500px; max-height: 300px; overflow: auto">
+                      <template #trigger>
+                        <span class="tool-inline-view">查看</span>
+                      </template>
                       <div class="tool-result-content" v-html="renderMarkdown(tc.result || '(无结果)')" />
-                    </n-collapse-item>
-                  </n-collapse>
-                </div>
-              </n-collapse-item>
-            </n-collapse>
+                    </n-popover>
+                  </div>
+                </template>
+              </div>
+            </div>
 
             <!-- 消息内容 (Markdown) -->
             <div class="markdown-body" v-html="renderMarkdown(msg.content)" />
+
+            <!-- ask_user 问题卡片 (渲染在文本内容之后, 符合对话直觉) -->
+            <template v-for="tc in (msg.tool_calls || []).filter(t => t.name === 'ask_user' && parseQuestions(t.arguments).length > 0)" :key="tc.id">
+              <div class="question-card" style="margin-top: 6px">
+                <template v-if="getCardState(tc.id).submitted || isAskUserAnswered(msg, tc)">
+                  <!-- 已提交/已回答: 紧凑回显 -->
+                  <div class="question-card-header question-card-header-done">
+                    <span class="question-card-icon">{{ isAskUserAutoDecided(msg, tc) ? '🤖' : '✅' }}</span>
+                    <span class="question-card-title" style="color: #8a8a8a">{{ isAskUserAutoDecided(msg, tc) ? 'AI 自行决定' : '已回答' }}</span>
+                  </div>
+                  <!-- 本地 cardState 或 DB 跳过: 逐题显示 (含 AI 推荐回显) -->
+                  <template v-if="getCardState(tc.id).submitted || isAskUserAutoDecided(msg, tc)">
+                    <div v-for="(q, qi) in parseQuestions(tc.arguments)" :key="qi" class="question-summary-row">
+                      <span class="question-summary-q">{{ q.question }}</span>
+                      <span v-if="getCardState(tc.id).answers[qi]?.length || getCardState(tc.id).customTexts[qi]?.trim()" class="question-summary-a">
+                        {{ getCardState(tc.id).customTexts[qi]?.trim() || getCardState(tc.id).answers[qi]?.join('、') }}
+                      </span>
+                      <span v-else-if="getRecommendedLabels(q)" class="question-summary-a question-summary-a-auto">
+                        🤖 {{ getRecommendedLabels(q) }}
+                      </span>
+                    </div>
+                  </template>
+                  <!-- 从 DB 加载的历史: 显示后续用户回答 -->
+                  <div v-else class="question-result-text">
+                    <div class="markdown-body" v-html="renderMarkdown(getAskUserAnswer(msg))" />
+                  </div>
+                </template>
+                <template v-else>
+                  <!-- 未提交: 交互选择 -->
+                  <div class="question-card-header">
+                    <span class="question-card-icon">💬</span>
+                    <span class="question-card-title">AI 想了解以下问题</span>
+                    <span class="question-card-hint">选择后点击提交，未回答的问题由 AI 决定</span>
+                  </div>
+                  <div v-for="(q, qi) in parseQuestions(tc.arguments)" :key="qi" class="question-item">
+                    <div class="question-text">
+                      {{ qi + 1 }}. {{ q.question }}
+                      <span v-if="q.type === 'multi'" class="question-type-tag">多选</span>
+                    </div>
+                    <div v-if="q.context" class="question-context">{{ q.context }}</div>
+                    <div v-if="q.options?.length" class="question-options">
+                      <span v-for="(opt, oi) in q.options" :key="oi"
+                        class="question-option-btn"
+                        :class="{
+                          'question-option-selected': getCardState(tc.id).answers[qi]?.includes(opt.label),
+                          'question-option-recommended': opt.recommended && !getCardState(tc.id).answers[qi]?.includes(opt.label),
+                        }"
+                        @click="toggleOption(tc.id, qi, opt.label, q.type)">
+                        <span v-if="opt.recommended" class="rec-dot" />
+                        {{ opt.label }}
+                        <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
+                      </span>
+                    </div>
+                    <input v-if="!q.options?.length || getCardState(tc.id).answers[qi]?.some(a => a.includes('其他'))"
+                      class="question-custom-input"
+                      :placeholder="q.options?.length ? '请补充说明...' : '请输入你的回答...'"
+                      :value="getCardState(tc.id).customTexts[qi] || ''"
+                      @input="(e: any) => getCardState(tc.id).customTexts[qi] = e.target.value" />
+                  </div>
+                  <div class="question-submit-row">
+                    <n-button size="small" type="primary" @click="submitQuestionCard(tc.id, parseQuestions(tc.arguments))">
+                      提交回答
+                    </n-button>
+                    <n-button size="tiny" quaternary @click="submitQuestionCard(tc.id, parseQuestions(tc.arguments))">
+                      跳过全部，AI 自行决定
+                    </n-button>
+                  </div>
+                </template>
+              </div>
+            </template>
 
             <!-- 工具调用统计 -->
             <div v-if="msg.token_usage?.tool_rounds" style="margin-top: 4px; padding-top: 3px; border-top: 1px solid #333">
@@ -155,11 +293,9 @@
         <n-card size="small" style="max-width: 85%; background: #1a2a3e; border-left: 2px solid #e94560; --n-padding-top: 6px; --n-padding-bottom: 6px">
           <template #header>
             <n-space align="center" :size="6">
-              <n-text style="color: #e94560; font-size: 12px">{{ selectedModel }}</n-text>
+              <n-text style="color: #e94560; font-size: 12px">{{ selectedModelDisplay }}</n-text>
+              <span v-html="selectedModelProviderIcon" style="display:inline-flex"></span>
               <n-spin size="small" />
-              <n-button size="tiny" type="error" ghost @click="stopStreaming" style="margin-left: 8px">
-                ⏹ 停止
-              </n-button>
             </n-space>
           </template>
 
@@ -170,65 +306,117 @@
             </n-collapse-item>
           </n-collapse>
 
-          <!-- 工具调用 (实时) -->
-          <div v-if="streamToolCalls.length" style="margin-bottom: 8px">
-            <n-collapse :default-expanded-names="['tools']">
-              <n-collapse-item name="tools">
-                <template #header>
-                  <n-space align="center" :size="6">
-                    <span>🔧</span>
-                    <n-text style="font-size: 12px; color: #18a058">
-                      工具调用 ×{{ streamToolCalls.length }}
-                    </n-text>
-                    <n-spin v-if="streamToolCalls.some(tc => tc.status === 'calling')" :size="12" />
-                  </n-space>
-                </template>
-                <div v-for="tc in streamToolCalls" :key="tc.id" class="tool-call-item">
-                  <div class="tool-call-header">
-                    <span v-if="tc.status === 'calling'" class="tool-icon-pending">⏳</span>
-                    <span v-else-if="tc.status === 'error'" class="tool-icon-error">❌</span>
-                    <span v-else class="tool-icon-ok">✅</span>
-                    <n-text strong style="font-size: 12px; color: #e0e0e0">{{ toolDisplayName(tc.name) }}</n-text>
-                    <n-text v-if="tc.duration_ms" depth="3" style="font-size: 11px">({{ tc.duration_ms }}ms)</n-text>
-                    <n-spin v-if="tc.status === 'calling'" :size="12" style="margin-left: 4px" />
-                  </div>
-                  <div v-if="tc.arguments" class="tool-call-args">
-                    <code>{{ formatToolArgs(tc.name, tc.arguments) }}</code>
-                  </div>
-                  <n-collapse v-if="tc.result">
-                    <n-collapse-item title="查看结果" name="result">
-                      <div class="tool-result-content" v-html="renderMarkdown(tc.result)" />
-                    </n-collapse-item>
-                  </n-collapse>
+          <!-- 流式内容段 (工具调用内联显示) -->
+          <template v-for="(seg, segIdx) in streamSegments" :key="segIdx">
+            <div v-if="seg.type === 'content'" class="markdown-body"
+              v-html="renderMarkdown((seg.text || '') + (segIdx === streamSegments.length - 1 ? '▍' : ''))" />
+            <!-- ask_user: 交互式问题卡片 (preparing 状态也显示) -->
+            <div v-else-if="seg.type === 'tool' && seg.toolCall?.name === 'ask_user' && (seg.toolCall.status === 'preparing' || parseQuestions(seg.toolCall.arguments).length > 0)" class="question-card">
+              <!-- 准备中: 参数还在流式传输 -->
+              <template v-if="seg.toolCall.status === 'preparing'">
+                <div class="question-card-header">
+                  <span class="question-card-icon">💬</span>
+                  <span class="question-card-title">AI 正在组织问题…</span>
+                  <n-spin :size="12" style="margin-left: 6px" />
                 </div>
-              </n-collapse-item>
-            </n-collapse>
-          </div>
-
-          <div class="markdown-body" v-html="renderMarkdown(streamContent || '▍')" />
-
-          <!-- Token 使用条 -->
-          <div v-if="contextInfo" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #333">
-            <n-space align="center" :size="4">
-              <n-text depth="3" style="font-size: 11px">
-                上下文: {{ contextInfo.percentage }}%
-                ({{ formatTokens(contextInfo.used) }}/{{ formatTokens(contextInfo.total) }})
-              </n-text>
-              <n-progress
-                type="line"
-                :percentage="contextInfo.percentage"
-                :show-indicator="false"
-                :height="4"
-                style="width: 80px"
-                :color="contextInfo.percentage > 80 ? '#e94560' : contextInfo.percentage > 50 ? '#f0a020' : '#18a058'"
-              />
-              <n-text v-if="contextInfo.messages?.dropped > 0" depth="3" style="font-size: 11px; color: #f0a020">
-                ({{ contextInfo.messages.dropped }} 条旧消息已截断)
-              </n-text>
-            </n-space>
-          </div>
+                <div class="question-preparing-body">
+                  <div class="question-preparing-skeleton">
+                    <div class="skeleton-line" style="width: 70%"></div>
+                    <div class="skeleton-options">
+                      <div class="skeleton-pill"></div>
+                      <div class="skeleton-pill" style="width: 80px"></div>
+                      <div class="skeleton-pill" style="width: 100px"></div>
+                    </div>
+                    <div class="skeleton-line" style="width: 55%; margin-top: 10px"></div>
+                    <div class="skeleton-options">
+                      <div class="skeleton-pill" style="width: 90px"></div>
+                      <div class="skeleton-pill" style="width: 70px"></div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <template v-else-if="getCardState(seg.toolCall.id).submitted">
+                <!-- 已提交: 紧凑回显 (含 AI 推荐回显) -->
+                <div class="question-card-header question-card-header-done">
+                  <span class="question-card-icon">{{ parseQuestions(seg.toolCall.arguments).every((_: any, qi: number) => !getCardState(seg.toolCall.id).answers[qi]?.length && !getCardState(seg.toolCall.id).customTexts[qi]?.trim()) ? '🤖' : '✅' }}</span>
+                  <span class="question-card-title" style="color: #8a8a8a">{{ parseQuestions(seg.toolCall.arguments).every((_: any, qi: number) => !getCardState(seg.toolCall.id).answers[qi]?.length && !getCardState(seg.toolCall.id).customTexts[qi]?.trim()) ? 'AI 自行决定' : '已回答' }}</span>
+                </div>
+                <div v-for="(q, qi) in parseQuestions(seg.toolCall.arguments)" :key="qi" class="question-summary-row">
+                  <span class="question-summary-q">{{ q.question }}</span>
+                  <span v-if="getCardState(seg.toolCall.id).answers[qi]?.length || getCardState(seg.toolCall.id).customTexts[qi]?.trim()" class="question-summary-a">
+                    {{ getCardState(seg.toolCall.id).customTexts[qi]?.trim() || getCardState(seg.toolCall.id).answers[qi]?.join('、') }}
+                  </span>
+                  <span v-else-if="getRecommendedLabels(q)" class="question-summary-a question-summary-a-auto">
+                    🤖 {{ getRecommendedLabels(q) }}
+                  </span>
+                </div>
+              </template>
+              <template v-else>
+                <!-- 未提交: 交互选择 -->
+                <div class="question-card-header">
+                  <span class="question-card-icon">💬</span>
+                  <span class="question-card-title">AI 想了解以下问题</span>
+                  <n-spin v-if="seg.toolCall.status === 'calling'" :size="12" style="margin-left: 6px" />
+                  <span v-else class="question-card-hint">选择后点击提交，未回答的问题由 AI 决定</span>
+                </div>
+                <div v-for="(q, qi) in parseQuestions(seg.toolCall.arguments)" :key="qi" class="question-item">
+                  <div class="question-text">
+                    {{ qi + 1 }}. {{ q.question }}
+                    <span v-if="q.type === 'multi'" class="question-type-tag">多选</span>
+                  </div>
+                  <div v-if="q.context" class="question-context">{{ q.context }}</div>
+                  <div v-if="q.options?.length" class="question-options">
+                    <span v-for="(opt, oi) in q.options" :key="oi"
+                      class="question-option-btn"
+                      :class="{
+                        'question-option-selected': getCardState(seg.toolCall.id).answers[qi]?.includes(opt.label),
+                        'question-option-recommended': opt.recommended && !getCardState(seg.toolCall.id).answers[qi]?.includes(opt.label),
+                      }"
+                      @click="toggleOption(seg.toolCall.id, qi, opt.label, q.type)">
+                      <span v-if="opt.recommended" class="rec-dot" />
+                      {{ opt.label }}
+                      <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
+                    </span>
+                  </div>
+                  <input v-if="!q.options?.length || getCardState(seg.toolCall.id).answers[qi]?.some(a => a.includes('其他'))"
+                    class="question-custom-input"
+                    :placeholder="q.options?.length ? '请补充说明...' : '请输入你的回答...'"
+                    :value="getCardState(seg.toolCall.id).customTexts[qi] || ''"
+                    @input="(e: any) => getCardState(seg.toolCall.id).customTexts[qi] = e.target.value" />
+                </div>
+                <div v-if="seg.toolCall.status !== 'calling'" class="question-submit-row">
+                  <n-button size="small" type="primary" @click="submitQuestionCard(seg.toolCall.id, parseQuestions(seg.toolCall.arguments))">
+                    提交回答
+                  </n-button>
+                  <n-button size="tiny" quaternary @click="submitQuestionCard(seg.toolCall.id, parseQuestions(seg.toolCall.arguments))">
+                    跳过全部，AI 自行决定
+                  </n-button>
+                </div>
+              </template>
+            </div>
+            <!-- 普通工具: 单行内联 -->
+            <div v-else-if="seg.type === 'tool' && seg.toolCall" class="tool-inline">
+              <span v-if="seg.toolCall.status === 'calling' || seg.toolCall.status === 'preparing'" class="tool-icon-pending">⏳</span>
+              <span v-else-if="seg.toolCall.status === 'error'" class="tool-icon-error">❌</span>
+              <span v-else class="tool-icon-ok">✅</span>
+              <span class="tool-inline-name">{{ toolDisplayName(seg.toolCall.name) }}</span>
+              <code v-if="seg.toolCall.arguments" class="tool-inline-args">{{ formatToolArgs(seg.toolCall.name, seg.toolCall.arguments) }}</code>
+              <span v-if="seg.toolCall.duration_ms" class="tool-inline-time">({{ seg.toolCall.duration_ms }}ms)</span>
+              <n-spin v-if="seg.toolCall.status === 'calling' || seg.toolCall.status === 'preparing'" :size="10" style="margin-left: 2px" />
+              <n-popover v-if="seg.toolCall.result" trigger="click" placement="bottom" style="max-width: 500px; max-height: 300px; overflow: auto">
+                <template #trigger>
+                  <span class="tool-inline-view">查看</span>
+                </template>
+                <div class="tool-result-content" v-html="renderMarkdown(seg.toolCall.result)" />
+              </n-popover>
+            </div>
+          </template>
+          <div v-if="!streamSegments.length" class="markdown-body" v-html="renderMarkdown('▍')" />
         </n-card>
       </div>
+    </div>
+      <!-- 右侧插槽 (设计稿面板在此渲染) -->
+      <slot name="aside" />
     </div>
 
     <!-- 图片预览区 -->
@@ -280,6 +468,7 @@
             </n-text>
             <n-checkbox-group v-model:value="toolPermissions" @update:value="saveToolPermissions">
               <n-space vertical :size="4">
+                <n-checkbox value="ask_user" label="❓ 主动提问澄清" />
                 <n-checkbox value="read_source" label="📖 读取源码文件" />
                 <n-checkbox value="read_config" label="📄 读取配置文件" />
                 <n-checkbox value="search" label="🔍 搜索代码内容" />
@@ -296,29 +485,142 @@
         ref="inputRef"
         v-model:value="inputText"
         type="textarea"
-        :autosize="{ minRows: 2, maxRows: 6 }"
-        :placeholder="aiMuted ? '人工讨论模式 · 消息不触发 AI (Enter 发送)' : '描述你的需求... (Enter 发送, Shift+Enter 换行)'"
+        :autosize="{ minRows: 1, maxRows: 5 }"
+        :placeholder="aiMuted ? '人工讨论模式 (Enter 发送)' : '描述你的需求... (Enter 发送, Shift+Enter 换行)'"
         :disabled="streaming"
         @keydown="handleKeydown"
-        style="margin: 6px 0"
+        style="margin: 4px 0"
       />
 
       <!-- 第 3 行: 操作栏 -->
       <div class="action-bar">
-        <div class="action-bar-item">
-          <n-progress
-            type="line"
-            :percentage="displayContextInfo.percentage"
-            :show-indicator="false"
-            :height="3"
-            style="width: 48px"
-            :color="displayContextInfo.percentage > 80 ? '#e94560' : displayContextInfo.percentage > 50 ? '#f0a020' : '#18a058'"
-          />
-          <span class="action-bar-stat">
-            {{ formatTokens(displayContextInfo.used) }}/{{ formatTokens(displayContextInfo.total) }} · {{ displayContextInfo.percentage }}%
-          </span>
-          <n-spin v-if="contextCompressing" :size="12" style="margin-left: 4px" />
-        </div>
+        <n-popover trigger="click" placement="top-start" style="padding: 0">
+          <template #trigger>
+            <div class="action-bar-item" style="cursor: pointer">
+              <n-progress
+                type="line"
+                :percentage="displayContextInfo.percentage"
+                :show-indicator="false"
+                :height="3"
+                style="width: 48px"
+                :color="displayContextInfo.percentage > 80 ? '#e94560' : displayContextInfo.percentage > 50 ? '#f0a020' : '#18a058'"
+              />
+              <span class="action-bar-stat">
+                {{ formatTokens(displayContextInfo.used) }}/{{ formatTokens(displayContextInfo.total) }} · {{ displayContextInfo.percentage }}%
+              </span>
+              <n-spin v-if="contextCompressing" :size="12" style="margin-left: 4px" />
+            </div>
+          </template>
+          <!-- 上下文占用明细气泡 (树形检查器) -->
+          <div class="ctx-breakdown">
+            <div class="ctx-breakdown-title">📊 上下文占用明细</div>
+            <div class="ctx-breakdown-bar">
+              <div class="ctx-bar-seg ctx-bar-system" :style="{ width: ctxBreakdownPercents.system + '%' }" />
+              <div class="ctx-bar-seg ctx-bar-tools" :style="{ width: ctxBreakdownPercents.tools + '%' }" />
+              <div class="ctx-bar-seg ctx-bar-history" :style="{ width: ctxBreakdownPercents.history + '%' }" />
+            </div>
+
+            <!-- 可展开的树形明细 -->
+            <div class="ctx-tree">
+              <!-- System Prompt (可展开子节点) -->
+              <div class="ctx-tree-node">
+                <div class="ctx-tree-row" @click="ctxExpanded.system = !ctxExpanded.system">
+                  <span class="ctx-tree-arrow" :class="{ open: ctxExpanded.system }">▶</span>
+                  <span class="ctx-dot" style="background:#a855f7" />
+                  <span class="ctx-tree-label">System Prompt</span>
+                  <span class="ctx-val">{{ formatTokens(ctxBreakdown.system) }}</span>
+                </div>
+                <div v-if="ctxExpanded.system && ctxSystemSections.length" class="ctx-tree-children">
+                  <div v-for="(sec, si) in ctxSystemSections" :key="si" class="ctx-tree-node">
+                    <div class="ctx-tree-row ctx-tree-row-child"
+                         @click="sec.children ? (ctxExpanded['sys_' + si] = !ctxExpanded['sys_' + si]) : openCtxContent(sec.name, sec.content)">
+                      <span v-if="sec.children" class="ctx-tree-arrow" :class="{ open: ctxExpanded['sys_' + si] }">▶</span>
+                      <span v-else class="ctx-tree-arrow ctx-tree-leaf">·</span>
+                      <span class="ctx-tree-label" :class="{ 'ctx-clickable': !sec.children }">{{ sec.name }}</span>
+                      <span class="ctx-val">{{ formatTokens(sec.tokens) }}</span>
+                    </div>
+                    <!-- 子节点的 children (如关键文件) -->
+                    <div v-if="sec.children && ctxExpanded['sys_' + si]" class="ctx-tree-children">
+                      <div v-for="(child, ci) in sec.children" :key="ci" class="ctx-tree-row ctx-tree-row-leaf ctx-clickable-row"
+                           @click="openCtxContent(child.name, child.content)">
+                        <span class="ctx-tree-arrow ctx-tree-leaf">·</span>
+                        <span class="ctx-tree-label ctx-clickable">{{ child.name }}</span>
+                        <span class="ctx-val">{{ formatTokens(child.tokens) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 工具定义 -->
+              <div class="ctx-tree-node">
+                <div class="ctx-tree-row">
+                  <span class="ctx-tree-arrow ctx-tree-leaf">·</span>
+                  <span class="ctx-dot" style="background:#0ea5e9" />
+                  <span class="ctx-tree-label">工具定义</span>
+                  <span class="ctx-val">{{ formatTokens(ctxBreakdown.tools) }}</span>
+                </div>
+              </div>
+
+              <!-- 对话历史 (可展开每条消息) -->
+              <div class="ctx-tree-node">
+                <div class="ctx-tree-row" @click="ctxExpanded.history = !ctxExpanded.history">
+                  <span class="ctx-tree-arrow" :class="{ open: ctxExpanded.history }">▶</span>
+                  <span class="ctx-dot" style="background:#f59e0b" />
+                  <span class="ctx-tree-label">对话历史</span>
+                  <span class="ctx-val">{{ formatTokens(ctxBreakdown.history) }}</span>
+                </div>
+                <div v-if="ctxExpanded.history && ctxHistoryDetail.length" class="ctx-tree-children">
+                  <div v-for="(hm, hi) in ctxHistoryDetail" :key="hi" class="ctx-tree-row ctx-tree-row-leaf">
+                    <span class="ctx-tree-arrow ctx-tree-leaf">·</span>
+                    <span class="ctx-tree-label ctx-tree-msg-label" :class="'ctx-role-' + hm.role">
+                      {{ hm.role === 'user' ? '👤' : hm.role === 'assistant' ? '🤖' : '📋' }}
+                      <span class="ctx-msg-preview">{{ hm.preview || '(空)' }}</span>
+                    </span>
+                    <span class="ctx-val">{{ formatTokens(hm.tokens) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 汇总 -->
+            <div class="ctx-tree-summary">
+              <span>总计 / 上限</span>
+              <span class="ctx-val">{{ formatTokens(displayContextInfo.used) }} / {{ formatTokens(displayContextInfo.total) }}</span>
+            </div>
+            <div v-if="ctxMessages.total" class="ctx-breakdown-msgs">
+              💬 消息: 保留 {{ ctxMessages.kept }} / 共 {{ ctxMessages.total }}
+              <span v-if="ctxMessages.dropped"> · 丢弃 {{ ctxMessages.dropped }}</span>
+            </div>
+          </div>
+        </n-popover>
+        <!-- 上下文内容查看气泡 -->
+        <n-modal v-model:show="ctxContentModal" preset="card" :title="ctxContentTitle"
+                 style="width: min(620px, 90vw); max-height: 70vh;"
+                 :bordered="false" size="small"
+                 :segmented="{ content: true }">
+          <n-scrollbar style="max-height: calc(70vh - 80px)">
+            <pre class="ctx-content-pre">{{ ctxContentText }}</pre>
+          </n-scrollbar>
+        </n-modal>
+        <n-button-group size="tiny">
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button size="tiny" quaternary :loading="summarizing" :disabled="streaming || messages.length < 4" @click="handleSummarize">
+                📝
+              </n-button>
+            </template>
+            总结上下文：将旧消息压缩为摘要，释放上下文空间
+          </n-tooltip>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button size="tiny" quaternary :disabled="streaming || !messages.length" @click="handleClearContext">
+                🗑️
+              </n-button>
+            </template>
+            清空上下文：删除所有讨论消息，重新开始
+          </n-tooltip>
+        </n-button-group>
         <span class="action-bar-spring" />
         <n-tooltip trigger="hover">
           <template #trigger>
@@ -329,7 +631,7 @@
           {{ aiMuted ? '解除禁言后，AI 会阅读所有新消息并回复' : '禁言后仅人工讨论，AI 不参与回复' }}
         </n-tooltip>
         <n-button size="small" type="warning" quaternary @click="handleFinalizePlan" :loading="finalizingPlan" :disabled="messages.length < 2 || streaming">
-          📋 敲定
+          📋 {{ props.project.skill?.ui_labels?.finalize_action || '敲定' }}
         </n-button>
         <n-button v-if="streaming" size="small" type="error" @click="stopStreaming">⏹ 停止</n-button>
         <n-button v-else size="small" type="primary" @click="sendMessage()" :disabled="!inputText.trim() && !pendingImages.length">发送</n-button>
@@ -339,11 +641,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch, h } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch, h } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import { discussionApi, modelApi, projectApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useStudioConfigStore } from '@/stores/studioConfig'
+import { getProviderIcon } from '@/utils/providerIcons'
 import type { Project } from '@/stores/project'
 import { marked } from 'marked'
 
@@ -358,6 +661,7 @@ const dialog = useDialog()
 const messages = ref<any[]>([])
 const inputText = ref('')
 const streaming = ref(false)
+const startingChat = ref(false)
 const streamContent = ref('')
 const streamThinking = ref('')
 const streamToolCalls = ref<Array<{
@@ -368,6 +672,18 @@ const streamToolCalls = ref<Array<{
   result?: string
   duration_ms?: number
 }>>([])
+const streamSegments = ref<Array<{
+  type: 'content' | 'tool'
+  text?: string
+  toolCall?: {
+    id: string
+    name: string
+    arguments: any
+    status: 'calling' | 'done' | 'error'
+    result?: string
+    duration_ms?: number
+  }
+}>>([])
 const contextInfo = ref<any>(null)
 const tokenUsage = ref<any>(null)
 const summaryNotice = ref<string>('')
@@ -375,10 +691,45 @@ const finalizingPlan = ref(false)
 const messageListRef = ref<HTMLElement>()
 const inputRef = ref()
 const fileInputRef = ref<HTMLInputElement>()
+
+// ---- 项目信息编辑 ----
+const showProjectEdit = ref(false)
+const editProjectTitle = ref('')
+const editProjectDesc = ref('')
+const savingProject = ref(false)
+
+watch(showProjectEdit, (val) => {
+  if (val) {
+    editProjectTitle.value = props.project.title || ''
+    editProjectDesc.value = props.project.description || ''
+  }
+})
+
+async function saveProjectInfo() {
+  savingProject.value = true
+  try {
+    await projectApi.update(props.project.id, {
+      title: editProjectTitle.value,
+      description: editProjectDesc.value,
+    })
+    // 直接更新 props 对象 (reactive)
+    ;(props.project as any).title = editProjectTitle.value
+    ;(props.project as any).description = editProjectDesc.value
+    showProjectEdit.value = false
+    message.success('项目信息已更新')
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '保存失败')
+  } finally {
+    savingProject.value = false
+  }
+}
 const models = ref<any[]>([])
 const selectedModel = ref(props.project.discussion_model || 'gpt-4o')
 const loadingModels = ref(false)
-const modelSourceFilter = ref<'all' | 'models' | 'copilot' | 'custom'>('all')
+const modelSourceFilter = computed({
+  get: () => studioConfig.chatModelSourceFilter,
+  set: (v: string) => { studioConfig.chatModelSourceFilter = v }
+})
 
 // AbortController for canceling streams
 const abortController = ref<AbortController | null>(null)
@@ -391,6 +742,15 @@ const lastTokenUsage = ref<any>(null)
 
 // 上下文信息 (常驻显示, 不随 streaming 重置)
 const persistentContextInfo = ref<any>(null)
+
+// 刷新上下文使用率 (复用在 mount / sendMessage / regenerate / summarize 等场景)
+function refreshContextInfo() {
+  const model = selectedModel.value
+  if (!model || !props.project?.id) return
+  discussionApi.checkContext(props.project.id, model).then(({ data: ctx }) => {
+    if (ctx?.context) persistentContextInfo.value = ctx.context
+  }).catch(() => {})
+}
 
 // 当前选中模型的最大上下文 tokens
 const selectedModelMaxTokens = computed(() => {
@@ -413,31 +773,134 @@ const displayContextInfo = computed(() => {
   return { used: 0, total: total || 0, percentage: 0 }
 })
 
+// 上下文占用明细 (breakdown)
+const ctxBreakdown = computed(() => {
+  const bd = persistentContextInfo.value?.breakdown
+  return { system: bd?.system || 0, tools: bd?.tools || 0, history: bd?.history || 0 }
+})
+const ctxMessages = computed(() => {
+  const m = persistentContextInfo.value?.messages
+  return { kept: m?.kept || 0, dropped: m?.dropped || 0, total: m?.total || 0 }
+})
+const ctxBreakdownPercents = computed(() => {
+  const total = displayContextInfo.value.total || 1
+  return {
+    system: Math.round(ctxBreakdown.value.system * 100 / total),
+    tools: Math.round(ctxBreakdown.value.tools * 100 / total),
+    history: Math.round(ctxBreakdown.value.history * 100 / total),
+  }
+})
+// System Prompt 分段明细 (树形子节点)
+const ctxSystemSections = computed(() => {
+  return persistentContextInfo.value?.system_sections || []
+})
+// 对话历史每条消息的 token 明细
+const ctxHistoryDetail = computed(() => {
+  return persistentContextInfo.value?.history_detail || []
+})
+// 树形展开状态
+const ctxExpanded = reactive<Record<string, boolean>>({})
+// 工具调用分组展开状态
+const expandedToolGroups = reactive<Record<number, boolean>>({})
+function toggleToolGroup(msgId: number) {
+  expandedToolGroups[msgId] = !expandedToolGroups[msgId]
+}
+function getRegularToolCalls(toolCalls: any[] | undefined) {
+  return (toolCalls || []).filter((tc: any) => tc.name !== 'ask_user')
+}
+// 判断 ask_user 是否已被用户回答 (查找后续的 ask_user_response 消息)
+function isAskUserAnswered(currentMsg: any, _tc: any): boolean {
+  const idx = messages.value.findIndex((m: any) => m.id === currentMsg.id)
+  if (idx < 0) return false
+  // 往后找紧邻的 user 消息是否是 ask_user_response
+  for (let i = idx + 1; i < messages.value.length; i++) {
+    const m = messages.value[i]
+    if (m.role === 'user' && m.content?.startsWith('<!-- ask_user_response -->')) return true
+    if (m.role === 'assistant') break // 碰到下一个 AI 消息就停
+  }
+  return false
+}
+// 获取 ask_user 的用户回答内容
+function getAskUserAnswer(currentMsg: any): string {
+  const idx = messages.value.findIndex((m: any) => m.id === currentMsg.id)
+  if (idx < 0) return ''
+  for (let i = idx + 1; i < messages.value.length; i++) {
+    const m = messages.value[i]
+    if (m.role === 'user' && m.content?.startsWith('<!-- ask_user_response -->')) {
+      return m.content.replace('<!-- ask_user_response -->\n', '').replace('<!-- ask_user_response -->', '')
+    }
+    if (m.role === 'assistant') break
+  }
+  return ''
+}
+// 判断 ask_user 是否全部由 AI 自行决定 (用户未选任何选项)
+function isAskUserAutoDecided(msg: any, tc: any): boolean {
+  const state = getCardState(tc.id)
+  if (state.submitted) {
+    // 本地 state: 全部问题都没有回答
+    const questions = parseQuestions(tc.arguments)
+    return questions.every((_: any, qi: number) => !state.answers[qi]?.length && !state.customTexts[qi]?.trim())
+  }
+  // DB 加载: 回答文本含跳过标记
+  const answer = getAskUserAnswer(msg)
+  return answer.includes('以上问题由你来决定')
+}
+
+// 获取问题的推荐选项文本 (用于 AI 自行决定的显示)
+function getRecommendedLabels(q: ParsedQuestion): string {
+  const recs = q.options?.filter(o => o.recommended)
+  if (recs?.length) return recs.map(o => o.label).join('、')
+  return ''
+}
+
+// 内容查看器 (气泡弹窗)
+const ctxContentModal = ref(false)
+const ctxContentTitle = ref('')
+const ctxContentText = ref('')
+function openCtxContent(name: string, content?: string) {
+  if (!content) return
+  ctxContentTitle.value = name
+  ctxContentText.value = content
+  ctxContentModal.value = true
+}
+
 // AI 禁言状态
 const aiMuted = ref(false)
 const muteLoading = ref(false)
 
 // 上下文压缩状态 (转圈圈特效)
 const contextCompressing = ref(false)
+const summarizing = ref(false)
 let contextCheckVersion = 0  // 快速切换模型时取消旧请求
+
+// 自动继续计数器 (防止无限循环)
+let autoContinueCount = 0
 
 // 来源过滤 — 下拉菜单
 const sourceFilterOptions = computed(() => {
-  const base = [
+  const base: Array<{label: string; key: string}> = [
     { label: '全部', key: 'all' },
-    { label: 'GitHub (免费)', key: 'models' },
-    { label: 'Copilot ☁️ (付费)', key: 'copilot' },
+    { label: 'GitHub (免费)', key: 'github' },
   ]
+  if (models.value.some(m => m.api_backend === 'copilot')) {
+    base.push({ label: 'Copilot (付费)', key: 'copilot' })
+  }
+  const seen = new Set<string>()
+  for (const m of models.value) {
+    const slug = m.provider_slug || ''
+    if (slug && slug !== 'github' && slug !== 'copilot' && !seen.has(slug)) {
+      seen.add(slug)
+      base.push({ label: m.publisher || slug, key: slug })
+    }
+  }
   if (studioConfig.customModelsEnabled) {
-    base.push({ label: '补充模型', key: 'custom' })
+    base.push({ label: '🧩 补充模型', key: 'custom' })
   }
   return base
 })
 const sourceFilterLabel = computed(() => {
-  if (modelSourceFilter.value === 'models') return 'GitHub'
-  if (modelSourceFilter.value === 'copilot') return 'Copilot ☁️'
-  if (modelSourceFilter.value === 'custom') return '补充模型'
-  return '全部'
+  const opt = sourceFilterOptions.value.find(o => o.key === modelSourceFilter.value)
+  return opt?.label || '全部'
 })
 function onSourceFilterChange(key: string) {
   if (key === 'custom' && !studioConfig.customModelsEnabled) {
@@ -454,9 +917,23 @@ const currentModelCaps = computed(() => {
   return { supports_vision: !!model.supports_vision, supports_tools: !!model.supports_tools }
 })
 
-// 工具权限 (默认关闭 — 每轮工具调用消耗额外 1 次 premium request)
+const selectedModelDisplay = computed(() => {
+  const model = models.value.find((m: any) => m.id === selectedModel.value)
+  if (!model) return selectedModel.value
+  const customStr = model.is_custom ? ' 🧩' : ''
+  return `${selectedModel.value}${customStr}`
+})
+
+const selectedModelProviderIcon = computed(() => {
+  const model = models.value.find((m: any) => m.id === selectedModel.value)
+  if (!model) return ''
+  const slug = model.provider_slug || (model.api_backend === 'copilot' ? 'copilot' : 'github')
+  return getProviderIcon(slug, '', 12)
+})
+
+// 工具权限 (代码工具默认关闭, ask_user 默认开启)
 const toolPermissions = ref<string[]>(
-  props.project.tool_permissions || []
+  props.project.tool_permissions?.length ? props.project.tool_permissions : ['ask_user']
 )
 
 // 当前模型的工具轮次上限 (根据免费/付费配置)
@@ -495,79 +972,73 @@ function getUserColor(senderName: string): string {
   return userColorMap[senderName]
 }
 
-// 模型选项，按 publisher 分组, Copilot API 模型排在后面, 应用配置过滤
+// 模型选项，保持 API 返回顺序, 按 model_family 分组, 应用配置过滤
 const modelOptions = computed(() => {
   const byCategory = models.value.filter(m => m.category === 'discussion' || m.category === 'both')
   // 按来源过滤
   const sourceFiltered = modelSourceFilter.value === 'all'
     ? byCategory
     : modelSourceFilter.value === 'copilot'
-      ? byCategory.filter(m => m.api_backend === 'copilot')
+      ? byCategory.filter(m => m.provider_slug === 'copilot' || m.api_backend === 'copilot')
       : modelSourceFilter.value === 'custom'
         ? byCategory.filter(m => m.is_custom)
-        : byCategory.filter(m => m.api_backend !== 'copilot')
+        : modelSourceFilter.value === 'github'
+          ? byCategory.filter(m => m.provider_slug === 'github' || (!m.provider_slug && m.api_backend === 'models'))
+          : byCategory.filter(m => m.provider_slug === modelSourceFilter.value)
 
   // 应用配置过滤 (免费模式 + 黑名单)
   const filtered = sourceFiltered.filter(m => studioConfig.isModelVisible(m))
-
-  const modelsApi = filtered.filter(m => m.api_backend !== 'copilot')
-  const copilotApi = filtered.filter(m => m.api_backend === 'copilot')
-
-  const classifyFamily = (m: any): string => {
-    const n = String(m.id || m.name || '').replace(/^copilot:/, '').toLowerCase()
-    if (n.includes('claude') || n.includes('anthropic')) return 'Anthropic'
-    if (n.includes('gpt') || n.startsWith('o1') || n.startsWith('o3') || n.startsWith('o4')) return 'OpenAI'
-    if (n.includes('gemini') || n.includes('google')) return 'Google'
-    if (n.includes('deepseek')) return 'DeepSeek'
-    if (n.includes('mistral')) return 'Mistral AI'
-    if (n.includes('meta')) return 'Meta'
-    if (n.includes('microsoft')) return 'Microsoft'
-    if (n.includes('cohere')) return 'Cohere'
-    if (n.includes('xai')) return 'xAI'
-    return m.publisher || '其他'
-  }
-
-  const buildGroups = (list: any[], suffix: string = '') => {
-    const groups: Record<string, any[]> = {}
-    for (const m of list) {
-      const pub = classifyFamily(m) + suffix
-      if (!groups[pub]) groups[pub] = []
-      groups[pub].push(m)
-    }
-    return groups
-  }
 
   const mapOpt = (m: any) => ({
     label: m.name, value: m.id,
     description: m.summary || m.description || '',
     supports_vision: m.supports_vision, supports_tools: m.supports_tools,
     is_reasoning: m.is_reasoning, api_backend: m.api_backend,
+    is_custom: m.is_custom,
+    provider_slug: m.provider_slug || (m.api_backend === 'copilot' ? 'copilot' : 'github'),
     pricing_tier: m.pricing_tier, premium_multiplier: m.premium_multiplier,
     is_deprecated: m.is_deprecated, pricing_note: m.pricing_note,
     max_input_tokens: studioConfig.getEffectiveMaxInput(m.id, m.max_input_tokens || 0),
     max_output_tokens: m.max_output_tokens || 0,
   })
-  const options: any[] = []
-  for (const [pub, items] of Object.entries(buildGroups(modelsApi))) {
-    options.push({ type: 'group', label: pub, key: pub, children: items.map(mapOpt) })
-  }
-  if (copilotApi.length) {
-    for (const [pub, items] of Object.entries(buildGroups(copilotApi, ' ☁️'))) {
-      options.push({ type: 'group', label: pub, key: 'copilot-' + pub, children: items.map(mapOpt) })
+  // 按 model_family 保序分组
+  const groups: Array<{ key: string; label: string; slug: string; items: any[] }> = []
+  const groupMap: Record<string, typeof groups[0]> = {}
+  for (const m of filtered) {
+    const family = m.model_family || m.publisher || m.provider_slug || 'Other'
+    const slug = m.provider_slug || (m.api_backend === 'copilot' ? 'copilot' : 'github')
+    const gKey = slug + ':' + family
+    if (!groupMap[gKey]) {
+      const g = { key: gKey, label: family, slug, items: [] as any[] }
+      groups.push(g)
+      groupMap[gKey] = g
     }
+    groupMap[gKey].items.push(m)
   }
-  return options
+  return groups.map(g => ({
+    type: 'group', label: g.label, key: g.key, provider_slug: g.slug,
+    children: g.items.map(mapOpt),
+  }))
 })
 
 // 自定义模型选项渲染 (能力图标 + 上下文窗口 + 定价标识)
 function renderModelLabel(option: any, selected: boolean) {
-  if (option.type === 'group') return option.label
+  if (option.type === 'group') {
+    const iconHtml = getProviderIcon(option.provider_slug || 'github', option.label, 14)
+    return h('span', { style: 'display:inline-flex;align-items:center;gap:4px' }, [
+      h('span', { innerHTML: iconHtml, style: 'display:inline-flex' }),
+      option.label,
+    ])
+  }
   const caps: string[] = []
   if (option.is_reasoning) caps.push('🧠')
   if (option.supports_vision) caps.push('👁️')
   if (option.supports_tools) caps.push('🔧')
   const depStr = option.is_deprecated ? ' ⚠️' : ''
   const capStr = caps.length ? ` ${caps.join('')}` : ''
+  const iconHtml = getProviderIcon(option.provider_slug || 'github', '', 12)
+  const iconVNode = h('span', { innerHTML: iconHtml, style: 'display:inline-flex;vertical-align:middle;margin:0 2px' })
+  const customStr = option.is_custom ? ' 🧩' : ''
   const priceText = option.pricing_note || 'x0'
   const ctxText = option.max_input_tokens ? formatTokens(option.max_input_tokens) : ''
   const nameStyle = selected ? 'font-weight:600' : ''
@@ -575,7 +1046,7 @@ function renderModelLabel(option: any, selected: boolean) {
     ? 'color:#18a058;font-size:11px;flex-shrink:0;margin-left:8px;font-weight:600'
     : 'color:#888;font-size:11px;flex-shrink:0;margin-left:8px'
   return h('div', { style: 'display:flex;justify-content:space-between;align-items:center;width:100%' }, [
-    h('span', { style: nameStyle }, [selected ? '● ' : '', option.label as string, capStr, depStr]),
+    h('span', { style: nameStyle }, [selected ? '● ' : '', option.label as string, ' ', iconVNode, customStr, capStr, depStr]),
     h('span', { style: priceStyle }, [
       ctxText ? h('span', { style: 'color:#666;margin-right:6px' }, ctxText) : null,
       priceText,
@@ -607,13 +1078,24 @@ function renderMarkdown(text: string) {
 }
 
 function formatTime(d: string) {
-  return new Date(d).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  // 后端存储 UTC 时间 (datetime.utcnow)，ISO 字符串不含 Z 后缀
+  // 需要手动补 Z 让浏览器正确转为本地时区
+  const utcStr = d && !d.endsWith('Z') && !d.includes('+') ? d + 'Z' : d
+  return new Date(utcStr).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
 function scrollToBottom() {
   nextTick(() => {
     if (messageListRef.value) {
       messageListRef.value.scrollTop = messageListRef.value.scrollHeight
+    }
+  })
+}
+
+function scrollToTop() {
+  nextTick(() => {
+    if (messageListRef.value) {
+      messageListRef.value.scrollTop = 0
     }
   })
 }
@@ -711,10 +1193,103 @@ const toolNames: Record<string, string> = {
   search_text: '🔍 搜索',
   list_directory: '📂 列目录',
   get_file_tree: '🌳 目录树',
+  ask_user: '❓ 提问',
+}
+
+/** 解析 ask_user 的 questions 参数 (支持新格式: options 为对象数组) */
+interface QuestionOption {
+  label: string
+  description?: string
+  recommended?: boolean
+}
+interface ParsedQuestion {
+  question: string
+  type: 'single' | 'multi'
+  options: QuestionOption[]
+  context?: string
+}
+function parseQuestions(args: any): ParsedQuestion[] {
+  if (!args?.questions) return []
+  try {
+    const qs = typeof args.questions === 'string' ? JSON.parse(args.questions) : args.questions
+    if (!Array.isArray(qs)) return []
+    return qs.map((q: any) => ({
+      question: q.question || '',
+      type: q.type === 'multi' ? 'multi' : 'single',
+      options: (q.options || []).map((opt: any) =>
+        typeof opt === 'string' ? { label: opt } : { label: opt.label || '', description: opt.description, recommended: !!opt.recommended }
+      ),
+      context: q.context,
+    }))
+  } catch { return [] }
+}
+
+/** 问题卡片状态管理 (toolCallId → { answers, submitted }) */
+interface QuestionCardState {
+  answers: Record<number, string[]>  // questionIndex → selected labels
+  customTexts: Record<number, string> // questionIndex → custom input text
+  submitted: boolean
+}
+const questionCardStates = ref<Record<string, QuestionCardState>>({})
+
+function getCardState(tcId: string): QuestionCardState {
+  if (!questionCardStates.value[tcId]) {
+    questionCardStates.value[tcId] = { answers: {}, customTexts: {}, submitted: false }
+  }
+  return questionCardStates.value[tcId]
+}
+
+function toggleOption(tcId: string, qi: number, label: string, type: 'single' | 'multi') {
+  const state = getCardState(tcId)
+  if (!state.answers[qi]) state.answers[qi] = []
+  if (type === 'single') {
+    state.answers[qi] = state.answers[qi][0] === label ? [] : [label]
+  } else {
+    const idx = state.answers[qi].indexOf(label)
+    if (idx >= 0) state.answers[qi].splice(idx, 1)
+    else state.answers[qi].push(label)
+  }
+}
+
+function submitQuestionCard(tcId: string, questions: ParsedQuestion[]) {
+  const state = getCardState(tcId)
+  state.submitted = true
+
+  // 格式化回答为用户消息
+  const parts: string[] = []
+  questions.forEach((q, qi) => {
+    const selected = state.answers[qi] || []
+    const custom = state.customTexts[qi]?.trim()
+    if (selected.length || custom) {
+      const answer = custom || selected.join('、')
+      parts.push(`**${q.question}**\n${answer}`)
+    }
+    // 未回答的问题省略，AI 自行决定
+  })
+
+  if (parts.length === 0) {
+    parts.push('以上问题由你来决定，请继续。')
+  }
+
+  // 添加标记，让 UI 可以识别这是 ask_user 回答，渲染为紧凑形式
+  const content = `<!-- ask_user_response -->\n${parts.join('\n\n')}`
+  sendMessage(content)
 }
 
 function toolDisplayName(name: string): string {
   return toolNames[name] || name
+}
+
+/** 追加流式内容到 streamContent + streamSegments */
+function appendStreamContent(text: string) {
+  streamContent.value += text
+  const segs = streamSegments.value
+  const last = segs[segs.length - 1]
+  if (last && last.type === 'content') {
+    last.text = (last.text || '') + text
+  } else {
+    segs.push({ type: 'content', text })
+  }
 }
 
 function formatToolArgs(name: string, args: any): string {
@@ -732,6 +1307,10 @@ function formatToolArgs(name: string, args: any): string {
   }
   if (name === 'list_directory' || name === 'get_file_tree') {
     return args.path || '.'
+  }
+  if (name === 'ask_user') {
+    const qs = parseQuestions(args)
+    return `${qs.length} 个问题`
   }
   return JSON.stringify(args)
 }
@@ -787,6 +1366,7 @@ function stopStreaming() {
   streamContent.value = ''
   streamThinking.value = ''
   streamToolCalls.value = []
+  streamSegments.value = []
   abortController.value = null
   scrollToBottom()
 }
@@ -859,6 +1439,7 @@ async function regenerateMessage(msg: any) {
     streamContent.value = ''
     streamThinking.value = ''
     streamToolCalls.value = []
+    streamSegments.value = []
     contextInfo.value = null
     tokenUsage.value = null
     summaryNotice.value = ''
@@ -886,8 +1467,11 @@ async function regenerateMessage(msg: any) {
     streamContent.value = ''
     streamThinking.value = ''
     streamToolCalls.value = []
+    streamSegments.value = []
     abortController.value = null
     scrollToBottom()
+    // 每次 AI 请求完成后刷新上下文使用率
+    refreshContextInfo()
   }
 }
 
@@ -904,7 +1488,10 @@ async function handleSSEResponse(response: Response) {
   let savedThinking = ''
   let savedToolCalls: any[] = []
   sseContentSaved = false
+  let streamTruncated = false
+  let streamAskUserPending = false
   streamToolCalls.value = []
+  streamSegments.value = []
 
   while (true) {
     const { done, value } = await reader.read()
@@ -918,7 +1505,7 @@ async function handleSSEResponse(response: Response) {
       try {
         const data = JSON.parse(line.slice(6))
         if (data.type === 'content') {
-          streamContent.value += data.content
+          appendStreamContent(data.content)
           scrollToBottom()
         } else if (data.type === 'thinking') {
           streamThinking.value += data.content
@@ -930,15 +1517,37 @@ async function handleSSEResponse(response: Response) {
         } else if (data.type === 'summary') {
           summaryNotice.value = data.summary
           scrollToBottom()
+        } else if (data.type === 'tool_call_start') {
+          // ask_user 提前通知: 工具名已确认但参数还在流式中, 显示 loading 卡片
+          const tc_data = data.tool_call || data
+          const toolCall = {
+            id: tc_data.id || '',
+            name: tc_data.name || '',
+            arguments: null as any,
+            status: 'preparing' as const,
+          }
+          streamToolCalls.value.push(toolCall)
+          streamSegments.value.push({ type: 'tool', toolCall })
+          scrollToBottom()
         } else if (data.type === 'tool_call') {
           // backend sends: {type: 'tool_call', tool_call: {id, name, arguments}}
           const tc_data = data.tool_call || data
-          streamToolCalls.value.push({
-            id: tc_data.id || data.tool_call_id || '',
-            name: tc_data.name || data.name || '',
-            arguments: tc_data.arguments || data.arguments || '',
-            status: 'calling' as const,
-          })
+          const tcId = tc_data.id || data.tool_call_id || ''
+          // 尝试合并已有的 preparing 段
+          const existingTc = streamToolCalls.value.find(t => t.id === tcId)
+          if (existingTc) {
+            existingTc.arguments = tc_data.arguments || data.arguments || ''
+            existingTc.status = 'calling'
+          } else {
+            const toolCall = {
+              id: tcId,
+              name: tc_data.name || data.name || '',
+              arguments: tc_data.arguments || data.arguments || '',
+              status: 'calling' as const,
+            }
+            streamToolCalls.value.push(toolCall)
+            streamSegments.value.push({ type: 'tool', toolCall })
+          }
           scrollToBottom()
         } else if (data.type === 'tool_result') {
           const tc = streamToolCalls.value.find(t => t.id === data.tool_call_id)
@@ -958,16 +1567,24 @@ async function handleSSEResponse(response: Response) {
           }
           savedToolCalls = [...streamToolCalls.value]
           scrollToBottom()
+        } else if (data.type === 'truncated') {
+          // AI 输出因 max_tokens 截断，标记为需要自动继续
+          streamTruncated = true
+        } else if (data.type === 'ask_user_pending') {
+          // AI 调用了 ask_user 后停止，等待用户回答
+          // 不设 truncated，不自动继续，但保留 streaming 状态直到 done
+          streamAskUserPending = true
         } else if (data.type === 'usage') {
           tokenUsage.value = data.usage
           lastTokenUsage.value = data.usage
         } else if (data.type === 'done') {
-          if (streamContent.value) {
+          // 有内容 或 有工具调用时保存消息 (AI 可能只调用 ask_user 无文本)
+          if (streamContent.value || savedToolCalls.length) {
             messages.value.push({
               id: data.message_id || Date.now(),
               role: 'assistant',
               sender_name: selectedModel.value,
-              content: streamContent.value,
+              content: streamContent.value || '',
               model_used: selectedModel.value,
               thinking_content: savedThinking || null,
               tool_calls: savedToolCalls.length ? savedToolCalls : null,
@@ -1019,13 +1636,13 @@ async function handleSSEResponse(response: Response) {
     }
   }
 
-  // 流结束后, 如果有内容但未保存 (没收到 done 也没收到 error), 兜底保存
-  if (streamContent.value && !sseContentSaved) {
+  // 流结束后, 如果有内容或工具调用但未保存 (没收到 done 也没收到 error), 兜底保存
+  if ((streamContent.value || savedToolCalls.length) && !sseContentSaved) {
     messages.value.push({
       id: Date.now(),
       role: 'assistant',
       sender_name: selectedModel.value,
-      content: streamContent.value,
+      content: streamContent.value || '',
       model_used: selectedModel.value,
       thinking_content: savedThinking || null,
       tool_calls: savedToolCalls.length ? savedToolCalls : null,
@@ -1034,11 +1651,23 @@ async function handleSSEResponse(response: Response) {
     })
     sseContentSaved = true
   }
+
+  // 返回是否截断 (供调用方决定是否自动继续)
+  return { truncated: streamTruncated }
 }
 
 // ==================== 发送消息 ====================
 
-async function sendMessage(overrideContent?: string, overrideAttachments?: any[]) {
+async function handleStartChat() {
+  startingChat.value = true
+  try {
+    await sendMessage('', [], true)
+  } finally {
+    startingChat.value = false
+  }
+}
+
+async function sendMessage(overrideContent?: string, overrideAttachments?: any[], regenerate = false) {
   const text = overrideContent ?? inputText.value.trim()
   const isOverride = overrideContent !== undefined
 
@@ -1064,20 +1693,24 @@ async function sendMessage(overrideContent?: string, overrideAttachments?: any[]
     pendingImages.value = []
   }
 
-  messages.value.push({
-    id: Date.now(),
-    role: 'user',
-    sender_name: senderName,
-    content: text,
-    attachments,
-    created_at: new Date().toISOString(),
-  })
-  scrollToBottom()
+  // regenerate 模式不推送用户消息（AI 直接发言）
+  if (!regenerate) {
+    messages.value.push({
+      id: Date.now(),
+      role: 'user',
+      sender_name: senderName,
+      content: text,
+      attachments,
+      created_at: new Date().toISOString(),
+    })
+    scrollToBottom()
+  }
 
   streaming.value = true
   streamContent.value = ''
   streamThinking.value = ''
   streamToolCalls.value = []
+  streamSegments.value = []
   contextInfo.value = null
   tokenUsage.value = null
   summaryNotice.value = ''
@@ -1092,7 +1725,7 @@ async function sendMessage(overrideContent?: string, overrideAttachments?: any[]
     const response = await fetch(discussionApi.discussUrl(props.project.id), {
       method: 'POST',
       headers,
-      body: JSON.stringify({ message: text, sender_name: senderName, attachments, max_tool_rounds: currentModelToolRounds.value }),
+      body: JSON.stringify({ message: text, sender_name: senderName, attachments, max_tool_rounds: currentModelToolRounds.value, regenerate }),
       signal: abortController.value.signal,
     })
 
@@ -1109,11 +1742,28 @@ async function sendMessage(overrideContent?: string, overrideAttachments?: any[]
       streamContent.value = ''
       streamThinking.value = ''
       streamToolCalls.value = []
+      streamSegments.value = []
       abortController.value = null
       return
     }
 
-    await handleSSEResponse(response)
+    const sseResult = await handleSSEResponse(response)
+
+    // 自动继续: AI 输出因 max_tokens 截断时自动发 "请继续"
+    if (sseResult?.truncated && autoContinueCount < studioConfig.maxAutoContinues) {
+      autoContinueCount++
+      streaming.value = false
+      streamContent.value = ''
+      streamThinking.value = ''
+      streamToolCalls.value = []
+      streamSegments.value = []
+      abortController.value = null
+      await new Promise(r => setTimeout(r, 300))
+      message.info(`AI 输出被截断，自动继续 (${autoContinueCount}/${studioConfig.maxAutoContinues})`)
+      await sendMessage('请继续上面没说完的内容')
+      return
+    }
+    autoContinueCount = 0
   } catch (e: any) {
     if (e.name !== 'AbortError') {
       message.error('AI 通信异常: ' + (e.message || ''))
@@ -1123,8 +1773,11 @@ async function sendMessage(overrideContent?: string, overrideAttachments?: any[]
     streamContent.value = ''
     streamThinking.value = ''
     streamToolCalls.value = []
+    streamSegments.value = []
     abortController.value = null
     scrollToBottom()
+    // 每次 AI 请求完成后刷新上下文使用率
+    refreshContextInfo()
   }
 }
 
@@ -1134,6 +1787,7 @@ async function handleFinalizePlan() {
   streaming.value = true
   streamContent.value = ''
   streamThinking.value = ''
+  streamSegments.value = []
   abortController.value = new AbortController()
 
   try {
@@ -1162,7 +1816,7 @@ async function handleFinalizePlan() {
         try {
           const data = JSON.parse(line.slice(6))
           if (data.type === 'content') {
-            streamContent.value += data.content
+            appendStreamContent(data.content)
             scrollToBottom()
           } else if (data.type === 'thinking') {
             streamThinking.value += data.content
@@ -1197,6 +1851,7 @@ async function handleFinalizePlan() {
     streaming.value = false
     streamContent.value = ''
     streamThinking.value = ''
+    streamSegments.value = []
     abortController.value = null
     scrollToBottom()
   }
@@ -1225,6 +1880,45 @@ async function toggleAiMute() {
   }
 }
 
+// ==================== 上下文管理 ====================
+
+async function handleSummarize() {
+  summarizing.value = true
+  try {
+    const { data } = await discussionApi.summarizeContext(props.project.id)
+    message.success(`已总结 ${data.summarized_count} 条旧消息 → 1 条摘要`)
+    // 刷新消息列表
+    const { data: msgs } = await discussionApi.getMessages(props.project.id)
+    messages.value = msgs
+    scrollToBottom()
+    // 刷新上下文使用率
+    refreshContextInfo()
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '总结失败')
+  } finally {
+    summarizing.value = false
+  }
+}
+
+function handleClearContext() {
+  dialog.warning({
+    title: '确认清空',
+    content: '将删除所有讨论消息，此操作不可撤销。确定清空？',
+    positiveText: '清空',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await discussionApi.clearContext(props.project.id)
+        messages.value = []
+        persistentContextInfo.value = null
+        message.success('已清空所有讨论消息')
+      } catch (e: any) {
+        message.error(e.response?.data?.detail || '清空失败')
+      }
+    },
+  })
+}
+
 // 轮询远程流式输出状态 (检测其他用户是否在使用 AI)
 function startStreamingPoll() {
   stopStreamingPoll() // 确保不重复启动
@@ -1239,6 +1933,7 @@ function startStreamingPoll() {
         const { data: msgs } = await discussionApi.getMessages(props.project.id)
         messages.value = msgs
         scrollToBottom()
+        refreshContextInfo()
       }
     } catch {}
   }, 5000)
@@ -1288,7 +1983,7 @@ onMounted(async () => {
   try {
     const { data } = await discussionApi.getMessages(props.project.id)
     messages.value = data
-    scrollToBottom()
+    scrollToTop()
   } catch {}
 
   // 加载 AI 禁言状态
@@ -1304,10 +1999,13 @@ onMounted(async () => {
       selectedModel.value = data[0].id
     }
     // 模型加载完成后，获取当前模型的上下文使用率
-    discussionApi.checkContext(props.project.id, selectedModel.value).then(({ data: ctx }) => {
-      if (ctx.context) persistentContextInfo.value = ctx.context
-    }).catch(() => {})
+    refreshContextInfo()
   }).catch(() => {})
+
+  // 兜底: 即使模型列表加载慢/失败，也尝试用默认模型获取上下文
+  setTimeout(() => {
+    if (!persistentContextInfo.value) refreshContextInfo()
+  }, 3000)
 
   // 启动远程流式输出轮询
   startStreamingPoll()
@@ -1378,8 +2076,87 @@ onUnmounted(() => {
 }
 
 /* Tool call visualization */
-.tool-calls-section {
-  margin: 4px 0;
+.tool-group-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  font-size: 11px;
+  color: #63e2b7;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+  user-select: none;
+}
+.tool-group-header:hover {
+  background: rgba(99, 226, 183, 0.06);
+}
+.tool-group-arrow {
+  font-size: 8px;
+  transition: transform 0.15s;
+  color: #666;
+}
+.tool-group-arrow.open {
+  transform: rotate(90deg);
+}
+.tool-group-icon {
+  font-size: 12px;
+}
+.tool-group-count {
+  font-size: 11px;
+  color: #888;
+}
+.tool-group-body {
+  margin-left: 4px;
+}
+.question-result-text {
+  padding: 4px 0;
+  font-size: 12px;
+  color: #aaa;
+}
+.tool-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  margin: 2px 0;
+  font-size: 11px;
+  color: #aaa;
+  background: rgba(99, 226, 183, 0.04);
+  border-left: 2px solid rgba(99, 226, 183, 0.4);
+  border-radius: 0 4px 4px 0;
+  line-height: 1.6;
+  flex-wrap: wrap;
+}
+.tool-inline-name {
+  color: #e0e0e0;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.tool-inline-args {
+  color: #888;
+  font-size: 10px;
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  background: none;
+  padding: 0;
+  word-break: break-all;
+}
+.tool-inline-time {
+  color: #666;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.tool-inline-view {
+  color: #63e2b7;
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: 2px;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+.tool-inline-view:hover {
+  color: #7eebca;
 }
 .tool-call-item {
   background: rgba(255, 255, 255, 0.04);
@@ -1395,14 +2172,6 @@ onUnmounted(() => {
   gap: 5px;
   font-weight: 500;
   color: #ccc;
-}
-.tool-call-args {
-  color: #888;
-  font-size: 10px;
-  margin-left: 20px;
-  margin-top: 1px;
-  font-family: 'Fira Code', 'Cascadia Code', monospace;
-  word-break: break-all;
 }
 .tool-result-content {
   color: #999;
@@ -1420,11 +2189,401 @@ onUnmounted(() => {
 .tool-icon-error { color: #e88080; }
 .tool-icon-pending { color: #f2c97d; }
 
+/* ============ ask_user 问题卡片 ============ */
+.question-card {
+  background: linear-gradient(135deg, rgba(99, 226, 183, 0.06), rgba(14, 165, 233, 0.06));
+  border: 1px solid rgba(99, 226, 183, 0.2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 6px 0;
+}
+.question-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.question-card-header-done {
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+}
+.question-card-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.question-card-title {
+  color: #63e2b7;
+  font-size: 12px;
+  font-weight: 600;
+}
+.question-card-hint {
+  color: #666;
+  font-size: 10px;
+  margin-left: auto;
+}
+.question-type-tag {
+  display: inline-block;
+  font-size: 10px;
+  color: #0ea5e9;
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+  font-weight: 400;
+}
+.question-item {
+  margin-bottom: 10px;
+}
+.question-item:last-child {
+  margin-bottom: 0;
+}
+.question-text {
+  color: #e0e0e0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  margin-bottom: 3px;
+}
+.question-context {
+  color: #777;
+  font-size: 11px;
+  line-height: 1.3;
+  margin-bottom: 5px;
+  padding-left: 14px;
+  font-style: italic;
+}
+.question-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-left: 14px;
+}
+.question-option-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: #b0b0b0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  line-height: 1.4;
+}
+.question-option-btn:hover {
+  color: #e0e0e0;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+/* 推荐标记 (未选中时显示) */
+.question-option-recommended {
+  color: #63e2b7;
+  border-color: rgba(99, 226, 183, 0.3);
+  background: rgba(99, 226, 183, 0.06);
+}
+.question-option-recommended:hover {
+  border-color: rgba(99, 226, 183, 0.5);
+  background: rgba(99, 226, 183, 0.12);
+}
+.rec-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  background: #63e2b7;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+/* 选中状态 */
+.question-option-selected {
+  color: #fff !important;
+  background: rgba(99, 226, 183, 0.25) !important;
+  border-color: #63e2b7 !important;
+}
+.option-desc {
+  color: #777;
+  font-size: 10px;
+  margin-left: 2px;
+}
+.question-option-selected .option-desc {
+  color: rgba(255,255,255,0.6);
+}
+.question-custom-input {
+  display: block;
+  width: calc(100% - 14px);
+  margin: 6px 0 0 14px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #e0e0e0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.question-custom-input:focus {
+  border-color: rgba(99, 226, 183, 0.5);
+}
+.question-custom-input::placeholder {
+  color: #555;
+}
+.question-submit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+/* 已回答的紧凑摘要 */
+.question-summary-row {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 1px 0;
+}
+.question-summary-q {
+  color: #888;
+  flex-shrink: 0;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.question-summary-a {
+  color: #63e2b7;
+  font-weight: 500;
+}
+/* AI 自行决定的推荐答案 (区别于用户选择的绿色) */
+.question-summary-a-auto {
+  color: #8a8a8a;
+  font-weight: 400;
+  font-style: italic;
+}
+/* 问题准备中骨架屏 */
+.question-preparing-body {
+  padding: 4px 0;
+}
+.question-preparing-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.skeleton-line {
+  height: 12px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+  background-size: 200% 100%;
+  border-radius: 6px;
+  animation: skeleton-shimmer 1.5s infinite;
+}
+.skeleton-options {
+  display: flex;
+  gap: 6px;
+  padding-left: 14px;
+}
+.skeleton-pill {
+  height: 24px;
+  width: 60px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
+  background-size: 200% 100%;
+  border-radius: 12px;
+  animation: skeleton-shimmer 1.5s infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ============ 项目信息栏 ============ */
+.project-info-bar {
+  display: flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.02);
+  cursor: pointer;
+  gap: 6px;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.project-info-bar:hover {
+  background: rgba(255,255,255,0.05);
+}
+.project-info-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: rgba(255,255,255,0.8);
+}
+.project-info-sep {
+  margin: 0 4px;
+  opacity: 0.25;
+  font-size: 11px;
+}
+.project-info-desc {
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+}
+.project-info-edit-icon {
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.project-info-bar:hover .project-info-edit-icon {
+  opacity: 0.5;
+}
+
+/* ============ 上下文明细气泡 (树形检查器) ============ */
+.ctx-breakdown {
+  padding: 10px 12px;
+  min-width: 240px;
+  max-width: 360px;
+  max-height: 420px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+.ctx-breakdown-title {
+  font-weight: 600;
+  color: #e0e0e0;
+  margin-bottom: 8px;
+}
+.ctx-breakdown-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.06);
+  margin-bottom: 10px;
+}
+.ctx-bar-seg {
+  height: 100%;
+  min-width: 1px;
+  transition: width 0.3s;
+}
+.ctx-bar-system { background: #a855f7; }
+.ctx-bar-tools { background: #0ea5e9; }
+.ctx-bar-history { background: #f59e0b; }
+
+/* 树形节点 */
+.ctx-tree { display: flex; flex-direction: column; gap: 1px; }
+.ctx-tree-node { display: flex; flex-direction: column; }
+.ctx-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 0;
+  color: #bbb;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.1s;
+}
+.ctx-tree-row:hover { background: rgba(255,255,255,0.04); }
+.ctx-tree-row-child { padding-left: 16px; }
+.ctx-tree-row-leaf { padding-left: 32px; cursor: default; }
+.ctx-clickable-row { cursor: pointer !important; }
+.ctx-clickable { text-decoration-style: dotted; text-decoration-line: underline; text-underline-offset: 2px; text-decoration-color: #555; }
+.ctx-clickable:hover { color: #e0e0e0; text-decoration-color: #999; }
+.ctx-tree-arrow {
+  font-size: 8px;
+  width: 10px;
+  text-align: center;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  color: #666;
+}
+.ctx-tree-arrow.open { transform: rotate(90deg); }
+.ctx-tree-leaf { font-size: 9px; color: #444; }
+.ctx-tree-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ctx-tree-children {
+  display: flex;
+  flex-direction: column;
+}
+.ctx-tree-msg-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ctx-msg-preview {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: #777;
+}
+.ctx-role-user { color: #0ea5e9; }
+.ctx-role-assistant { color: #e94560; }
+.ctx-role-system { color: #63e2b7; }
+
+.ctx-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ctx-val {
+  margin-left: auto;
+  color: #ddd;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.ctx-tree-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  color: #aaa;
+  font-size: 11px;
+}
+.ctx-breakdown-msgs {
+  margin-top: 4px;
+  color: #888;
+  font-size: 10px;
+}
+
+/* ask_user 回答紧凑指示器 */
+.ask-user-reply-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: rgba(14, 165, 233, 0.08);
+  color: #8aa;
+  font-size: 11px;
+}
+.ask-reply-detail-link {
+  cursor: pointer;
+  color: #0ea5e9;
+  font-size: 10px;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.ask-reply-detail-link:hover { opacity: 1; }
+
 /* ============ 输入区布局 ============ */
 .input-area {
   background: #16213e;
-  border-radius: 10px;
-  padding: 8px 10px;
+  border-radius: 8px;
+  padding: 5px 8px;
   flex-shrink: 0;
 }
 
@@ -1482,7 +2641,8 @@ onUnmounted(() => {
 .action-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  padding-top: 2px;
 }
 .action-bar-item {
   display: flex;
@@ -1507,5 +2667,58 @@ onUnmounted(() => {
 .spin-icon {
   display: inline-block;
   animation: spin 0.8s linear infinite;
+}
+
+/* 上下文内容气泡 */
+.ctx-content-pre {
+  margin: 0;
+  padding: 0;
+  font-family: 'Menlo', 'Monaco', 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #ccc;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: transparent;
+}
+
+/* 空对话欢迎状态 */
+.empty-chat-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 280px;
+  padding: 40px 20px;
+  opacity: 0;
+  animation: fadeInUp 0.5s ease forwards;
+}
+.empty-chat-icon {
+  font-size: 56px;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
+  animation: gentleBounce 2s ease-in-out infinite;
+}
+.empty-chat-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.85);
+  margin-bottom: 6px;
+}
+.empty-chat-desc {
+  font-size: 13px;
+  color: rgba(255,255,255,0.4);
+  max-width: 320px;
+  text-align: center;
+  line-height: 1.5;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes gentleBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
 }
 </style>

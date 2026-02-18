@@ -30,6 +30,8 @@ interface StudioConfig {
   modelBlacklist: string[]
   freeToolRounds: number
   paidToolRounds: number
+  maxAutoContinues: number
+  chatModelSourceFilter: string
   modelCapabilities: Record<string, ModelCapabilityOverride>
 }
 
@@ -46,6 +48,8 @@ function loadConfig(): StudioConfig {
         modelBlacklist: parsed.modelBlacklist ?? [],
         freeToolRounds: parsed.freeToolRounds ?? 50,
         paidToolRounds: parsed.paidToolRounds ?? 3,
+        maxAutoContinues: parsed.maxAutoContinues ?? 3,
+        chatModelSourceFilter: parsed.chatModelSourceFilter ?? 'all',
         modelCapabilities: parsed.modelCapabilities ?? {},
       }
     }
@@ -58,6 +62,8 @@ function loadConfig(): StudioConfig {
     modelBlacklist: [],
     freeToolRounds: 50,
     paidToolRounds: 3,
+    maxAutoContinues: 3,
+    chatModelSourceFilter: 'all',
     modelCapabilities: {},
   }
 }
@@ -76,6 +82,8 @@ export const useStudioConfigStore = defineStore('studioConfig', () => {
   const modelBlacklist = ref<string[]>(initial.modelBlacklist)
   const freeToolRounds = ref(initial.freeToolRounds)
   const paidToolRounds = ref(initial.paidToolRounds)
+  const maxAutoContinues = ref(initial.maxAutoContinues)
+  const chatModelSourceFilter = ref(initial.chatModelSourceFilter)
   const modelCapabilities = ref<Record<string, ModelCapabilityOverride>>(initial.modelCapabilities)
 
   // 自动持久化
@@ -88,6 +96,8 @@ export const useStudioConfigStore = defineStore('studioConfig', () => {
       modelBlacklist: modelBlacklist.value,
       freeToolRounds: freeToolRounds.value,
       paidToolRounds: paidToolRounds.value,
+      maxAutoContinues: maxAutoContinues.value,
+      chatModelSourceFilter: chatModelSourceFilter.value,
       modelCapabilities: modelCapabilities.value,
     })
   }
@@ -99,6 +109,8 @@ export const useStudioConfigStore = defineStore('studioConfig', () => {
   watch(modelBlacklist, persist, { deep: true })
   watch(freeToolRounds, persist)
   watch(paidToolRounds, persist)
+  watch(maxAutoContinues, persist)
+  watch(chatModelSourceFilter, persist)
   watch(modelCapabilities, persist, { deep: true })
 
   /**
@@ -201,6 +213,8 @@ export const useStudioConfigStore = defineStore('studioConfig', () => {
     modelBlacklist,
     freeToolRounds,
     paidToolRounds,
+    maxAutoContinues,
+    chatModelSourceFilter,
     modelCapabilities,
     isModelVisible,
     getToolRounds,

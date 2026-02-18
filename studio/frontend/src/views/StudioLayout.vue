@@ -109,18 +109,18 @@ const collapsed = ref(false)
 
 const activeKey = computed(() => {
   const path = route.path
-  if (path === '/' || path === '') return 'dashboard'
+  if (path === '/' || path === '') return 'projects'
   if (path.includes('/projects/')) return 'projects'
   if (path.includes('/projects')) return 'projects'
   if (path.includes('/snapshots')) return 'snapshots'
   if (path.includes('/settings')) return 'settings'
-  return 'dashboard'
+  return 'projects'
 })
 
 const routeName = computed(() => {
   const map: Record<string, string> = {
-    Dashboard: '首页',
-    ProjectList: '项目列表',
+    Dashboard: '项目',
+    ProjectList: '项目',
     ProjectDetail: '项目详情',
     Snapshots: '快照管理',
     Settings: '设置',
@@ -133,16 +133,14 @@ function renderIcon(icon: any) {
 }
 
 const menuOptions: MenuOption[] = [
-  { label: '首页', key: 'dashboard', icon: renderIcon(HomeOutline) },
-  { label: '需求项目', key: 'projects', icon: renderIcon(DocumentTextOutline) },
+  { label: '项目', key: 'projects', icon: renderIcon(DocumentTextOutline) },
   { label: '快照管理', key: 'snapshots', icon: renderIcon(CameraOutline) },
   { label: '设置', key: 'settings', icon: renderIcon(SettingsOutline) },
 ]
 
 function handleMenuClick(key: string) {
   const routeMap: Record<string, string> = {
-    dashboard: '/',
-    projects: '/projects',
+    projects: '/',
     snapshots: '/snapshots',
     settings: '/settings',
   }
