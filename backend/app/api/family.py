@@ -157,6 +157,10 @@ async def join_family(
     
     await db.commit()
     
+    # 发送通知给已有成员
+    from app.services.notification import send_approval_notification_if_needed, NotificationType
+    await send_approval_notification_if_needed(db, NotificationType.APPROVAL_CREATED, request)
+    
     # 检查申请是否已经自动通过（单人家庭的情况）
     if request.status == ApprovalRequestStatus.APPROVED:
         return {

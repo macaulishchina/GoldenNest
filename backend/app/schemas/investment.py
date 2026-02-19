@@ -49,6 +49,7 @@ class InvestmentIncomeResponse(BaseModel):
     calculated_income: Optional[float] = None  # 计算出的收益（新模式）
     income_date: datetime
     note: Optional[str] = None
+    image_data: Optional[str] = None
     created_at: datetime
     
     class Config:
@@ -63,6 +64,7 @@ class InvestmentPositionResponse(BaseModel):
     amount: float
     operation_date: datetime
     note: Optional[str] = None
+    image_data: Optional[str] = None
     transaction_id: Optional[int] = None
     deposit_id: Optional[int] = None
     approval_request_id: Optional[int] = None
@@ -90,6 +92,7 @@ class InvestmentResponse(BaseModel):
     is_deleted: bool = False
     deleted_at: Optional[datetime] = None
     note: Optional[str] = None
+    image_data: Optional[str] = None
     created_at: datetime
     
     # 额外字段

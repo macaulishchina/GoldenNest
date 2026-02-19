@@ -68,6 +68,8 @@ class PositionOperationType(str, enum.Enum):
     CREATE = "create"            # 创建投资
     INCREASE = "increase"        # 增持
     DECREASE = "decrease"        # 减持
+    UPDATE = "update"            # 更新信息
+    DELETE = "delete"            # 删除投资
 
 
 # ==================== 用户模型 ====================
@@ -193,6 +195,7 @@ class Investment(Base):
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)  # 添加索引
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 删除时间
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    image_data: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # 凭证图片路径
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -222,6 +225,7 @@ class InvestmentIncome(Base):
     calculated_income: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 计算出的收益（新模式）
     income_date: Mapped[datetime] = mapped_column(DateTime)  # 收益日期
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    image_data: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # 凭证图片路径
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     # 关联关系
@@ -248,6 +252,7 @@ class InvestmentPosition(Base):
     principal_after: Mapped[float] = mapped_column(Float)  # 操作后本金（CNY）
     operation_date: Mapped[datetime] = mapped_column(DateTime)  # 操作日期
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    image_data: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # 凭证图片路径
     transaction_id: Mapped[Optional[int]] = mapped_column(ForeignKey("transactions.id"), nullable=True)  # 关联资金流水
     deposit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("deposits.id"), nullable=True)  # 关联权益记录
     approval_request_id: Mapped[Optional[int]] = mapped_column(ForeignKey("approval_requests.id"), nullable=True)  # 关联审批

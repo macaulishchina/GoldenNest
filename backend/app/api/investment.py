@@ -557,6 +557,7 @@ async def get_investment_history(
             "principal_after": position.principal_after,
             "date": position.operation_date.isoformat() if position.operation_date else position.created_at.isoformat(),
             "note": position.note,
+            "image_data": position.image_data,
             "timestamp": position.created_at.isoformat()
         })
     
@@ -568,6 +569,7 @@ async def get_investment_history(
             "current_value": income.current_value,
             "date": income.income_date.isoformat(),
             "note": income.note,
+            "image_data": income.image_data,
             "timestamp": income.created_at.isoformat()
         })
     
@@ -604,7 +606,8 @@ async def get_investment_history(
             "exchange_rate": investment.exchange_rate,
             "start_date": investment.start_date.isoformat() if investment.start_date else None,
             "end_date": investment.end_date.isoformat() if investment.end_date else None,
-            "is_active": investment.is_active
+            "is_active": investment.is_active,
+            "image_data": investment.image_data
         },
         "history": history
     }

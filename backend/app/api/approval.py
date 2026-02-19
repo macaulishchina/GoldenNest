@@ -29,7 +29,7 @@ from app.schemas.approval import (
 from app.schemas.common import TimeRange, get_time_range_filter
 from app.api.auth import get_current_user
 from app.services.approval import ApprovalService
-from app.services.notification import NotificationType, send_approval_notification
+from app.services.notification import NotificationType, send_approval_notification, send_approval_notification_if_needed
 
 router = APIRouter()
 
@@ -75,12 +75,8 @@ async def create_deposit_approval(
     
     await db.commit()
     
-    # 发送通知（多人家庭才需要通知）
-    member_count_result = await db.execute(
-        select(FamilyMember).where(FamilyMember.family_id == family_id)
-    )
-    if len(member_count_result.scalars().all()) > 1:
-        await send_approval_notification(db, NotificationType.APPROVAL_CREATED, request)
+    # 发送通知
+    await send_approval_notification_if_needed(db, NotificationType.APPROVAL_CREATED, request)
     
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
@@ -169,11 +165,7 @@ async def create_asset_approval(
     await db.commit()
     
     # 发送通知
-    member_count_result = await db.execute(
-        select(FamilyMember).where(FamilyMember.family_id == family_id)
-    )
-    if len(member_count_result.scalars().all()) > 1:
-        await send_approval_notification(db, NotificationType.APPROVAL_CREATED, request)
+    await send_approval_notification_if_needed(db, NotificationType.APPROVAL_CREATED, request)
     
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
@@ -245,12 +237,8 @@ async def create_expense_approval(
     
     await db.commit()
     
-    # 发送通知（多人家庭才需要通知）
-    member_count_result = await db.execute(
-        select(FamilyMember).where(FamilyMember.family_id == family_id)
-    )
-    if len(member_count_result.scalars().all()) > 1:
-        await send_approval_notification(db, NotificationType.APPROVAL_CREATED, request)
+    # 发送通知
+    await send_approval_notification_if_needed(db, NotificationType.APPROVAL_CREATED, request)
     
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
@@ -307,12 +295,8 @@ async def create_investment_create_approval(
     
     await db.commit()
     
-    # 发送通知（多人家庭才需要通知）
-    member_count_result = await db.execute(
-        select(FamilyMember).where(FamilyMember.family_id == family_id)
-    )
-    if len(member_count_result.scalars().all()) > 1:
-        await send_approval_notification(db, NotificationType.APPROVAL_CREATED, request)
+    # 发送通知
+    await send_approval_notification_if_needed(db, NotificationType.APPROVAL_CREATED, request)
     
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
@@ -367,6 +351,10 @@ async def create_investment_update_approval(
     )
     
     await db.commit()
+    
+    # 发送通知
+    await send_approval_notification_if_needed(db, NotificationType.APPROVAL_CREATED, request)
+        
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
@@ -423,6 +411,10 @@ async def create_investment_income_approval(
     )
     
     await db.commit()
+    
+    # 发送通知
+    await send_approval_notification_if_needed(db, NotificationType.APPROVAL_CREATED, request)
+        
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
@@ -507,6 +499,10 @@ async def create_investment_increase_approval(
     )
     
     await db.commit()
+    
+    # 发送通知
+    await send_approval_notification_if_needed(db, NotificationType.APPROVAL_CREATED, request)
+        
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
@@ -603,6 +599,10 @@ async def create_investment_decrease_approval(
     )
     
     await db.commit()
+    
+    # 发送通知
+    await send_approval_notification_if_needed(db, NotificationType.APPROVAL_CREATED, request)
+        
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
@@ -644,6 +644,10 @@ async def create_investment_delete_approval(
     )
     
     await db.commit()
+    
+    # 发送通知
+    await send_approval_notification_if_needed(db, NotificationType.APPROVAL_CREATED, request)
+        
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
@@ -1066,6 +1070,10 @@ async def create_member_join_approval(
     )
     
     await db.commit()
+    
+    # 发送通知
+    await send_approval_notification_if_needed(db, NotificationType.APPROVAL_CREATED, request)
+    
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 
@@ -1141,6 +1149,10 @@ async def create_member_remove_approval(
     )
     
     await db.commit()
+    
+    # 发送通知
+    await send_approval_notification_if_needed(db, NotificationType.APPROVAL_CREATED, request)
+        
     return await service.get_request_response(request, current_user.nickname, current_user.avatar_version or 0)
 
 

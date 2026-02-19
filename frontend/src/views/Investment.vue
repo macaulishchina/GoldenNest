@@ -63,6 +63,16 @@
         <n-form-item v-if="formData.deduct_from_cash" label="可用余额">
           <n-text type="warning">¥{{ formatMoney(currentBalance) }}</n-text>
         </n-form-item>
+        <n-form-item label="凭证图片">
+          <n-upload
+            v-model:file-list="createFileList"
+            list-type="image-card"
+            :max="1"
+            accept="image/*"
+          >
+            📷
+          </n-upload>
+        </n-form-item>
         <n-form-item>
           <n-button type="primary" :loading="submitting" @click="handleSubmit">
             <template #icon><n-icon><SendOutline /></n-icon></template>
@@ -132,6 +142,20 @@
             </div>
           </div>
         </div>
+        <!-- 第三点五行：凭证图片 -->
+        <div class="form-row" style="margin-top: 8px">
+          <div class="form-col" style="flex: 1">
+            <label>凭证图片</label>
+            <n-upload
+              v-model:file-list="createFileList"
+              list-type="image-card"
+              :max="1"
+              accept="image/*"
+            >
+              📷
+            </n-upload>
+          </div>
+        </div>
       </div>
     </n-card>
 
@@ -169,7 +193,7 @@
       <div class="mobile-only">
         <n-spin :show="loading">
           <div class="investment-cards" v-if="investments.length > 0">
-            <div v-for="item in investments" :key="item.id" class="investment-card" :class="{ 'deleted': item.is_deleted }" @click="!item.is_deleted && openDetailModal(item)">
+            <div v-for="item in investments" :key="item.id" class="investment-card" :class="{ 'deleted': item.is_deleted }" @click="!item.is_deleted && openHistoryModal(item)" @touchstart="(e: TouchEvent) => onLongPressStart(e, item)" @touchend="onLongPressEnd" @touchmove="onLongPressEnd" @contextmenu.prevent>
               <div class="card-header">
                 <span class="product-name">{{ item.name }}</span>
                 <n-tag :type="item.is_deleted ? 'error' : (item.is_active ? 'success' : 'default')" size="small">
@@ -255,6 +279,16 @@
         <n-form-item label="备注">
           <n-input v-model:value="incomeForm.note" placeholder="可选" />
         </n-form-item>
+        <n-form-item label="凭证图片">
+          <n-upload
+            v-model:file-list="incomeFileList"
+            list-type="image-card"
+            :max="1"
+            accept="image/*"
+          >
+            📷
+          </n-upload>
+        </n-form-item>
       </n-form>
     </n-modal>
 
@@ -292,6 +326,16 @@
         <n-form-item label="备注">
           <n-input v-model:value="increaseForm.note" placeholder="可选" />
         </n-form-item>
+        <n-form-item label="凭证图片">
+          <n-upload
+            v-model:file-list="increaseFileList"
+            list-type="image-card"
+            :max="1"
+            accept="image/*"
+          >
+            📷
+          </n-upload>
+        </n-form-item>
       </n-form>
     </n-modal>
 
@@ -319,7 +363,45 @@
         <n-form-item label="备注">
           <n-input v-model:value="decreaseForm.note" placeholder="可选" />
         </n-form-item>
+        <n-form-item label="凭证图片">
+          <n-upload
+            v-model:file-list="decreaseFileList"
+            list-type="image-card"
+            :max="1"
+            accept="image/*"
+          >
+            📷
+          </n-upload>
+        </n-form-item>
       </n-form>
+    </n-modal>
+
+    <!-- 删除确认模态框 -->
+    <n-modal v-model:show="showDeleteConfirmModal" preset="dialog" title="确认删除理财" positive-text="提交删除申请" negative-text="取消" @positive-click="submitDelete">
+      <n-form :model="deleteForm" label-placement="left" label-width="90px">
+        <n-form-item label="理财产品">
+          <n-text>{{ selectedInvestment?.name }}</n-text>
+        </n-form-item>
+        <n-form-item label="当前持仓">
+          <n-text type="info">{{ formatInvAmountWithCNY(selectedInvestment || {}, 'current_principal') }}</n-text>
+        </n-form-item>
+        <n-form-item label="删除原因" required>
+          <n-input v-model:value="deleteForm.reason" type="textarea" placeholder="请说明删除原因，如：产品到期、赎回全部资金等" />
+        </n-form-item>
+        <n-form-item label="凭证图片">
+          <n-upload
+            v-model:file-list="deleteFileList"
+            list-type="image-card"
+            :max="1"
+            accept="image/*"
+          >
+            📷
+          </n-upload>
+        </n-form-item>
+      </n-form>
+      <n-alert title="注意" type="warning" style="margin-top: 16px">
+        删除申请通过后，资产将被标记为已删除。如果仍有持仓，系统会自动进行清零（减持）操作并返还到自由资金。
+      </n-alert>
     </n-modal>
 
     <!-- 历史详情模态框 -->
@@ -379,6 +461,30 @@
                 <span v-if="item.current_value" class="value">{{ getCurrencySymbol(historyData.investment?.currency || 'CNY') }}{{ formatMoney(item.current_value) }}</span>
                 <div v-if="item.note" class="note">{{ item.note }}</div>
               </div>
+              <!-- 凭证图片展示 -->
+              <div v-if="item.image_data" class="history-voucher" style="margin-top: 8px">
+                <n-image
+                  :src="item.image_data"
+                  width="80"
+                  height="80"
+                  style="border-radius: 4px; border: 1px solid var(--theme-border)"
+                  preview-disabled
+                  @click.stop
+                >
+                  <template #placeholder>
+                    <n-skeleton height="80px" width="80px" />
+                  </template>
+                </n-image>
+                <n-button 
+                  text 
+                  type="primary" 
+                  size="tiny" 
+                  style="margin-left: 8px"
+                  @click.stop="showVoucherPreview(item.image_data)"
+                >
+                  查看大图
+                </n-button>
+              </div>
             </div>
           </div>
         </div>
@@ -414,6 +520,25 @@
         </n-form-item>
         <n-form-item label="备注">
           <n-input v-model:value="detailForm.note" type="textarea" placeholder="备注（可选）" :rows="2" />
+        </n-form-item>
+        <n-form-item label="凭证图片">
+          <div v-if="selectedDetailInvestment?.image_data" style="margin-bottom: 8px">
+            <n-image
+              :src="selectedDetailInvestment.image_data"
+              width="100"
+              height="100"
+              style="border-radius: 4px"
+            />
+          </div>
+          <n-upload
+            v-model:file-list="detailFileList"
+            list-type="image-card"
+            :max="1"
+            accept="image/*"
+          >
+            📷
+          </n-upload>
+          <n-text depth="3" style="font-size: 12px">上传新凭证将替换旧凭证</n-text>
         </n-form-item>
         <n-form-item>
           <n-space>
@@ -488,6 +613,17 @@
         </div>
       </n-spin>
     </n-modal>
+
+    <!-- 凭证大图预览 -->
+    <n-modal v-model:show="showPreviewModal" preset="card" title="凭证详情" style="max-width: 90vw; width: fit-content">
+      <div style="display: flex; justify-content: center; align-items: center; min-height: 200px">
+        <n-image
+          :src="previewImageUrl"
+          width="100%"
+          style="max-width: 800px; max-height: 80vh; object-fit: contain"
+        />
+      </div>
+    </n-modal>
   </div>
 </template>
 
@@ -517,6 +653,29 @@ const privacyStore = usePrivacyStore()
 const { privacyMode } = storeToRefs(privacyStore)
 const loading = ref(false)
 
+// 辅助函数：上传凭证图片并获取路径
+async function uploadVoucher(fileList: any[]) {
+  if (fileList.length === 0) return ''
+  
+  try {
+    const fd = new FormData()
+    // 只上传第一张图片作为凭证（与模型对应）
+    const fileToUpload = fileList[0].file
+    if (!fileToUpload) return ''
+    fd.append('files', fileToUpload)
+
+    // 复用识别接口，仅为获取保存后的路径
+    const { data } = await api.post('/accounting/photo/recognize', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    
+    return data.image_paths && data.image_paths.length > 0 ? data.image_paths[0] : ''
+  } catch (error) {
+    console.error('Failed to upload voucher:', error)
+    return ''
+  }
+}
+
 // 隐私模式格式化金额
 const formatMoney = (num: number) => privacyStore.formatMoney(num)
 
@@ -544,8 +703,10 @@ const formData = ref({
   principal: null as number | null,
   currency: 'CNY' as string,
   foreign_amount: null as number | null,
-  deduct_from_cash: false
+  deduct_from_cash: false,
+  image_data: '' as string
 })
+const createFileList = ref<any[]>([])
 
 // 币种相关
 const currencyOptions = [
@@ -632,6 +793,24 @@ const formatInvAmountWithCNY = (item: any, amountField: string = 'principal') =>
   return `${base} (≈¥${formatMoney(cnyVal)})`
 }
 
+// 长按编辑相关
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+let longPressTriggered = false
+function onLongPressStart(e: TouchEvent, item: any) {
+  if (item.is_deleted) return
+  longPressTriggered = false
+  longPressTimer = setTimeout(() => {
+    longPressTriggered = true
+    openDetailModal(item)
+  }, 500)
+}
+function onLongPressEnd() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+}
+
 // 收益登记相关
 const showIncomeModal = ref(false)
 const selectedInvestment = ref<any>(null)
@@ -655,11 +834,14 @@ const detailForm = ref<{
   end_date: null,
   note: ''
 })
+const detailFileList = ref<any[]>([])
 const incomeForm = ref({
   current_value: null as number | null,
   income_date: Date.now(),
-  note: ''
+  note: '',
+  image_data: ''
 })
+const incomeFileList = ref<any[]>([])
 
 // 增持/减持相关
 const showIncreaseModal = ref(false)
@@ -674,13 +856,28 @@ const increaseForm = ref({
   amount: null as number | null,
   operation_date: Date.now(),
   note: '',
-  deduct_from_cash: true  // 默认从自由资金扣除
+  deduct_from_cash: true,  // 默认从自由资金扣除
+  image_data: ''
 })
+const increaseFileList = ref<any[]>([])
+
 const decreaseForm = ref({
   amount: null as number | null,
   operation_date: Date.now(),
-  note: ''
+  note: '',
+  image_data: ''
 })
+const decreaseFileList = ref<any[]>([])
+
+// 删除相关
+const showDeleteConfirmModal = ref(false)
+const deleteForm = ref({
+  investment_id: null as number | null,
+  reason: '',
+  image_data: ''
+})
+const deleteFileList = ref<any[]>([])
+const deleting = ref(false)
 
 // 当前余额（从transactions获取）
 const currentBalance = ref(0)
@@ -714,6 +911,14 @@ function getRiskColor(score: number) {
   if (score < 30) return '#18a058'
   if (score < 60) return '#f0a020'
   return '#d03050'
+}
+
+// 凭证大图查看
+const previewImageUrl = ref('')
+const showPreviewModal = ref(false)
+function showVoucherPreview(url: string) {
+  previewImageUrl.value = url
+  showPreviewModal.value = true
 }
 
 // 计算收益（实时预览）
@@ -896,6 +1101,10 @@ async function handleSubmit() {
   
   submitting.value = true
   try {
+    // 1. 如果有凭证，先上传
+    const imagePath = await uploadVoucher(createFileList.value)
+    
+    // 2. 发起资产登记申请
     await approvalApi.createAsset({
       user_id: userStore.user?.id || 0,
       name: formData.value.name,
@@ -904,10 +1113,12 @@ async function handleSubmit() {
       amount: isForeign ? cnyAmount : formData.value.principal!,
       foreign_amount: isForeign ? (formData.value.foreign_amount ?? undefined) : undefined,
       start_date: new Date().toISOString(),
-      deduct_from_cash: formData.value.deduct_from_cash
+      deduct_from_cash: formData.value.deduct_from_cash,
+      image_data: imagePath || undefined
     })
     message.success('申请已提交，等待审批！📈')
-    formData.value = { name: '', investment_type: 'fund', principal: null, currency: 'CNY', foreign_amount: null, deduct_from_cash: false }
+    formData.value = { name: '', investment_type: 'fund', principal: null, currency: 'CNY', foreign_amount: null, deduct_from_cash: false, image_data: '' }
+    createFileList.value = []
     currentExchangeRate.value = null
     // 延迟加载数据，给后端时间处理（单人家庭自动执行）
     setTimeout(() => {
@@ -926,8 +1137,10 @@ function openIncomeModal(investment: any) {
   incomeForm.value = {
     current_value: null,
     income_date: Date.now(),
-    note: ''
+    note: '',
+    image_data: ''
   }
+  incomeFileList.value = []
   showIncomeModal.value = true
 }
 
@@ -937,11 +1150,15 @@ async function submitIncome() {
     return false
   }
   try {
+    // 1. 如果有凭证，先上传
+    const imagePath = await uploadVoucher(incomeFileList.value)
+
     await approvalApi.createInvestmentIncome({
       investment_id: selectedInvestment.value.id,
       current_value: incomeForm.value.current_value,
       income_date: new Date(incomeForm.value.income_date).toISOString(),
-      note: incomeForm.value.note || undefined
+      note: incomeForm.value.note || undefined,
+      image_data: imagePath || undefined
     })
     message.success('价值更新申请已提交！')
     showIncomeModal.value = false
@@ -964,8 +1181,10 @@ function openIncreaseModal(investment: any) {
     amount: null,
     operation_date: Date.now(),
     note: '',
-    deduct_from_cash: true
+    deduct_from_cash: true,
+    image_data: ''
   }
+  increaseFileList.value = []
   showIncreaseModal.value = true
 }
 
@@ -981,13 +1200,17 @@ async function submitIncrease() {
   }
   const isForeign = selectedInvestment.value?.currency && selectedInvestment.value.currency !== 'CNY'
   try {
+    // 1. 如果有凭证，先上传
+    const imagePath = await uploadVoucher(increaseFileList.value)
+
     await approvalApi.increaseInvestment({
       investment_id: selectedInvestment.value.id,
       amount: increaseForm.value.amount,
       foreign_amount: isForeign ? increaseForm.value.amount : undefined,
       operation_date: new Date(increaseForm.value.operation_date).toISOString(),
       note: increaseForm.value.note,
-      deduct_from_cash: increaseForm.value.deduct_from_cash
+      deduct_from_cash: increaseForm.value.deduct_from_cash,
+      image_data: imagePath || undefined
     })
     message.success('增持申请已提交！')
     showIncreaseModal.value = false
@@ -1008,12 +1231,16 @@ function openDecreaseModal(investment: any) {
   decreaseForm.value = {
     amount: null,
     operation_date: Date.now(),
-    note: ''
+    note: '',
+    image_data: ''
   }
+  decreaseFileList.value = []
   showDecreaseModal.value = true
 }
 
 async function openHistoryModal(investment: any) {
+  // 长按触发了编辑，不再打开历史
+  if (longPressTriggered) { longPressTriggered = false; return }
   selectedInvestment.value = investment
   showHistoryModal.value = true
   historyLoading.value = true
@@ -1038,6 +1265,20 @@ function openDetailModal(investment: any) {
     end_date: investment.end_date ? new Date(investment.end_date).getTime() : null,
     note: investment.note || ''
   }
+  
+  // 回显现有图片
+  if (investment.image_data) {
+    const fileName = investment.image_data.split('/').pop() || 'voucher'
+    detailFileList.value = [{
+      id: 'existing',
+      name: fileName,
+      status: 'finished',
+      url: `/api${investment.image_data}`
+    }]
+  } else {
+    detailFileList.value = []
+  }
+  
   showDetailModal.value = true
 }
 
@@ -1049,10 +1290,14 @@ async function saveDetail() {
   }
   detailSaving.value = true
   try {
+    // 1. 如果有新凭证图片，先上传
+    const imagePath = await uploadVoucher(detailFileList.value)
+
     await investmentApi.updateInfo(selectedDetailInvestment.value.id, {
       name: detailForm.value.name.trim(),
       end_date: detailForm.value.end_date ? new Date(detailForm.value.end_date).toISOString() : undefined,
       note: detailForm.value.note || undefined,
+      image_data: imagePath || undefined
     })
     message.success('产品信息已更新')
     showDetailModal.value = false
@@ -1077,12 +1322,16 @@ async function submitDecrease() {
     return false
   }
   try {
+    // 1. 如果有凭证，先上传
+    const imagePath = await uploadVoucher(decreaseFileList.value)
+
     await approvalApi.decreaseInvestment({
       investment_id: selectedInvestment.value.id,
       amount: decreaseForm.value.amount,
       foreign_amount: isForeign ? decreaseForm.value.amount : undefined,
       operation_date: new Date(decreaseForm.value.operation_date).toISOString(),
-      note: decreaseForm.value.note
+      note: decreaseForm.value.note,
+      image_data: imagePath || undefined
     })
     message.success('减持申请已提交！')
     showDecreaseModal.value = false
@@ -1099,28 +1348,46 @@ async function submitDecrease() {
 }
 
 function handleDelete(investment: any) {
-  dialog.warning({
-    title: '确认删除',
-    content: `确认删除投资产品「${investment.name}」？此操作为软删除，历史数据将保留。`,
-    positiveText: '确认删除',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      try {
-        await approvalApi.deleteInvestment({
-          investment_id: investment.id,
-          reason: '用户请求删除'
-        })
-        message.success('删除申请已提交！')
-        // 延迟加载数据，给后端时间处理（单人家庭自动执行）
-        setTimeout(() => {
-          loadData()
-          approvalStore.refreshNow()
-        }, 800)
-      } catch (e: any) {
-        message.error(e.response?.data?.detail || '操作失败')
-      }
-    }
-  })
+  selectedInvestment.value = investment
+  deleteForm.value = {
+    investment_id: investment.id,
+    reason: '',
+    image_data: ''
+  }
+  deleteFileList.value = []
+  showDeleteConfirmModal.value = true
+}
+
+async function submitDelete() {
+  if (!deleteForm.value.reason?.trim()) {
+    message.warning('请填写删除原因')
+    return false
+  }
+
+  deleting.value = true
+  try {
+    // 1. 如果有凭证，先上传
+    const imagePath = await uploadVoucher(deleteFileList.value)
+
+    await approvalApi.deleteInvestment({
+      investment_id: deleteForm.value.investment_id!,
+      reason: deleteForm.value.reason,
+      image_data: imagePath || undefined
+    } as any)
+    message.success('删除申请已提交！')
+    showDeleteConfirmModal.value = false
+    // 延迟加载数据，给后端时间处理（单人家庭自动执行）
+    setTimeout(() => {
+      loadData()
+      approvalStore.refreshNow()
+    }, 800)
+    return true
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '操作失败')
+    return false
+  } finally {
+    deleting.value = false
+  }
 }
 
 async function doApprove(id: number, approved: boolean, reason?: string) {

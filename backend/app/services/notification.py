@@ -1158,6 +1158,46 @@ async def send_gift_notification(
         logging.error(f"Failed to send gift notification: {e}")
 
 
+async def send_approval_notification_if_needed(
+    db: AsyncSession,
+    notification_type: NotificationType,
+    request: ApprovalRequest,
+    approver: Optional[User] = None
+) -> None:
+    """
+    判断家庭成员数并发送审批通知的封装函数
+    
+    多人家庭才发送通知（成员数 > 1）。如果是成员加入申请（MEMBER_JOIN），
+    只要家庭中已有成员（成员数 > 0）就发送通知。
+    """
+    try:
+        from app.models.models import FamilyMember, ApprovalRequestType
+        
+        # 获取家庭成员数量
+        result = await db.execute(
+            select(FamilyMember).where(FamilyMember.family_id == request.family_id)
+        )
+        members = result.scalars().all()
+        member_count = len(members)
+        
+        # 判断是否需要发送通知
+        should_notify = False
+        if request.request_type == ApprovalRequestType.MEMBER_JOIN:
+            # 加入申请：只要家庭已有成员就通知
+            if member_count > 0:
+                should_notify = True
+        else:
+            # 其他申请：只有多人家庭才通知（发起人已经在家庭中）
+            if member_count > 1:
+                should_notify = True
+                
+        if should_notify:
+            await send_approval_notification(db, notification_type, request, approver)
+            
+    except Exception as e:
+        logging.error(f"Failed to send conditional approval notification: {e}")
+
+
 async def send_pet_evolved_notification(
     db: AsyncSession,
     family_id: int,

@@ -29,25 +29,28 @@
           </n-button>
         </div>
       </template>
-      <n-space vertical size="medium">
+      <n-space vertical size="medium" :item-style="{ width: '100%', minWidth: 0 }">
         <div>
           <n-text depth="3" style="font-size: 13px; display: block; margin-bottom: 8px">
             💡 分析结果
           </n-text>
-          <n-text>{{ aiInsights.insight }}</n-text>
+          <div style="font-size: 14px; white-space: pre-wrap; word-break: break-all; line-height: 1.6; color: var(--theme-text-primary)">
+            {{ aiInsights.insight }}
+          </div>
         </div>
         
         <div v-if="aiInsights.spending_tips.length > 0">
           <n-text depth="3" style="font-size: 13px; display: block; margin-bottom: 8px">
             💰 消费建议
           </n-text>
-          <n-space vertical size="small">
+          <n-space vertical size="small" :item-style="{ width: '100%', minWidth: 0 }">
             <n-tag
               v-for="(tip, index) in aiInsights.spending_tips"
               :key="index"
               type="warning"
               size="small"
               :bordered="false"
+              style="white-space: normal; height: auto; padding: 6px 10px; line-height: 1.5; width: 100%; display: block;"
             >
               {{ tip }}
             </n-tag>
@@ -58,13 +61,14 @@
           <n-text depth="3" style="font-size: 13px; display: block; margin-bottom: 8px">
             📈 储蓄策略
           </n-text>
-          <n-space vertical size="small">
+          <n-space vertical size="small" :item-style="{ width: '100%', minWidth: 0 }">
             <n-tag
               v-for="(suggestion, index) in aiInsights.saving_suggestions"
               :key="index"
               type="success"
               size="small"
               :bordered="false"
+              style="white-space: normal; height: auto; padding: 6px 10px; line-height: 1.5; width: 100%; display: block;"
             >
               {{ suggestion }}
             </n-tag>

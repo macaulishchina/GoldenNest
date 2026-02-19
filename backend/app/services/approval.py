@@ -617,7 +617,8 @@ class ApprovalService:
             bank_name=bank_name,
             deduct_from_cash=deduct_from_cash,
             is_active=True,
-            note=note
+            note=note,
+            image_data=data.get("image_data")
         )
         self.db.add(asset)
         await self.db.flush()
@@ -633,7 +634,8 @@ class ApprovalService:
             amount=principal_cny,
             principal_before=0,
             principal_after=principal_cny,
-            operation_date=start_date
+            operation_date=start_date,
+            image_data=data.get("image_data")
         )
         self.db.add(position)
         await self.db.flush()
@@ -860,7 +862,10 @@ class ApprovalService:
             principal=principal,
             start_date=start_date,
             end_date=end_date,
+            bank_name=data.get("bank_name"),
+            deduct_from_cash=deduct_from_cash,
             note=data.get("note"),
+            image_data=data.get("image_data"),
             created_at=now,
             updated_at=now
         )
@@ -880,6 +885,7 @@ class ApprovalService:
             principal_after=principal,
             operation_date=start_date,
             note=f"创建投资: {investment.name}",
+            image_data=data.get("image_data"),
             approval_request_id=request.id,
             created_at=now
         )
@@ -998,6 +1004,24 @@ class ApprovalService:
             investment.is_active = data["is_active"]
         if data.get("note") is not None:
             investment.note = data["note"]
+        if data.get("image_data") is not None:
+            investment.image_data = data["image_data"]
+        
+        # 创建持仓更新记录
+        now = datetime.utcnow()
+        position = InvestmentPosition(
+            investment_id=investment.id,
+            operation_type=PositionOperationType.UPDATE,
+            amount=0,
+            principal_before=investment.principal,
+            principal_after=investment.principal,
+            operation_date=now,
+            note=f"更新理财信息: {investment.name}",
+            image_data=data.get("image_data"),
+            approval_request_id=request.id,
+            created_at=now
+        )
+        self.db.add(position)
         
         # 更新日历提醒
         try:
@@ -1092,7 +1116,8 @@ class ApprovalService:
                 current_value=current_value,
                 calculated_income=calculated_income,
                 income_date=income_date,
-                note=data.get("note")
+                note=data.get("note"),
+                image_data=data.get("image_data")
             )
             income_amount = income_amount_cny
         else:
@@ -1101,7 +1126,8 @@ class ApprovalService:
                 investment_id=investment_id,
                 amount=amount,
                 income_date=income_date,
-                note=data.get("note")
+                note=data.get("note"),
+                image_data=data.get("image_data")
             )
             income_amount = amount
         
@@ -1233,6 +1259,7 @@ class ApprovalService:
             principal_after=principal_after,
             operation_date=operation_date,
             note=data.get("note") or f"增持投资: {investment.name}",
+            image_data=data.get("image_data"),
             approval_request_id=request.id,
             created_at=now
         )
@@ -1366,6 +1393,7 @@ class ApprovalService:
             principal_after=principal_after,
             operation_date=operation_date,
             note=data.get("note") or f"减持投资: {investment.name}",
+            image_data=data.get("image_data"),
             approval_request_id=request.id,
             created_at=now
         )
@@ -1419,6 +1447,22 @@ class ApprovalService:
         # 软删除
         investment.is_deleted = True
         investment.deleted_at = datetime.utcnow()
+        
+        # 创建删除持仓记录
+        now = datetime.utcnow()
+        position = InvestmentPosition(
+            investment_id=investment.id,
+            operation_type=PositionOperationType.DELETE,
+            amount=0,
+            principal_before=investment.principal,
+            principal_after=0,
+            operation_date=now,
+            note=f"删除理财: {investment.name}",
+            image_data=data.get("image_data"),
+            approval_request_id=request.id,
+            created_at=now
+        )
+        self.db.add(position)
         
         logging.info(f"Investment soft deleted: id={investment_id}, name={investment.name}")
     
