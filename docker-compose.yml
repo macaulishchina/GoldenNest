@@ -60,20 +60,24 @@ services:
     container_name: golden-nest-studio
     restart: unless-stopped
     environment:
+      # ── Git / VCS 配置 (可选) ──
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
-      - GITHUB_REPO=${GITHUB_REPO:-macaulishchina/GoldenNest}
+      - GITHUB_REPO=${GITHUB_REPO:-}
+      - GIT_CLONE_URL=${GIT_CLONE_URL:-}
       - COPILOT_API_KEY=${COPILOT_API_KEY:-}
       - STUDIO_DATA_PATH=/data
+      # ── 设计院认证 ──
       - STUDIO_ADMIN_PASS=${STUDIO_ADMIN_PASS:-}
       - STUDIO_SECRET_KEY=${STUDIO_SECRET_KEY:-}
-      # 主项目 SSO (可选)
-      - MAIN_API_URL=${MAIN_API_URL:-http://golden-nest-backend:8000}
-      # 部署流水线配置
-      - DEPLOY_SERVICES=${DEPLOY_SERVICES:-frontend,backend}
-      - DEPLOY_GIT_BRANCH=${DEPLOY_GIT_BRANCH:-master}
-      - DEPLOY_HEALTH_CHECKS=${DEPLOY_HEALTH_CHECKS:-backend=http://backend:8000/api/health;frontend=http://frontend:80}
-      - DOCKER_IMAGE_PREFIX=${DOCKER_IMAGE_PREFIX:-goldennest}
-      - SNAPSHOT_DB_PATHS=${SNAPSHOT_DB_PATHS:-data/golden_nest.db}
+      # ── 主项目 SSO (可选, 留空禁用) ──
+      - MAIN_API_URL=${MAIN_API_URL:-}
+      - SSO_TOKEN_KEY=${SSO_TOKEN_KEY:-}
+      # ── 部署流水线配置 (可选, 留空禁用对应功能) ──
+      - DEPLOY_SERVICES=${DEPLOY_SERVICES:-}
+      - DEPLOY_GIT_BRANCH=${DEPLOY_GIT_BRANCH:-}
+      - DEPLOY_HEALTH_CHECKS=${DEPLOY_HEALTH_CHECKS:-}
+      - DOCKER_IMAGE_PREFIX=${DOCKER_IMAGE_PREFIX:-}
+      - SNAPSHOT_DB_PATHS=${SNAPSHOT_DB_PATHS:-}
     volumes:
       - studio-data:/data
       - studio-uploads:/data/uploads

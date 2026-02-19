@@ -114,7 +114,7 @@ async def rollback_to_snapshot(
     回滚到指定快照:
     1. git checkout tag
     2. 可选: 恢复数据库
-    3. 重建并重启主项目容器
+    3. 重建并重启项目容器
     """
     result = await db.execute(select(Snapshot).where(Snapshot.id == snapshot_id))
     snapshot = result.scalar_one_or_none()

@@ -42,14 +42,14 @@ async def _log(deployment: Deployment, message: str, callback: LogCallback = Non
         await callback(line)
 
 
-async def deploy_main_project(
+async def deploy_project(
     db: AsyncSession,
     project_id: Optional[int] = None,
     deploy_type: DeployType = DeployType.merge_deploy,
     log_callback: LogCallback = None,
 ) -> Deployment:
     """
-    主项目部署流水线:
+    项目部署流水线:
     1. 创建部署前快照
     2. git pull
     3. docker compose build (配置的服务列表)

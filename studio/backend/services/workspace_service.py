@@ -64,7 +64,22 @@ async def _run_git(cmd: list, cwd: str, timeout: int = 120) -> Tuple[int, str, s
 
 
 def _build_clone_url(repo: str, token: str) -> str:
-    """构建带 token 的 clone URL"""
+    """
+    构建 clone URL
+    优先使用 GIT_CLONE_URL 环境变量 (支持任意 Git 仓库)
+    否则回退到 GitHub repo 格式 (owner/repo)
+    """
+    # 优先使用通用 Git 克隆 URL
+    if settings.git_clone_url:
+        url = settings.git_clone_url
+        # 如果是 HTTPS URL 且有 token, 注入认证信息
+        if token and url.startswith("https://"):
+            # https://example.com/repo.git → https://x-access-token:TOKEN@example.com/repo.git
+            url = url.replace("https://", f"https://x-access-token:{token}@", 1)
+        return url
+    # 回退: 使用 GitHub repo 格式
+    if not repo:
+        raise ValueError("Git 仓库未配置。请设置 GIT_CLONE_URL 或 GITHUB_REPO 环境变量。")
     if token:
         return f"https://x-access-token:{token}@github.com/{repo}.git"
     return f"https://github.com/{repo}.git"

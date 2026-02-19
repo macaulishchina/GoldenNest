@@ -27,6 +27,8 @@ export const useAuthStore = defineStore('studioAuth', () => {
   const token = ref<string | null>(localStorage.getItem('studio_token'))
   const user = ref<StudioUser | null>(loadStoredUser())
   const loading = ref(false)
+  // SSO token 在 localStorage 中的 key (从后端 /auth/check 动态获取，默认 'token')
+  const ssoTokenKey = ref<string>('token')
 
   const isLoggedIn = computed(() => !!token.value)
   const isAdmin = computed(() =>
@@ -64,7 +66,7 @@ export const useAuthStore = defineStore('studioAuth', () => {
   /**
    * 自动认证流程:
    * 1. 检查已有 studio token
-   * 2. 尝试复用主项目 session (localStorage 'token')
+   * 2. 尝试复用主项目 session (localStorage 动态 key)
    * 3. 都没有 → 需要登录
    */
   async function autoAuth(): Promise<boolean> {
@@ -81,8 +83,18 @@ export const useAuthStore = defineStore('studioAuth', () => {
       }
     }
 
-    // 2. 尝试主项目 session
-    const mainToken = localStorage.getItem('token')
+    // 2. 从后端获取 SSO 配置 (动态 token key)
+    try {
+      const { data: checkData } = await studioAuthApi.check()
+      if (checkData.sso_token_key) {
+        ssoTokenKey.value = checkData.sso_token_key
+      }
+    } catch {
+      // 获取配置失败，使用默认值
+    }
+
+    // 3. 尝试主项目 session
+    const mainToken = localStorage.getItem(ssoTokenKey.value)
     if (mainToken) {
       try {
         const { data } = await studioAuthApi.verifyMainToken(mainToken)
@@ -97,7 +109,7 @@ export const useAuthStore = defineStore('studioAuth', () => {
       }
     }
 
-    // 3. 需要登录
+    // 4. 需要登录
     return false
   }
 
@@ -143,7 +155,7 @@ export const useAuthStore = defineStore('studioAuth', () => {
   }
 
   return {
-    token, user, loading,
+    token, user, loading, ssoTokenKey,
     isLoggedIn, isAdmin, userRole, userPermissions,
     hasPermission,
     setToken, logout, autoAuth, adminLogin, dbUserLogin,

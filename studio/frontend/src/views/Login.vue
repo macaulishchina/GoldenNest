@@ -219,8 +219,8 @@ onMounted(async () => {
     }
   } catch {}
 
-  // 检测主项目 session 是否可用
-  const mainToken = localStorage.getItem('token')
+  // 检测主项目 session 是否可用 (使用动态 SSO token key)
+  const mainToken = localStorage.getItem(authStore.ssoTokenKey)
   mainProjectAvailable.value = !!mainToken
 
   autoDetecting.value = false
@@ -230,7 +230,7 @@ async function loginViaMainProject() {
   mainProjectLoading.value = true
   errorMsg.value = ''
   try {
-    const mainToken = localStorage.getItem('token')
+    const mainToken = localStorage.getItem(authStore.ssoTokenKey)
     if (!mainToken) {
       errorMsg.value = '未检测到主项目登录信息，请先在主项目中登录'
       return

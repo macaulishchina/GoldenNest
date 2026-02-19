@@ -71,6 +71,7 @@ async def auth_check():
         "main_project_available": bool(settings.main_api_url),
         "admin_username": settings.studio_admin_user,
         "registration_enabled": True,
+        "sso_token_key": settings.sso_token_key if settings.main_api_url else "",
     }
 
 
@@ -158,4 +159,6 @@ async def get_workspace_config():
         "deploy_services": settings.deploy_services,
         "deploy_git_branch": settings.deploy_git_branch,
         "has_health_checks": bool(settings.deploy_health_checks),
+        "sso_token_key": settings.sso_token_key if settings.main_api_url else "",
+        "git_clone_url_configured": bool(settings.git_clone_url),
     }

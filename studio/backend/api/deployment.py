@@ -65,8 +65,8 @@ async def deploy_project(
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 
-    # 如果有 PR 且需要合并
-    if project.github_pr_number:
+    # 如果有 PR 且需要合并 (需要 GitHub 集成已配置)
+    if project.github_pr_number and settings.github_repo and settings.github_token:
         try:
             pr = await github_service.get_pull(project.github_pr_number)
             if not pr.get("merged"):
@@ -136,7 +136,7 @@ async def _run_deploy_background(
                         except Exception:
                             pass
 
-            result = await deploy_service.deploy_main_project(
+            result = await deploy_service.deploy_project(
                 db, project_id, deploy_type, log_callback=log_cb
             )
             await db.commit()

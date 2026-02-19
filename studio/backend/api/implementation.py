@@ -21,6 +21,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/studio-api/projects", tags=["Implementation"])
 
 
+def _require_github():
+    """GitHub 集成前置检查 — 未配置时返回 501"""
+    if not settings.github_repo or not settings.github_token:
+        raise HTTPException(
+            status_code=501,
+            detail="GitHub 集成未配置。请设置 GITHUB_TOKEN 和 GITHUB_REPO 环境变量。",
+        )
+
+
 class ImplementRequest(BaseModel):
     """发起实施请求"""
     custom_instructions: str = ""
@@ -54,9 +63,10 @@ async def start_implementation(
     """
     发起代码实施:
     1. 创建 GitHub Issue (含设计方案)
-    2. 分配 copilot-swe-agent[bot] + agent_assignment → 触发 Copilot Coding Agent
+    2. 分配 copilot-swe-agent[bot] + agent_assignment, 触发 Copilot Coding Agent
     3. Agent 自动创建 copilot/ 分支和 Draft PR
     """
+    _require_github()
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project:
@@ -120,6 +130,7 @@ async def get_implementation_status(
     db: AsyncSession = Depends(get_db),
 ):
     """查询实施进度 (轮询 GitHub Actions workflow + PR 状态)"""
+    _require_github()
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project:
@@ -230,6 +241,7 @@ async def get_pr_diff(
     db: AsyncSession = Depends(get_db),
 ):
     """获取 PR 的 diff 内容"""
+    _require_github()
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project or not project.github_pr_number:
@@ -261,6 +273,7 @@ async def approve_and_merge_pr(
     db: AsyncSession = Depends(get_db),
 ):
     """Review 通过并合并 PR"""
+    _require_github()
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project or not project.github_pr_number:
@@ -309,6 +322,7 @@ async def prepare_review(
     3. 获取 diff 统计和变更文件列表
     4. 更新项目的工作区路径
     """
+    _require_github()
     from studio.backend.services import workspace_service
 
     result = await db.execute(select(Project).where(Project.id == project_id))
@@ -344,6 +358,7 @@ async def get_workspace_info(
     db: AsyncSession = Depends(get_db),
 ):
     """获取项目当前工作区的 git 信息"""
+    _require_github()
     from studio.backend.services import workspace_service
 
     result = await db.execute(select(Project).where(Project.id == project_id))
@@ -374,6 +389,7 @@ async def start_iteration(
     2. 重置状态为 discussing
     3. 递增 iteration_count
     """
+    _require_github()
     from studio.backend.services import workspace_service
 
     result = await db.execute(select(Project).where(Project.id == project_id))

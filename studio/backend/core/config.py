@@ -67,6 +67,13 @@ class StudioSettings:
 
     # 主项目 API (可选 — 用于 SSO token 验证，留空禁用)
     main_api_url: str = os.environ.get("MAIN_API_URL", "")
+    # SSO token 在 localStorage 中的 key (主项目存储 JWT 的键名，默认 "token")
+    sso_token_key: str = os.environ.get("SSO_TOKEN_KEY", "token")
+
+    # 通用 Git 仓库克隆 URL (可选 — 支持 GitLab/Gitea/自建等任意 Git 仓库)
+    # 留空时回退到 GITHUB_REPO 构造 GitHub URL，都为空则禁用 Git 克隆功能
+    # 示例: https://gitlab.example.com/org/repo.git 或 git@gitee.com:org/repo.git
+    git_clone_url: str = os.environ.get("GIT_CLONE_URL", "")
 
     def __post_init__(self):
         self.plans_path = os.path.join(self.data_path, "plans")

@@ -119,12 +119,16 @@ async def system_status():
     )
 
     # Git 状态
-    git_branch = await run_cmd("git -C /workspace branch --show-current 2>/dev/null")
-    git_log = await run_cmd("git -C /workspace log --oneline -5 2>/dev/null")
+    from studio.backend.core.config import settings as _settings
+    _ws = _settings.workspace_path
+    git_branch = await run_cmd(f"git -C {_ws} branch --show-current 2>/dev/null")
+    git_log = await run_cmd(f"git -C {_ws} log --oneline -5 2>/dev/null")
 
-    # GitHub 连接
-    from studio.backend.services import github_service
-    github_status = await github_service.check_connection()
+    # GitHub 连接 (仅在配置了 GitHub 时检查)
+    github_status = {"connected": False, "error": "GitHub 未配置"}
+    if _settings.github_repo and _settings.github_token:
+        from studio.backend.services import github_service
+        github_status = await github_service.check_connection()
 
     return {
         "containers": [
