@@ -4,7 +4,7 @@
       <n-card class="login-card" :bordered="false">
         <template #header>
           <div style="text-align: center">
-            <div style="font-size: 48px; margin-bottom: 8px">🏗️</div>
+            <div style="font-size: 48px; margin-bottom: 8px">🤖</div>
             <n-text style="font-size: 22px; font-weight: 700; color: #e94560">
               设计院 Studio
             </n-text>

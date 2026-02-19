@@ -17,9 +17,9 @@
         style="width: 180px"
       />
       <n-select
-        v-model:value="skillFilter"
-        :options="skillFilterOptions"
-        placeholder="按技能筛选"
+        v-model:value="roleFilter"
+        :options="roleFilterOptions"
+        placeholder="按角色筛选"
         clearable
         style="width: 180px"
       />
@@ -60,14 +60,14 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { AddOutline } from '@vicons/ionicons5'
 import { useMessage } from 'naive-ui'
 import { useProjectStore } from '@/stores/project'
-import { useSkillStore } from '@/stores/skill'
+import { useRoleStore } from '@/stores/role'
 import LogItem from '@/components/LogItem.vue'
 
 const store = useProjectStore()
-const skillStore = useSkillStore()
+const roleStore = useRoleStore()
 const message = useMessage()
 const statusFilter = ref<string | null>(null)
-const skillFilter = ref<number | null>(null)
+const roleFilter = ref<number | null>(null)
 const showArchived = ref(false)
 
 const filterOptions = [
@@ -81,14 +81,14 @@ const filterOptions = [
   { label: '已回滚', value: 'rolled_back' },
 ]
 
-const skillFilterOptions = computed(() =>
-  skillStore.skills.map(s => ({ label: `${s.icon} ${s.name}`, value: s.id }))
+const roleFilterOptions = computed(() =>
+  roleStore.roles.map(s => ({ label: `${s.icon} ${s.name}`, value: s.id }))
 )
 
 const filteredProjects = computed(() => {
   let list = store.projects
   if (statusFilter.value) list = list.filter(p => p.status === statusFilter.value)
-  if (skillFilter.value) list = list.filter(p => p.skill_id === skillFilter.value)
+  if (roleFilter.value) list = list.filter(p => p.role_id === roleFilter.value)
   return list
 })
 
@@ -109,7 +109,7 @@ async function toggleArchive(p: any) {
 
 onMounted(() => {
   store.fetchProjects()
-  skillStore.fetchSkills()
+  roleStore.fetchRoles()
 })
 watch(showArchived, (val) => {
   store.fetchProjects({ include_archived: val })

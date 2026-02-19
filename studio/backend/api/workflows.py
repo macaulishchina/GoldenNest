@@ -67,7 +67,7 @@ class WorkflowModuleItem(BaseModel):
     tab_key: str
     tab_label: str
     stage_statuses: List[str] = Field(default_factory=list)
-    skill_name: Optional[str] = None
+    role_name: Optional[str] = None
     config: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -75,7 +75,7 @@ class StageItem(BaseModel):
     key: str
     label: str
     status: str
-    skill: Optional[str] = None
+    role: Optional[str] = None
 
 
 class WorkflowCreate(BaseModel):
@@ -171,10 +171,10 @@ BUILTIN_WORKFLOWS: List[Dict[str, Any]] = [
         "description": "产品需求分析、设计、实施、审查、部署的完整流程",
         "stages": [
             {"key": "draft", "label": "草稿", "status": "draft"},
-            {"key": "discussing", "label": "讨论", "status": "discussing", "skill": "需求分析"},
+            {"key": "discussing", "label": "讨论", "status": "discussing", "role": "需求分析"},
             {"key": "planned", "label": "定稿", "status": "planned"},
             {"key": "implementing", "label": "实施", "status": "implementing"},
-            {"key": "reviewing", "label": "审查", "status": "reviewing", "skill": "实现审查"},
+            {"key": "reviewing", "label": "审查", "status": "reviewing", "role": "实现审查"},
             {"key": "deploying", "label": "部署", "status": "deploying"},
             {"key": "deployed", "label": "完成", "status": "deployed"},
         ],
@@ -184,7 +184,7 @@ BUILTIN_WORKFLOWS: List[Dict[str, Any]] = [
                 "tab_key": "discuss",
                 "tab_label": "💬 讨论 & 设计",
                 "stage_statuses": ["draft", "discussing", "planned"],
-                "skill_name": "需求分析",
+                "role_name": "需求分析",
                 "config": {
                     "mode": "discuss",
                     "plan_panel": True,
@@ -205,7 +205,7 @@ BUILTIN_WORKFLOWS: List[Dict[str, Any]] = [
                 "tab_key": "review",
                 "tab_label": "💬 审查",
                 "stage_statuses": ["reviewing"],
-                "skill_name": "实现审查",
+                "role_name": "实现审查",
                 "config": {
                     "mode": "review",
                     "plan_panel": True,
@@ -252,10 +252,10 @@ BUILTIN_WORKFLOWS: List[Dict[str, Any]] = [
         "description": "Bug 问诊、修复、验证、部署的完整流程",
         "stages": [
             {"key": "draft", "label": "报告", "status": "draft"},
-            {"key": "discussing", "label": "问诊", "status": "discussing", "skill": "Bug 问诊"},
+            {"key": "discussing", "label": "问诊", "status": "discussing", "role": "Bug 问诊"},
             {"key": "planned", "label": "诊断书", "status": "planned"},
             {"key": "implementing", "label": "修复", "status": "implementing"},
-            {"key": "reviewing", "label": "验证", "status": "reviewing", "skill": "实现审查"},
+            {"key": "reviewing", "label": "验证", "status": "reviewing", "role": "实现审查"},
             {"key": "deploying", "label": "部署", "status": "deploying"},
             {"key": "deployed", "label": "关闭", "status": "deployed"},
         ],
@@ -265,7 +265,7 @@ BUILTIN_WORKFLOWS: List[Dict[str, Any]] = [
                 "tab_key": "discuss",
                 "tab_label": "💬 问诊",
                 "stage_statuses": ["draft", "discussing", "planned"],
-                "skill_name": "Bug 问诊",
+                "role_name": "Bug 问诊",
                 "config": {
                     "mode": "discuss",
                     "plan_panel": True,
@@ -286,7 +286,7 @@ BUILTIN_WORKFLOWS: List[Dict[str, Any]] = [
                 "tab_key": "review",
                 "tab_label": "💬 验证",
                 "stage_statuses": ["reviewing"],
-                "skill_name": "实现审查",
+                "role_name": "实现审查",
                 "config": {
                     "mode": "review",
                     "plan_panel": True,

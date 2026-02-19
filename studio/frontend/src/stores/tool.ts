@@ -25,6 +25,7 @@ export interface PermissionInfo {
   icon: string
   tip: string
   is_meta: boolean
+  parent?: string  // 父权限 key，用于嵌套展示
 }
 
 export const useToolStore = defineStore('tool', () => {

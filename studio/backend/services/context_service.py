@@ -7,7 +7,7 @@
   - 中等 (16K-128K): + 目录结构 + 关键目录列表 + 少量代码摘要
   - 大型 (>128K):  + 完整关键文件内容 (原始行为)
 
-通用设计 — 不包含任何特定项目的硬编码，通过自动发现和 Skill 配置适配不同项目。
+通用设计 — 不包含任何特定项目的硬编码，通过自动发现和 Role 配置适配不同项目。
 """
 import os
 import logging
@@ -81,7 +81,7 @@ def discover_key_dirs(workspace: str) -> List[str]:
     return found
 
 # ======================== Legacy 硬编码 Prompts ========================
-# 兼容 skill_id=NULL 的旧项目, 新项目应通过 Skill 配置
+# 兼容无 Role 配置的旧项目, 新项目应通过 Role 配置
 
 LEGACY_ROLE_PROMPT = """你是一位资深产品经理和需求分析师，正在「设计院」中和用户讨论一个产品需求。
 
@@ -155,12 +155,32 @@ LEGACY_OUTPUT_GENERATION_PROMPT = """基于以下讨论内容，生成一份结�
 
 请直接输出需求规格书内容（不需要代码块包裹）:"""
 
+# 反伪造顶层指令 — 插入到 system prompt 最前面
+ANTI_FABRICATION_HEADER = """## ⚠️ 核心规则：禁止伪造工具执行
+
+你拥有可调用的工具（function calling / tool_call），包括 run_command、read_file、search_text 等。
+
+**最重要的规则：**
+- 当用户要求你执行命令时，你 **必须** 通过 tool_call 调用 `run_command` 工具。
+- **绝对禁止** 在文本回复中编造"已执行"、"执行结果"等内容。你没有能力在文本中执行命令，只有 tool_call 才能真正执行。
+- 如果你在文本中写了"已执行 xxx 命令"但没有发起 tool_call，那就是 **欺骗用户**，这是严重违规。
+- 同理，不要在文本中伪装读取了文件内容。查看文件必须调用 `read_file` 工具。
+
+**正确做法示例：**
+用户说"删除 /tmp/3.txt" → 你调用 tool_call: `run_command({"command": "rm /tmp/3.txt"})`
+用户说"查看 main.py 内容" → 你调用 tool_call: `read_file({"path": "main.py"})`
+
+**错误做法（严格禁止）：**
+用户说"删除 /tmp/3.txt" → 你在文本中写："已执行 rm /tmp/3.txt，文件已删除" ← 这是伪造！你根本没有执行！
+"""
+
 DEFAULT_TOOL_STRATEGY = """## 工具使用策略
 
 ### 重要原则
 - **直接调用工具，不要描述意图**。不要说"让我查看一下…"、"让我问几个问题…"然后停止——直接调用对应工具。
 - 每次回复中，要么调用工具，要么输出有实际内容的文本。**不要输出空响应。**
 - **禁止"预告式"回复**：绝对不要输出类似"好的，让我继续问几个问题："这样的纯文本然后就停止。如果你想提问，必须在同一次回复中直接调用 `ask_user` 工具。
+- **⚠️ 当用户要求执行命令时，必须通过 tool_call 调用 run_command，绝对不能在文本中编造执行结果。**
 
 ### ask_user — 主动提问澄清（最重要的工具）
 - 用户描述内容后，**立即**用 `ask_user` 提出澄清问题
@@ -182,6 +202,7 @@ DEFAULT_TOOL_STRATEGY = """## 工具使用策略
 4. **不要重复** — 已读过的内容不要再次读取
 5. **先概览后细节** — 先 get_file_tree 了解结构，再针对性查看
 - **当用户询问代码实现细节时，必须先用工具查看相关源码，再回答**。不要猜测。
+- **绝对禁止伪造工具调用**：不要在回复文本中伪装执行了命令或读取了文件，你必须通过实际的 function calling / tool_call 来使用工具。如果用户让你执行命令，你必须调用 `run_command` 工具，绝不可只在文本中输出“执行结果”。
 - 使用中文回答"""
 
 
@@ -242,22 +263,24 @@ def list_dir_files(dirpath: str) -> str:
 
 
 def build_project_context(
-    skill=None,
+    role=None,
     extra_context: str = "",
     budget_tokens: int = 0,
     return_sections: bool = False,
     tool_permissions: set = None,
     ui_labels_override: dict = None,
+    skills: list = None,
 ) -> Union[str, Tuple[str, List]]:
     """
     构建项目上下文用于 AI system prompt
 
     Args:
-        skill: Skill ORM 对象 (None = 使用 legacy 硬编码)
+        role: Role ORM 对象 (None = 使用 legacy 硬编码)
         extra_context: 额外上下文 (需求标题/描述等)
         budget_tokens: system prompt token 预算 (0 = 不限制, 使用最大内容)
         return_sections: 是否额外返回各段明细 (用于前端上下文检查器)
         tool_permissions: 项目工具权限集合 (用于条件化工具策略)
+        skills: Skill ORM 对象列表 — 活跃技能, 注入 instruction_prompt 到上下文
 
     Returns:
         str (when return_sections=False)
@@ -309,19 +332,19 @@ def build_project_context(
             if os.path.isdir(dp):
                 key_dir_contents.append(f"- `{d}/`: {list_dir_files(dp)}")
 
-    # ---- 从 Skill 或 legacy 获取 prompts ----
-    if skill:
-        role_text = skill.role_prompt or ""
-        strategy_text = skill.strategy_prompt or ""
-        finalization_text = skill.finalization_prompt or ""
-        tool_strategy_text = skill.tool_strategy_prompt or ""
+    # ---- 从 Role 或 legacy 获取 prompts ----
+    if role:
+        role_text = role.role_prompt or ""
+        strategy_text = role.strategy_prompt or ""
+        finalization_text = role.finalization_prompt or ""
+        tool_strategy_text = role.tool_strategy_prompt or ""
     else:
         role_text = LEGACY_ROLE_PROMPT
         strategy_text = ""  # legacy 把 strategy 合并在 role_text 里了
         finalization_text = LEGACY_FINALIZATION_PROMPT
         tool_strategy_text = ""
 
-    # 如果 skill 没有自定义工具策略, 使用系统默认
+    # 如果 role 没有自定义工具策略, 使用系统默认
     if not tool_strategy_text.strip():
         tool_strategy_text = DEFAULT_TOOL_STRATEGY
 
@@ -361,13 +384,31 @@ def build_project_context(
     # ---- 构建各段 (带跟踪) ----
     named_parts = []
 
-    # 角色 + 策略: skill 模式分段, legacy 模式合并
-    if skill:
+    # 反伪造顶层指令 — 放在最前面, 确保模型优先看到
+    if _perms and any(p in _perms for p in ("execute_readonly_command", "execute_command")):
+        named_parts.append(("核心规则", ANTI_FABRICATION_HEADER))
+
+    # 角色 + 策略: role 模式分段, legacy 模式合并
+    if role:
         named_parts.append(("角色定义", role_text))
         if strategy_text:
             named_parts.append(("对话策略", strategy_text))
     else:
         named_parts.append(("角色定义 & 对话策略", role_text))
+
+    # ---- 技能指令注入 ----
+    if skills:
+        skill_sections = []
+        for sk in skills:
+            section = f"### {sk.icon} {sk.name}\n{sk.instruction_prompt}"
+            if sk.output_format:
+                section += f"\n\n**输出格式:**\n{sk.output_format}"
+            if sk.constraints:
+                constraints_text = "\n".join(f"- {c}" for c in sk.constraints)
+                section += f"\n\n**约束条件:**\n{constraints_text}"
+            skill_sections.append(section)
+        skill_block = "## 活跃技能\n\n以下技能定义了你在本次对话中应具备的专项能力。请在适当时机运用这些技能方法论。\n\n" + "\n\n---\n\n".join(skill_sections)
+        named_parts.append(("活跃技能", skill_block))
 
     if tree:
         tree_text = f"## 项目结构\n```\n{tree}\n```"
@@ -386,7 +427,7 @@ def build_project_context(
 
     if extra_context:
         label = "项目上下文"
-        _uilabels = ui_labels_override or (skill.ui_labels if skill and skill.ui_labels else None) or {}
+        _uilabels = ui_labels_override or (role.ui_labels if role and role.ui_labels else None) or {}
         if _uilabels:
             noun = _uilabels.get("project_noun", "需求")
             label = f"{noun}上下文"
@@ -431,9 +472,9 @@ def build_project_context(
     return context, sections
 
 
-def build_plan_generation_prompt(discussion_summary: str, skill=None) -> str:
-    """构建从讨论生成产出文档的 prompt, 根据 skill 配置动态选择模板"""
-    if skill and skill.output_generation_prompt:
-        return skill.output_generation_prompt.replace("{discussion_summary}", discussion_summary)
+def build_plan_generation_prompt(discussion_summary: str, role=None) -> str:
+    """构建从讨论生成产出文档的 prompt, 根据 role 配置动态选择模板"""
+    if role and role.output_generation_prompt:
+        return role.output_generation_prompt.replace("{discussion_summary}", discussion_summary)
     # legacy fallback
     return LEGACY_OUTPUT_GENERATION_PROMPT.replace("{discussion_summary}", discussion_summary)

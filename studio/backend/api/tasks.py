@@ -304,6 +304,7 @@ async def cancel_task(
 class CommandApprovalRequest(BaseModel):
     approved: bool
     scope: str = "once"  # once | session | project | permanent
+    all_commands: bool = False  # 是否授权所有命令 (创建 * 通配符规则)
 
 @task_router.post("/{task_id}/approve-command")
 async def approve_command(
@@ -327,7 +328,7 @@ async def approve_command(
     if rt._command_approval_event is None:
         raise HTTPException(status_code=409, detail="当前没有待审批的命令")
 
-    rt.resolve_command_approval(body.approved, body.scope)
+    rt.resolve_command_approval(body.approved, body.scope, body.all_commands)
     return {"ok": True, "task_id": task_id, "approved": body.approved, "scope": body.scope}
 
 

@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studio.backend.core.database import async_session_maker
 from studio.backend.models import (
-    AiTask, Message, MessageRole, MessageType, Project, ProjectStatus, Skill,
+    AiTask, Message, MessageRole, MessageType, Project, ProjectStatus, Role,
 )
 
 logger = logging.getLogger(__name__)
@@ -121,6 +121,59 @@ def _command_signature(command: str) -> str:
     return " ".join(parts[:2]).lower() if len(parts) >= 2 else command.strip().lower()
 
 
+# 需要特殊处理的重定向/管道操作符
+_REDIRECT_OPS = {">", ">>", "|", "&&", "||"}
+
+# 常见的命令名 → 用第一个 token 作为规则
+# 两段命令 (如 pip install, npm install) → 用前两个 token
+_TWO_PART_COMMANDS = {"pip", "npm", "apt", "apt-get", "brew", "docker", "git", "systemctl", "cargo", "yarn", "pnpm", "conda"}
+
+
+def _extract_command_pattern(command: str) -> str:
+    """从完整命令中智能提取规则模式。
+
+    规则:
+    - 管道/重定向前的部分为主命令
+    - 对于 pip install / npm install 等两段命令, 取前两个 token
+    - 其他命令只取第一个 token (如 rm, touch, mkdir)
+
+    Examples:
+        "rm /tmp/1.txt"           → "rm"
+        "touch /tmp/foo.txt"      → "touch"
+        "pip install requests"    → "pip install"
+        "echo hello > /tmp/a"     → "echo"
+        "cat foo | grep bar"      → "cat"
+        "docker compose up -d"    → "docker compose"
+    """
+    cmd = command.strip()
+    if not cmd:
+        return cmd
+
+    # 取管道/重定向/链接之前的主命令部分
+    for op in [" | ", " > ", " >> ", " && ", " || "]:
+        idx = cmd.find(op)
+        if idx > 0:
+            cmd = cmd[:idx].strip()
+            break
+
+    parts = cmd.split()
+    if not parts:
+        return command.strip()
+
+    first = parts[0].lower()
+
+    # sudo → 跳过, 取后面的命令
+    if first == "sudo" and len(parts) > 1:
+        parts = parts[1:]
+        first = parts[0].lower()
+
+    # 两段命令
+    if first in _TWO_PART_COMMANDS and len(parts) >= 2:
+        return f"{parts[0]} {parts[1]}"
+
+    return parts[0]
+
+
 # ======================== RunningTask ========================
 
 class RunningTask:
@@ -147,17 +200,15 @@ class RunningTask:
         # ---- 命令审批机制 ----
         self._command_approval_event: Optional[asyncio.Event] = None
         self._command_approval_result: Optional[dict] = None  # {"approved": bool, "scope": "once"|"session"|"project"|"permanent"}
-        self._session_approved_commands: Set[str] = set()  # 本会话已授权的命令签名
-        self._auto_approve_commands: bool = False  # 项目级自动批准 (持久化)
+        self._session_approved_commands: Set[str] = set()  # 本次回答已授权的命令签名
 
     async def request_command_approval(self, command: str, tool_call_id: str = "") -> dict:
         """请求用户批准一条写命令。阻塞直到收到回复或超时。
 
         检查顺序:
-        1. 命令授权规则 (deny 优先)
-        2. 项目级自动批准 (auto_approve_commands)
-        3. 会话级缓存 (同类命令已授权)
-        4. 请求用户实时审批
+        1. 命令授权规则 (deny 优先, 含 * 通配符)
+        2. 会话级缓存 (同类命令已授权)
+        3. 请求用户实时审批
 
         返回 {"approved": bool, "scope": "once"|"session"|"project"|"permanent"}
         """
@@ -192,15 +243,7 @@ class RunningTask:
                 )
                 return {"approved": True, "scope": "rule"}
 
-        # 2. 检查项目级自动批准 (用户曾选择 scope=project)
-        if self._auto_approve_commands:
-            await log_command_audit(
-                self.project_id, project_title, command,
-                action="approved", method="project_auto", scope="project", operator="auto",
-            )
-            return {"approved": True, "scope": "project"}
-
-        # 3. 检查是否本会话已授权
+        # 2. 检查是否本会话已授权
         cmd_sig = _command_signature(command)
         if cmd_sig in self._session_approved_commands:
             await log_command_audit(
@@ -209,7 +252,7 @@ class RunningTask:
             )
             return {"approved": True, "scope": "session"}
 
-        # 4. 发送审批请求事件, 等待用户决定
+        # 3. 发送审批请求事件, 等待用户决定
         self._command_approval_event = asyncio.Event()
         self._command_approval_result = None
         self.emit({
@@ -245,39 +288,74 @@ class RunningTask:
         if result.get("approved") and result.get("scope") == "session":
             self._session_approved_commands.add(cmd_sig)
 
+        all_commands = result.get("all_commands", False)
+
+        # 如果 scope=project, 创建项目级授权规则
+        if result.get("approved") and result.get("scope") == "project":
+            await self._create_auth_rule(command, rule_scope="project", project_id=self.project_id, all_commands=all_commands)
+
         # 如果 scope=permanent, 创建全局授权规则
         if result.get("approved") and result.get("scope") == "permanent":
-            await self._create_permanent_rule(command)
+            await self._create_auth_rule(command, rule_scope="global", project_id=None, all_commands=all_commands)
 
         return result
 
-    async def _create_permanent_rule(self, command: str):
-        """根据命令创建一条全局永久授权规则 (提取命令前缀)"""
+    async def _create_auth_rule(self, command: str, rule_scope: str = "global", project_id: Optional[int] = None, all_commands: bool = False):
+        """根据命令自动创建授权规则 (提取命令名作为前缀模式)
+
+        Args:
+            command: 原始命令
+            rule_scope: "global" 或 "project"
+            project_id: 项目ID (scope=project 时必填)
+            all_commands: 如果为 True, 使用 * 通配符匹配所有命令
+        """
         try:
             from studio.backend.core.database import async_session_maker
             from studio.backend.models import CommandAuthRule
-            # 用命令的前两个 token 作为前缀规则
-            parts = command.strip().split()
-            pattern = " ".join(parts[:2]) if len(parts) >= 2 else command.strip()
+
+            # 如果 all_commands=True, 使用 * 通配符; 否则智能提取命令名
+            pattern = "*" if all_commands else _extract_command_pattern(command)
+            pattern_type = "exact" if all_commands else "prefix"
+            scope_label = "全局" if rule_scope == "global" else f"项目#{project_id}"
+
+            # 检查是否已存在相同模式的规则 (避免重复)
             async with async_session_maker() as db:
+                existing_q = select(CommandAuthRule).where(
+                    CommandAuthRule.pattern == pattern,
+                    CommandAuthRule.pattern_type == pattern_type,
+                    CommandAuthRule.action == "allow",
+                    CommandAuthRule.is_enabled == True,
+                )
+                if rule_scope == "project" and project_id:
+                    existing_q = existing_q.where(
+                        CommandAuthRule.scope == "project",
+                        CommandAuthRule.project_id == project_id,
+                    )
+                else:
+                    existing_q = existing_q.where(CommandAuthRule.scope == "global")
+                existing = await db.execute(existing_q)
+                if existing.scalar_one_or_none():
+                    logger.info(f"规则已存在, 跳过创建: {scope_label} {pattern_type}='{pattern}'")
+                    return
+
                 rule = CommandAuthRule(
                     pattern=pattern,
-                    pattern_type="prefix",
-                    scope="global",
-                    project_id=None,
+                    pattern_type=pattern_type,
+                    scope=rule_scope,
+                    project_id=project_id if rule_scope == "project" else None,
                     action="allow",
                     created_by=self.sender_name or "user",
-                    note=f"从命令审批中自动创建 (原始命令: {command[:100]})",
+                    note=f"从命令审批中自动创建 ({'所有命令' if all_commands else '原始命令: ' + command[:100]})",
                 )
                 db.add(rule)
                 await db.commit()
-                logger.info(f"创建永久授权规则: prefix='{pattern}'")
+                logger.info(f"创建{scope_label}授权规则: {pattern_type}='{pattern}'")
         except Exception as e:
-            logger.warning(f"创建永久授权规则失败: {e}")
+            logger.warning(f"创建授权规则失败: {e}")
 
-    def resolve_command_approval(self, approved: bool, scope: str = "once"):
+    def resolve_command_approval(self, approved: bool, scope: str = "once", all_commands: bool = False):
         """用户回复审批结果（由 REST endpoint 调用）"""
-        self._command_approval_result = {"approved": approved, "scope": scope}
+        self._command_approval_result = {"approved": approved, "scope": scope, "all_commands": all_commands}
         if self._command_approval_event:
             self._command_approval_event.set()
 
@@ -553,7 +631,7 @@ async def _execute_discussion(
     from studio.backend.core.model_capabilities import capability_cache
     from studio.backend.core.token_utils import estimate_tokens, truncate_text
     from studio.backend.core.config import settings
-    from studio.backend.core.project_types import get_skill_for_status, get_ui_labels
+    from studio.backend.core.project_types import get_role_for_status, get_ui_labels
 
     # 更新 DB 状态 → running
     await _update_task_status(rt.task_id, "running")
@@ -606,17 +684,31 @@ async def _execute_discussion(
             max_input = capability_cache.get_max_input(model)
             system_budget = max(int(max_input * 0.15), 2000)
 
-            # 解析活跃 skill
+            # 解析活跃 role
             type_key = getattr(project, 'project_type', None) or 'requirement'
             status_val = project.status.value if hasattr(project.status, 'value') else str(project.status)
             ui_labels = get_ui_labels(type_key)
-            skill_name = get_skill_for_status(type_key, status_val) or get_skill_for_status(type_key, 'discussing')
-            skill_obj = None
-            if skill_name:
+            role_name = get_role_for_status(type_key, status_val) or get_role_for_status(type_key, 'discussing')
+            role_obj = None
+            if role_name:
                 sk_result = await db.execute(
-                    select(Skill).where(Skill.name == skill_name, Skill.is_enabled.is_(True))
+                    select(Role).where(Role.name == role_name, Role.is_enabled.is_(True))
                 )
-                skill_obj = sk_result.scalar_one_or_none()
+                role_obj = sk_result.scalar_one_or_none()
+
+            # ---- 加载活跃技能 ----
+            active_skills = []
+            if role_obj and role_obj.default_skills:
+                from studio.backend.models import Skill
+                skill_names = role_obj.default_skills or []
+                if skill_names:
+                    sk_q = await db.execute(
+                        select(Skill).where(
+                            Skill.name.in_(skill_names),
+                            Skill.is_enabled.is_(True),
+                        )
+                    )
+                    active_skills = list(sk_q.scalars().all())
 
             _pn = ui_labels.get("project_noun", "需求")
             _on = ui_labels.get("output_noun", "设计稿")
@@ -649,17 +741,14 @@ async def _execute_discussion(
             from studio.backend.services.tool_registry import DEFAULT_PERMISSIONS
             tool_permissions = set(raw_perms) if raw_perms else set(DEFAULT_PERMISSIONS)
 
-            # 加载项目级命令自动批准标志
-            if "auto_approve_commands" in tool_permissions:
-                rt._auto_approve_commands = True
-
             system_prompt, system_sections = context_service.build_project_context(
-                skill=skill_obj,
+                role=role_obj,
                 extra_context="\n".join(extra_parts),
                 budget_tokens=system_budget,
                 return_sections=True,
                 tool_permissions=tool_permissions,
                 ui_labels_override=ui_labels,
+                skills=active_skills,
             )
 
         # ---- 上下文自动总结 ----
@@ -710,23 +799,7 @@ async def _execute_discussion(
         # 命令审批回调: 当 AI 尝试执行非只读命令时触发
         # 内部先检查 auto_approve / session 缓存, 否则弹窗请求用户审批
         async def _command_approval_fn(command: str, tool_call_id: str) -> dict:
-            approval = await rt.request_command_approval(command, tool_call_id)
-            # scope=project → 设置项目级自动批准标志
-            if approval.get("approved") and approval.get("scope") == "project":
-                rt._auto_approve_commands = True
-                try:
-                    async with async_session_maker() as pdb:
-                        pr = await pdb.execute(select(Project).where(Project.id == project_id))
-                        proj = pr.scalar_one_or_none()
-                        if proj:
-                            existing = list(proj.tool_permissions or [])
-                            if "auto_approve_commands" not in existing:
-                                existing.append("auto_approve_commands")
-                                proj.tool_permissions = existing
-                            await pdb.commit()
-                except Exception as e:
-                    logger.warning(f"保存项目级命令自动批准失败: {e}")
-            return approval
+            return await rt.request_command_approval(command, tool_call_id)
 
         async def _tool_executor(name: str, arguments: dict) -> str:
             return await execute_tool(name, arguments, workspace_path, tool_permissions,

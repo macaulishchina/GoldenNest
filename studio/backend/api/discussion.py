@@ -29,9 +29,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from studio.backend.core.config import settings
 from studio.backend.core.database import get_db
 from studio.backend.core.model_capabilities import capability_cache
-from studio.backend.core.project_types import get_skill_for_status, get_ui_labels
+from studio.backend.core.project_types import get_role_for_status, get_ui_labels
 from studio.backend.core.security import get_studio_user, get_optional_studio_user
-from studio.backend.models import Project, Message, MessageRole, MessageType, ProjectStatus, Skill
+from studio.backend.models import Project, Message, MessageRole, MessageType, ProjectStatus, Role
 from studio.backend.services import ai_service, context_service
 from studio.backend.services.ai_service import new_request_id
 from studio.backend.services.context_manager import prepare_context, build_usage_summary, summarize_context_if_needed, _generate_summary
@@ -42,29 +42,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/studio-api/projects", tags=["Discussion"])
 
 
-async def _resolve_active_skill(project: Project, db: AsyncSession):
+async def _resolve_active_role(project: Project, db: AsyncSession):
     """
-    根据 project_type + 当前 status 解析当前活跃的 Skill ORM 对象.
-    返回 (skill_obj_or_None, ui_labels_dict)
+    根据 project_type + 当前 status 解析当前活跃的 Role ORM 对象.
+    返回 (role_obj_or_None, ui_labels_dict)
     """
     type_key = getattr(project, 'project_type', None) or 'requirement'
     status = project.status.value if hasattr(project.status, 'value') else str(project.status)
     ui_labels = get_ui_labels(type_key)
 
-    skill_name = get_skill_for_status(type_key, status)
-    if not skill_name:
-        # 当前阶段没有绑定 skill (如 draft, implementing, deploying)
-        # 回退: 取讨论阶段的 skill
-        skill_name = get_skill_for_status(type_key, 'discussing')
+    role_name = get_role_for_status(type_key, status)
+    if not role_name:
+        # 当前阶段没有绑定 role (如 draft, implementing, deploying)
+        # 回退: 取讨论阶段的 role
+        role_name = get_role_for_status(type_key, 'discussing')
 
-    skill_obj = None
-    if skill_name:
+    role_obj = None
+    if role_name:
         result = await db.execute(
-            select(Skill).where(Skill.name == skill_name, Skill.is_enabled.is_(True))
+            select(Role).where(Role.name == role_name, Role.is_enabled.is_(True))
         )
-        skill_obj = result.scalar_one_or_none()
+        role_obj = result.scalar_one_or_none()
 
-    return skill_obj, ui_labels
+    return role_obj, ui_labels
 
 
 async def _check_model_supports_tools(model: str) -> bool:
@@ -494,10 +494,10 @@ async def finalize_plan(
     # 构建生成 plan 的 prompt — 自适应压缩
     max_input = capability_cache.get_max_input(model)
     system_budget = max(int(max_input * 0.15), 2000)
-    # 解析当前活跃的 skill
-    active_skill, plan_labels = await _resolve_active_skill(project, db)
-    system_prompt = context_service.build_project_context(skill=active_skill, budget_tokens=system_budget, tool_permissions=set(), ui_labels_override=plan_labels)
-    plan_prompt = context_service.build_plan_generation_prompt(discussion_text, skill=active_skill)
+    # 解析当前活跃的 role
+    active_role, plan_labels = await _resolve_active_role(project, db)
+    system_prompt = context_service.build_project_context(role=active_role, budget_tokens=system_budget, tool_permissions=set(), ui_labels_override=plan_labels)
+    plan_prompt = context_service.build_plan_generation_prompt(discussion_text, role=active_role)
 
     async def event_stream():
         full_plan = []
@@ -679,7 +679,7 @@ async def check_context_on_model_switch(
     # 构建 system prompt
     max_input = capability_cache.get_max_input(model)
     system_budget = max(int(max_input * 0.15), 2000)
-    chk_skill, chk_labels = await _resolve_active_skill(project, db)
+    chk_role, chk_labels = await _resolve_active_role(project, db)
     _chk_pn = chk_labels.get("project_noun", "需求")
     _chk_on = chk_labels.get("output_noun", "设计稿")
     extra_parts = [f"\n## 当前{_chk_pn}\n标题: {project.title}\n描述: {project.description}"]
@@ -688,7 +688,7 @@ async def check_context_on_model_switch(
     chk_raw_perms = getattr(project, 'tool_permissions', None)
     chk_tool_permissions = set(chk_raw_perms) if chk_raw_perms else set()
     system_prompt, check_system_sections = context_service.build_project_context(
-        skill=chk_skill,
+        role=chk_role,
         extra_context="\n".join(extra_parts),
         budget_tokens=system_budget,
         return_sections=True,

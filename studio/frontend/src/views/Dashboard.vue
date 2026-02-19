@@ -5,7 +5,7 @@
       <n-card style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)">
         <n-space justify="space-between" align="center">
           <div>
-            <n-h2 style="margin: 0; color: #e94560">🏗️ 设计院</n-h2>
+            <n-h2 style="margin: 0; color: #e94560">🤖 AI设计院</n-h2>
             <n-text depth="3">AI 驱动的需求迭代平台 — 让想法变成现实</n-text>
           </div>
           <n-button type="primary" @click="showCreate = true" size="large">
@@ -249,16 +249,16 @@ const deployedCount = computed(() =>
   projects.value.filter(p => p.status === 'deployed').length
 )
 
-// ── 按技能分组，标签筛选 ─────────────────────────────────────────
-const SKILL_COLORS: Record<string, string> = {
+// ── 按角色分组，标签筛选 ─────────────────────────────────────────
+const ROLE_COLORS: Record<string, string> = {
   bug: '#d03050', fix: '#d03050', 缺陷: '#d03050', 问诊: '#d03050',
   需求: '#2080f0', feature: '#2080f0', 分析: '#2080f0',
   任务: '#18a058', task: '#18a058',
   审查: '#f0a020', review: '#f0a020', 评审: '#f0a020',
 }
-function skillGroupColor(name = '') {
+function roleGroupColor(name = '') {
   const n = name.toLowerCase()
-  for (const [key, color] of Object.entries(SKILL_COLORS)) {
+  for (const [key, color] of Object.entries(ROLE_COLORS)) {
     if (n.includes(key)) return color
   }
   return '#63e2b7'
@@ -286,7 +286,7 @@ const allTypeGroups = computed(() => {
     const tk = p.project_type || p.type_info?.key || 'unknown'
     if (!map.has(tk)) {
       const name = p.type_info?.name || '项目'
-      map.set(tk, { typeKey: tk, name, icon: p.type_info?.icon || '📋', color: skillGroupColor(name), total: 0 })
+      map.set(tk, { typeKey: tk, name, icon: p.type_info?.icon || '📋', color: roleGroupColor(name), total: 0 })
     }
     map.get(tk)!.total++
   }

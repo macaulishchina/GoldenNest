@@ -5,8 +5,11 @@
   1. 命令授权规则 CRUD (全局/项目级, 支持前缀/精确/包含/正则匹配)
   2. 项目级自动批准状态查询与撤销
   3. 命令执行审计日志查询
+  4. 命令安全设置 (伪造检测开关等)
 """
+import json
 import logging
+import os
 import re
 from datetime import datetime
 from typing import Optional, List
@@ -16,13 +19,52 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func, delete, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from studio.backend.core.config import settings as studio_settings
 from studio.backend.core.database import get_db
-from studio.backend.core.security import get_studio_user, get_admin_user
+from studio.backend.core.security import get_studio_user  # noqa: keep for potential future use
 from studio.backend.models import CommandAuthRule, CommandAuditLog, Project
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/studio-api/command-auth", tags=["CommandAuth"])
+
+
+# ==================== 设置文件 ====================
+
+_SETTINGS_FILE = os.path.join(studio_settings.data_path, "command_auth_settings.json")
+_settings_cache: Optional[dict] = None  # 内存缓存, 避免频繁磁盘读取
+
+
+def _load_settings() -> dict:
+    """加载命令授权设置"""
+    global _settings_cache
+    if _settings_cache is not None:
+        return _settings_cache
+    try:
+        if os.path.exists(_SETTINGS_FILE):
+            with open(_SETTINGS_FILE, "r") as f:
+                _settings_cache = json.load(f)
+                return _settings_cache
+    except Exception:
+        pass
+    _settings_cache = {"fabrication_detection": False}
+    return _settings_cache
+
+
+def _save_settings(data: dict):
+    """保存命令授权设置"""
+    global _settings_cache
+    _settings_cache = data
+    try:
+        with open(_SETTINGS_FILE, "w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f"保存命令授权设置失败: {e}")
+
+
+def is_fabrication_detection_enabled() -> bool:
+    """供 ai_service 调用 — 检查伪造检测是否启用"""
+    return _load_settings().get("fabrication_detection", False)
 
 
 # ==================== Schemas ====================
@@ -78,7 +120,6 @@ class ProjectOverride(BaseModel):
 async def list_rules(
     scope: Optional[str] = Query(None, pattern=r"^(global|project)$"),
     project_id: Optional[int] = None,
-    user: dict = Depends(get_studio_user),
     db: AsyncSession = Depends(get_db),
 ):
     """列出命令授权规则"""
@@ -118,7 +159,6 @@ async def list_rules(
 @router.post("/rules", response_model=RuleResponse, status_code=status.HTTP_201_CREATED)
 async def create_rule(
     body: RuleCreate,
-    user: dict = Depends(get_studio_user),
     db: AsyncSession = Depends(get_db),
 ):
     """创建命令授权规则"""
@@ -139,7 +179,7 @@ async def create_rule(
         scope=body.scope,
         project_id=body.project_id if body.scope == "project" else None,
         action=body.action,
-        created_by=user.get("sub", ""),
+        created_by=body.note[:20] if body.note else "",
         note=body.note,
     )
     db.add(rule)
@@ -172,7 +212,6 @@ async def create_rule(
 async def update_rule(
     rule_id: int,
     body: RuleUpdate,
-    user: dict = Depends(get_studio_user),
     db: AsyncSession = Depends(get_db),
 ):
     """更新命令授权规则"""
@@ -223,7 +262,6 @@ async def update_rule(
 @router.delete("/rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_rule(
     rule_id: int,
-    user: dict = Depends(get_studio_user),
     db: AsyncSession = Depends(get_db),
 ):
     """删除命令授权规则"""
@@ -234,52 +272,6 @@ async def delete_rule(
     await db.delete(rule)
 
 
-# ==================== 项目级自动批准 ====================
-
-@router.get("/project-overrides", response_model=List[ProjectOverride])
-async def list_project_overrides(
-    user: dict = Depends(get_studio_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """列出所有开启了命令自动批准的项目"""
-    result = await db.execute(
-        select(Project.id, Project.title, Project.tool_permissions)
-        .where(Project.is_archived == False)
-        .order_by(Project.updated_at.desc())
-    )
-    rows = result.fetchall()
-    overrides = []
-    for pid, title, perms in rows:
-        perm_list = perms if isinstance(perms, list) else []
-        if "auto_approve_commands" in perm_list:
-            overrides.append(ProjectOverride(
-                project_id=pid,
-                project_title=title or f"项目 #{pid}",
-                auto_approve=True,
-            ))
-    return overrides
-
-
-@router.delete("/project-overrides/{project_id}")
-async def revoke_project_override(
-    project_id: int,
-    user: dict = Depends(get_studio_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """撤销项目级命令自动批准"""
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(404, detail="项目不存在")
-
-    perms = list(project.tool_permissions or [])
-    if "auto_approve_commands" in perms:
-        perms.remove("auto_approve_commands")
-        project.tool_permissions = perms
-
-    return {"ok": True, "project_id": project_id}
-
-
 # ==================== 审计日志 ====================
 
 @router.get("/audit-log", response_model=List[AuditLogResponse])
@@ -288,7 +280,6 @@ async def list_audit_log(
     action: Optional[str] = Query(None, pattern=r"^(approved|rejected|timeout)$"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    user: dict = Depends(get_studio_user),
     db: AsyncSession = Depends(get_db),
 ):
     """查询命令执行审计日志"""
@@ -319,7 +310,6 @@ async def list_audit_log(
 
 @router.get("/audit-log/stats")
 async def audit_log_stats(
-    user: dict = Depends(get_studio_user),
     db: AsyncSession = Depends(get_db),
 ):
     """审计日志统计 (用于 dashboard)"""
@@ -392,6 +382,10 @@ def _command_matches_pattern(command: str, pattern: str, pattern_type: str) -> b
     cmd = command.strip()
     pat = pattern.strip()
 
+    # 通配符 * 匹配所有命令
+    if pat == "*":
+        return True
+
     if pattern_type == "exact":
         return cmd == pat
     elif pattern_type == "prefix":
@@ -433,3 +427,22 @@ async def log_command_audit(
             await db.commit()
     except Exception as e:
         logger.warning(f"记录命令审计日志失败: {e}")
+
+
+# ==================== 命令安全设置 ====================
+
+@router.get("/settings")
+async def get_command_auth_settings():
+    """获取命令安全设置"""
+    return _load_settings()
+
+
+@router.put("/settings")
+async def update_command_auth_settings(body: dict):
+    """更新命令安全设置"""
+    current = _load_settings()
+    # 只允许已知的设置项
+    if "fabrication_detection" in body:
+        current["fabrication_detection"] = bool(body["fabrication_detection"])
+    _save_settings(current)
+    return current

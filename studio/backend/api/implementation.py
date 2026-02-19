@@ -75,7 +75,7 @@ async def start_implementation(
 {project.plan_content}
 
 ---
-> 🏗️ 此 Issue 由设计院自动创建
+> 🤖 此 Issue 由设计院自动创建
 > 📋 项目 ID: {project.id}
 """
     if data.custom_instructions:

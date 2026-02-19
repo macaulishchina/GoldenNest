@@ -71,7 +71,8 @@ class PermissionInfo(BaseModel):
     label: str
     icon: str
     tip: str
-    is_meta: bool = False  # auto_approve_commands 这类非工具权限
+    is_meta: bool = False  # 元权限标记 (非实际工具权限)
+    parent: Optional[str] = None  # 父权限 key (用于嵌套展示)
 
 
 # ==================== Seed Data ====================
@@ -241,7 +242,7 @@ BUILTIN_TOOLS: List[Dict[str, Any]] = [
         "name": "run_command",
         "display_name": "执行命令",
         "icon": "🖥️",
-        "description": "在项目工作目录中执行 shell 命令（只读命令/写入命令分权限控制）",
+        "description": "在项目工作目录中执行 shell 命令。默认仅允许只读命令 (git log, ls, grep 等)；开启「写入命令」权限后可执行修改命令，受命令授权规则约束",
         "permission_key": "execute_readonly_command",
         "is_builtin": True,
         "sort_order": 5,
@@ -277,9 +278,8 @@ PERMISSION_META: List[Dict[str, Any]] = [
     {"key": "read_config",   "label": "读取配置", "icon": "📄", "tip": "允许 AI 读取 package.json、Dockerfile 等配置文件", "is_meta": False},
     {"key": "search",        "label": "搜索代码", "icon": "🔍", "tip": "允许 AI 在项目中进行全文搜索", "is_meta": False},
     {"key": "tree",          "label": "浏览目录", "icon": "🌳", "tip": "允许 AI 浏览项目的目录结构", "is_meta": False},
-    {"key": "execute_readonly_command", "label": "只读命令", "icon": "🖥️", "tip": "允许 AI 执行只读命令（如 git log、ls 等）", "is_meta": False},
-    {"key": "execute_command", "label": "写入命令", "icon": "⚠️", "tip": "允许 AI 执行任意 Shell 命令，每次仍需审批确认", "is_meta": False},
-    {"key": "auto_approve_commands", "label": "自动批准", "icon": "🔓", "tip": "开启后写入命令跳过逐次确认，请谨慎开启", "is_meta": True},
+    {"key": "execute_readonly_command", "label": "执行命令", "icon": "🖥️", "tip": "允许 AI 在项目目录执行 shell 命令（默认仅限只读命令，如 git log、ls、grep 等）", "is_meta": False},
+    {"key": "execute_command", "label": "写入命令", "icon": "⚠️", "tip": "解除只读限制，允许执行修改文件、安装依赖等写命令。受「设置 → 命令授权」规则约束，默认每次需用户审批", "is_meta": False, "parent": "execute_readonly_command"},
 ]
 
 
@@ -366,8 +366,8 @@ async def list_permissions(db: AsyncSession = Depends(get_db)):
 
     动态流程:
     1. 从 DB 加载所有已启用工具, 按 permission_key 去重, 生成工具权限列表
-    2. 附加 PERMISSION_META 中的元权限 (如 auto_approve_commands, execute_command)
-    3. 合并 PERMISSION_META 中有、但 DB 工具没覆盖到的遗留权限 (如 read_config)
+    2. 收集已禁用工具的 permission_key (防止 step 3 把它们加回来)
+    3. 追加 PERMISSION_META 中的元权限 (is_meta=True), 跳过已被禁用工具覆盖的非元权限
     """
     # 1) 从 DB 获取已启用工具的权限
     result = await db.execute(
@@ -377,6 +377,18 @@ async def list_permissions(db: AsyncSession = Depends(get_db)):
     )
     tools = result.scalars().all()
 
+    # 2) 收集已禁用工具的 permission_key
+    disabled_result = await db.execute(
+        select(ToolDefinition.permission_key)
+        .where(ToolDefinition.is_enabled.is_(False))
+    )
+    disabled_perm_keys: set[str] = {
+        row[0] for row in disabled_result.fetchall() if row[0]
+    }
+
+    # 构建 PERMISSION_META 查找表 (用于获取 parent 等额外字段)
+    meta_lookup = {pm["key"]: pm for pm in PERMISSION_META}
+
     seen_keys: set[str] = set()
     perms: list[PermissionInfo] = []
 
@@ -384,21 +396,50 @@ async def list_permissions(db: AsyncSession = Depends(get_db)):
         pk = t.permission_key
         if pk and pk not in seen_keys:
             seen_keys.add(pk)
+            # 从 PERMISSION_META 获取补充信息 (label/tip 可能更精确)
+            meta = meta_lookup.get(pk, {})
             perms.append(PermissionInfo(
                 key=pk,
-                label=t.display_name or t.name,
-                icon=t.icon or "🔧",
-                tip=t.description or "",
-                is_meta=False,
+                label=meta.get("label") or t.display_name or t.name,
+                icon=meta.get("icon") or t.icon or "🔧",
+                tip=meta.get("tip") or t.description or "",
+                is_meta=meta.get("is_meta", False),
+                parent=meta.get("parent"),
             ))
 
-    # 2) 追加 PERMISSION_META 中未被 DB 工具覆盖的权限 (遗留权限 + 元权限)
+    # 3) 追加 PERMISSION_META 中未被 DB 工具覆盖的权限
+    #    - 元权限 (is_meta=True) 始终添加 (如 execute_command, auto_approve_commands)
+    #    - 非元权限: 仅当该 key 没有对应的已禁用工具时才添加 (遗留兼容)
     for pm in PERMISSION_META:
         if pm["key"] not in seen_keys:
+            # 跳过被明确禁用的工具权限 (仅跳过非元权限)
+            if not pm.get("is_meta", False) and pm["key"] in disabled_perm_keys:
+                continue
+            # 非元权限的 parent 被禁用时也跳过 (如 execute_command 的 parent execute_readonly_command 被禁用)
+            parent_key = pm.get("parent")
+            if parent_key and parent_key in disabled_perm_keys and parent_key not in seen_keys:
+                continue
             seen_keys.add(pm["key"])
-            perms.append(PermissionInfo(**pm))
+            perms.append(PermissionInfo(**{k: v for k, v in pm.items() if k in PermissionInfo.model_fields}))
 
-    return perms
+    # 4) 排序: 确保子权限紧跟在父权限后面
+    #    先保持原有顺序, 再把有 parent 的项移到父项之后
+    ordered: list[PermissionInfo] = []
+    deferred: list[PermissionInfo] = []  # 有 parent 的项
+    for p in perms:
+        if p.parent:
+            deferred.append(p)
+        else:
+            ordered.append(p)
+    # 将子权限插到父权限后面
+    for child in deferred:
+        parent_idx = next((i for i, p in enumerate(ordered) if p.key == child.parent), None)
+        if parent_idx is not None:
+            ordered.insert(parent_idx + 1, child)
+        else:
+            ordered.append(child)
+
+    return ordered
 
 
 @router.get("/{tool_id}", response_model=ToolResponse)

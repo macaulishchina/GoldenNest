@@ -25,7 +25,7 @@ export interface WorkflowModuleItem {
   tab_key: string
   tab_label: string
   stage_statuses: string[]
-  skill_name?: string
+  role_name?: string
   config: Record<string, any>
 }
 
@@ -33,7 +33,7 @@ export interface StageItem {
   key: string
   label: string
   status: string
-  skill?: string
+  role?: string
 }
 
 export interface Workflow {

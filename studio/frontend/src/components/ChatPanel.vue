@@ -465,30 +465,56 @@
           </button>
         </div>
         <n-button v-if="currentModelCaps.supports_vision" size="small" quaternary :disabled="finalizingPlan" @click="fileInputRef?.click()">📷 图片</n-button>
-        <n-popover v-if="currentModelCaps.supports_tools" trigger="click" placement="bottom" style="max-width: 320px">
+        <n-popover v-if="currentModelCaps.supports_tools" trigger="click" placement="bottom" style="max-width: 360px" @update:show="onToolPopoverShow">
           <template #trigger>
             <n-button size="small" quaternary :type="toolCheckboxValues.length ? 'info' : 'default'">🛠️ 工具</n-button>
           </template>
           <div style="padding: 4px 0">
             <n-text strong style="font-size: 13px">AI 工具权限</n-text>
             <n-text depth="3" style="font-size: 11px; display: block; margin: 4px 0 8px">
-              开启后 AI 可查看项目源码（可在设置页配置工具轮次上限）
+              控制 AI 在本项目中可使用的工具，可在设置页工具管理中配置命令授权规则
             </n-text>
             <n-checkbox-group :value="toolCheckboxValues" @update:value="onToolPermChange">
-              <n-space vertical :size="4">
-                <n-checkbox v-for="perm in permDefs" :key="perm.key" :value="perm.key">
-                  <template #default>
-                    <span>{{ perm.icon }} {{ perm.label }}</span>
-                    <n-text v-if="perm.key === 'execute_command'" depth="3" style="font-size: 10px; margin-left: 4px">(每次需审批)</n-text>
-                  </template>
-                </n-checkbox>
+              <n-space vertical :size="2">
+                <template v-for="perm in permDefs" :key="perm.key">
+                  <!-- 顶级权限 (无 parent) -->
+                  <n-checkbox v-if="!perm.parent" :value="perm.key">
+                    <template #default>
+                      <n-tooltip trigger="hover" :delay="500">
+                        <template #trigger>
+                          <span>{{ perm.icon }} {{ perm.label }}</span>
+                        </template>
+                        {{ perm.tip }}
+                      </n-tooltip>
+                    </template>
+                  </n-checkbox>
+                  <!-- 子权限 (有 parent, 仅当父权限开启时显示) -->
+                  <div v-else-if="toolPermissions.includes(perm.parent)" style="padding-left: 22px; border-left: 2px solid #333; margin-left: 8px">
+                    <n-checkbox :value="perm.key">
+                      <template #default>
+                        <n-tooltip trigger="hover" :delay="500">
+                          <template #trigger>
+                            <span>{{ perm.icon }} {{ perm.label }}</span>
+                          </template>
+                          {{ perm.tip }}
+                        </n-tooltip>
+                      </template>
+                    </n-checkbox>
+                  </div>
+                </template>
               </n-space>
             </n-checkbox-group>
-            <div v-if="toolPermissions.includes('auto_approve_commands')" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #333; display: flex; align-items: center; gap: 6px">
-              <n-tag size="tiny" type="warning" :bordered="false" round>自动批准</n-tag>
-              <n-text depth="2" style="font-size: 11px; flex: 1">写命令已设为自动批准</n-text>
-              <n-button size="tiny" quaternary type="error" @click="revokeAutoApprove">撤销</n-button>
-            </div>
+            <!-- 写命令已启用时的状态提示 -->
+            <template v-if="toolPermissions.includes('execute_command')">
+              <div v-if="toolPermissions.includes('auto_approve_commands')" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #333; display: flex; align-items: center; gap: 6px">
+                <n-tag size="tiny" type="warning" :bordered="false" round>自动批准</n-tag>
+                <n-text depth="2" style="font-size: 11px; flex: 1">写命令已设为自动批准</n-text>
+                <n-button size="tiny" quaternary type="error" @click="revokeAutoApprove">撤销</n-button>
+              </div>
+              <n-text v-else depth="3" style="font-size: 11px; display: block; margin-top: 6px; padding-top: 6px; border-top: 1px solid #333">
+                💡 写命令默认每次需审批确认，可在「设置 → AI 工作流 → 工具管理」中预设自动放行/拦截规则
+              </n-text>
+            </template>
           </div>
         </n-popover>
         <n-tag v-if="streamingTasks.size > 0 && !streaming" type="warning" size="small" :bordered="false" round>⏳ AI 回复中 ({{ streamingTasks.size }})</n-tag>
@@ -648,7 +674,7 @@
           📋 {{ props.project.type_info?.ui_labels?.finalize_action || '敲定' }}
         </n-button>
         <n-button v-if="anyStreaming" size="small" type="error" @click="stopAllMyStreaming">⏹ 停止</n-button>
-        <n-button size="small" type="primary" @click="sendMessage()" :disabled="finalizingPlan || (!inputText.trim() && !pendingImages.length)">发送</n-button>
+        <n-button size="small" type="primary" @click="sendMessage()" :disabled="finalizingPlan || anyStreaming || (!inputText.trim() && !pendingImages.length)">发送</n-button>
       </div>
     </div>
   </div>
@@ -666,24 +692,34 @@
           <n-radio value="once">仅本次</n-radio>
           <n-radio value="session">
             <n-tooltip trigger="hover">
-              <template #trigger>本会话</template>
+              <template #trigger>本次回答</template>
               本次 AI 回复中的同类命令自动批准
             </n-tooltip>
           </n-radio>
           <n-radio value="project">
             <n-tooltip trigger="hover">
               <template #trigger>本项目</template>
-              此项目所有写命令自动批准（可在设置中撤销）
+              为此项目创建授权规则（可在设置中管理）
             </n-tooltip>
           </n-radio>
           <n-radio value="permanent">
             <n-tooltip trigger="hover">
               <template #trigger>永久</template>
-              所有项目中的同类命令永久自动批准（可在设置 → 命令授权中管理）
+              所有项目中的同类命令永久自动批准（可在设置 → 工具管理中管理）
             </n-tooltip>
           </n-radio>
         </n-space>
       </n-radio-group>
+      <n-checkbox
+        v-if="commandApproval.scope === 'project' || commandApproval.scope === 'permanent'"
+        v-model:checked="commandApproval.allCommands"
+        style="margin-top: 4px"
+      >
+        <n-tooltip trigger="hover">
+          <template #trigger>所有命令</template>
+          授权所有写入命令，而不仅是当前命令类型
+        </n-tooltip>
+      </n-checkbox>
     </n-space>
     <template #action>
       <n-space justify="end">
@@ -748,6 +784,27 @@ const inputText = ref('')
 const inputHistory = ref<string[]>([])
 const historyIndex = ref(-1)
 const historySavedInput = ref('')
+const INPUT_HISTORY_MAX = 50
+const INPUT_HISTORY_KEY_PREFIX = 'studio_input_history_'
+
+function loadInputHistory(projectId: number) {
+  try {
+    const raw = localStorage.getItem(INPUT_HISTORY_KEY_PREFIX + projectId)
+    inputHistory.value = raw ? JSON.parse(raw) : []
+  } catch {
+    inputHistory.value = []
+  }
+  historyIndex.value = -1
+  historySavedInput.value = ''
+}
+
+function saveInputHistory(projectId: number) {
+  try {
+    // 仅保留最近 N 条
+    const trimmed = inputHistory.value.slice(-INPUT_HISTORY_MAX)
+    localStorage.setItem(INPUT_HISTORY_KEY_PREFIX + projectId, JSON.stringify(trimmed))
+  } catch { /* quota exceeded — ignore */ }
+}
 const startingChat = ref(false)
 const messageListRef = ref<HTMLElement>()
 const inputRef = ref()
@@ -814,22 +871,19 @@ const commandApproval = ref<{
   command: string
   toolCallId: string
   scope: string
+  allCommands: boolean
   loading: boolean
-}>({ show: false, taskId: 0, command: '', toolCallId: '', scope: 'once', loading: false })
+}>({ show: false, taskId: 0, command: '', toolCallId: '', scope: 'once', allCommands: false, loading: false })
 
 function onCommandApprovalRequest(taskId: number, command: string, toolCallId: string) {
-  commandApproval.value = { show: true, taskId, command, toolCallId, scope: 'once', loading: false }
+  commandApproval.value = { show: true, taskId, command, toolCallId, scope: 'once', allCommands: false, loading: false }
 }
 
 async function handleCommandApproval(approved: boolean) {
-  const { taskId, scope } = commandApproval.value
+  const { taskId, scope, allCommands } = commandApproval.value
   commandApproval.value.loading = true
   try {
-    await tasksApi.approveCommand(taskId, { approved, scope })
-    // scope=project 时同步本地权限状态: 添加 auto_approve_commands 标志
-    if (approved && scope === 'project' && !toolPermissions.value.includes('auto_approve_commands')) {
-      toolPermissions.value = [...toolPermissions.value, 'auto_approve_commands']
-    }
+    await tasksApi.approveCommand(taskId, { approved, scope, all_commands: allCommands })
   } catch (e: any) {
     message.error(e.response?.data?.detail || '审批请求失败')
   } finally {
@@ -956,6 +1010,13 @@ if (!toolStore.permissions.length) {
   toolStore.fetchPermissions().catch(() => {/* fallback 到空列表 */})
 }
 
+// 弹出工具气泡时刷新权限定义
+function onToolPopoverShow(show: boolean) {
+  if (show) {
+    toolStore.fetchPermissions().catch(() => {})
+  }
+}
+
 // 动态权限定义: 非元权限 (用于 checkbox 渲染)
 const permDefs = computed(() => toolStore.permissions.filter(p => !p.is_meta))
 // 元标志列表 (不在 checkbox 里显示, 通过审批流写入)
@@ -982,12 +1043,35 @@ watch(ALL_DEFAULT_PERMS_COMPUTED, (defaults) => {
 const toolCheckboxValues = computed(() =>
   toolPermissions.value.filter(p => !metaPermKeys.value.includes(p))
 )
+// 获取指定 key 的所有子权限 key (递归)
+function getChildPermKeys(parentKey: string): string[] {
+  const children: string[] = []
+  for (const p of toolStore.permissions) {
+    if (p.parent === parentKey) {
+      children.push(p.key)
+      children.push(...getChildPermKeys(p.key))
+    }
+  }
+  return children
+}
 function onToolPermChange(val: string[]) {
   // 保留元标志
-  const meta = toolPermissions.value.filter(p => metaPermKeys.value.includes(p))
+  let meta = toolPermissions.value.filter(p => metaPermKeys.value.includes(p))
+
+  // 检查被取消勾选的权限，级联移除其子权限
+  const removed = toolCheckboxValues.value.filter(k => !val.includes(k))
+  const cascadeRemove = new Set<string>()
+  for (const r of removed) {
+    for (const child of getChildPermKeys(r)) {
+      cascadeRemove.add(child)
+    }
+  }
+  const finalVal = val.filter(k => !cascadeRemove.has(k))
+  meta = meta.filter(m => !cascadeRemove.has(m))
+
   // 如果关闭了 execute_command, 也移除 auto_approve_commands
-  const finalMeta = val.includes('execute_command') ? meta : meta.filter(m => m !== 'auto_approve_commands')
-  const newPerms = [...val, ...finalMeta]
+  const finalMeta = finalVal.includes('execute_command') ? meta : meta.filter(m => m !== 'auto_approve_commands')
+  const newPerms = [...finalVal, ...finalMeta]
   toolPermissions.value = newPerms
   saveToolPermissions(newPerms)
 }
@@ -1114,9 +1198,13 @@ async function sendMessage(overrideContent?: string, overrideAttachments?: any[]
 
   const senderName = authStore.user?.nickname || authStore.user?.username || 'user'
   if (!isOverride) {
-    // 保存到输入历史
+    // 保存到输入历史 (去重连续相同输入)
     if (text.trim()) {
-      inputHistory.value.push(text.trim())
+      const last = inputHistory.value[inputHistory.value.length - 1]
+      if (last !== text.trim()) {
+        inputHistory.value.push(text.trim())
+      }
+      saveInputHistory(props.project.id)
     }
     historyIndex.value = -1
     historySavedInput.value = ''
@@ -1207,6 +1295,8 @@ async function toggleAiMute() {
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
     e.preventDefault()
+    // AI 回复中时禁止发送
+    if (anyStreaming.value) return
     sendMessage()
     return
   }
@@ -1262,6 +1352,10 @@ watch(() => props.project.id, async (newId, oldId) => {
     const { data } = await discussionApi.getAiMuteStatus(newId)
     aiMuted.value = data.ai_muted
   } catch {}
+  // 加载该项目的输入历史
+  loadInputHistory(newId)
+  // 恢复该项目的模型选择
+  selectedModel.value = props.project.discussion_model || 'gpt-4o'
   // 刷新工具权限
   toolPermissions.value = props.project.tool_permissions?.length
     ? props.project.tool_permissions

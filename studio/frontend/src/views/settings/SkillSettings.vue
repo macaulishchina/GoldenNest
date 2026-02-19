@@ -2,17 +2,34 @@
   <div>
     <!-- 顶部操作栏 -->
     <n-space justify="space-between" align="center" style="margin-bottom: 16px">
-      <n-text depth="3">管理 AI 工作流技能 — 定义角色、对话策略、阶段流程和产出模板</n-text>
+      <n-text depth="3">管理 AI 技能 — 可复用的能力模块，定义 AI 在特定任务中的方法论和输出格式</n-text>
       <n-button type="primary" size="small" @click="openCreate">
         <template #icon><n-icon :component="AddOutline" /></template>
         创建新技能
       </n-button>
     </n-space>
 
+    <!-- 分类过滤 -->
+    <n-space :size="8" style="margin-bottom: 12px">
+      <n-tag
+        v-for="(cat, key) in allCategories"
+        :key="key"
+        :type="activeCategory === key ? 'primary' : 'default'"
+        :bordered="activeCategory === key"
+        round
+        checkable
+        :checked="activeCategory === key"
+        @update:checked="activeCategory = activeCategory === key ? '' : (key as string)"
+        style="cursor: pointer"
+      >
+        {{ cat.icon }} {{ cat.name }}
+      </n-tag>
+    </n-space>
+
     <!-- 技能卡片列表 -->
     <n-spin :show="store.loading">
-      <n-grid :cols="1" :y-gap="12" v-if="store.skills.length">
-        <n-gi v-for="skill in store.skills" :key="skill.id">
+      <n-grid :cols="1" :y-gap="12" v-if="filteredSkills.length">
+        <n-gi v-for="skill in filteredSkills" :key="skill.id">
           <n-card size="small" style="background: #1a1a2e" hoverable>
             <n-space justify="space-between" align="center">
               <n-space align="center" :size="12">
@@ -22,6 +39,9 @@
                     <n-text strong>{{ skill.name }}</n-text>
                     <n-tag v-if="skill.is_builtin" size="tiny" type="info" round>内置</n-tag>
                     <n-tag v-if="!skill.is_enabled" size="tiny" type="warning" round>已禁用</n-tag>
+                    <n-tag size="tiny" :bordered="false" type="success">
+                      {{ getCategoryLabel(skill.category) }}
+                    </n-tag>
                   </n-space>
                   <n-text depth="3" style="font-size: 12px; display: block; margin-top: 2px">
                     {{ skill.description }}
@@ -61,16 +81,24 @@
                 </n-tooltip>
               </n-space>
             </n-space>
-            <!-- 阶段预览 -->
+            <!-- 标签 + 推荐工具预览 -->
             <n-space :size="4" style="margin-top: 8px">
               <n-tag
-                v-for="(stage, idx) in skill.stages"
-                :key="stage.key"
+                v-for="tag in skill.tags"
+                :key="tag"
                 size="tiny"
                 :bordered="false"
-                :type="idx === 0 ? 'default' : 'info'"
               >
-                {{ stage.label }}
+                {{ tag }}
+              </n-tag>
+              <n-tag
+                v-for="tool in skill.recommended_tools"
+                :key="tool"
+                size="tiny"
+                :bordered="false"
+                type="info"
+              >
+                🔧 {{ tool }}
               </n-tag>
             </n-space>
           </n-card>
@@ -92,10 +120,18 @@
         <n-tab-pane name="basic" tab="基本信息">
           <n-form :model="form" label-placement="left" label-width="100">
             <n-form-item label="技能名称">
-              <n-input v-model:value="form.name" placeholder="如：需求分析、Bug 问诊" />
+              <n-input v-model:value="form.name" placeholder="如：需求澄清、代码审查" />
             </n-form-item>
             <n-form-item label="图标">
               <n-input v-model:value="form.icon" placeholder="Emoji 图标" style="width: 80px" />
+            </n-form-item>
+            <n-form-item label="分类">
+              <n-select
+                v-model:value="form.category"
+                :options="categoryOptions"
+                placeholder="选择分类"
+                style="width: 200px"
+              />
             </n-form-item>
             <n-form-item label="描述">
               <n-input v-model:value="form.description" placeholder="简短描述技能用途" />
@@ -103,125 +139,114 @@
           </n-form>
         </n-tab-pane>
 
-        <!-- AI Prompt 配置 -->
-        <n-tab-pane name="prompts" tab="AI 对话配置">
+        <!-- 核心指令 -->
+        <n-tab-pane name="instruction" tab="核心指令">
           <n-form label-placement="top">
-            <n-form-item label="角色定义 (role_prompt)">
+            <n-form-item label="指令内容 (instruction_prompt)">
               <n-input
-                v-model:value="form.role_prompt"
+                v-model:value="form.instruction_prompt"
                 type="textarea"
-                :rows="4"
-                placeholder="定义 AI 的身份和角色..."
-              />
-            </n-form-item>
-            <n-form-item label="对话策略 (strategy_prompt)">
-              <n-input
-                v-model:value="form.strategy_prompt"
-                type="textarea"
-                :rows="8"
-                placeholder="定义 AI 如何与用户对话..."
-              />
-            </n-form-item>
-            <n-form-item label="工具使用策略 (tool_strategy_prompt)">
-              <n-input
-                v-model:value="form.tool_strategy_prompt"
-                type="textarea"
-                :rows="4"
-                placeholder="留空则使用系统默认的工具策略"
-              />
-            </n-form-item>
-            <n-form-item label="定稿提示 (finalization_prompt)">
-              <n-input
-                v-model:value="form.finalization_prompt"
-                type="textarea"
-                :rows="3"
-                placeholder="定义定稿前的提示..."
-              />
-            </n-form-item>
-            <n-form-item label="产出物生成模板 (output_generation_prompt)">
-              <n-input
-                v-model:value="form.output_generation_prompt"
-                type="textarea"
-                :rows="8"
-                placeholder="模板变量: {discussion_summary}"
+                :rows="16"
+                placeholder="定义 AI 执行该技能时应遵循的步骤和方法论...&#10;&#10;支持 Markdown 格式"
               />
               <template #feedback>
                 <n-text depth="3" style="font-size: 12px">
-                  使用 <code>{discussion_summary}</code> 作为讨论内容的占位符
+                  这是技能的核心 — 告诉 AI 该怎么做。支持 Markdown 格式，可包含标题、列表、代码块等。
                 </n-text>
               </template>
             </n-form-item>
           </n-form>
         </n-tab-pane>
 
-        <!-- 阶段配置 -->
-        <n-tab-pane name="stages" tab="阶段流程">
-          <n-text depth="3" style="margin-bottom: 12px; display: block">
-            定义项目从创建到完成的阶段流程。key 对应后端 ProjectStatus 枚举值。
-          </n-text>
-          <n-dynamic-input
-            v-model:value="form.stages"
-            :on-create="() => ({ key: '', label: '', status: '' })"
-          >
-            <template #default="{ value: stage }">
-              <n-space :size="8" style="width: 100%">
-                <n-input v-model:value="stage.key" placeholder="key (如 draft)" style="width: 140px" />
-                <n-input v-model:value="stage.label" placeholder="显示标签 (如 草稿)" style="width: 140px" />
-                <n-select
-                  v-model:value="stage.status"
-                  :options="statusOptions"
-                  placeholder="映射状态"
-                  style="width: 160px"
-                />
-              </n-space>
-            </template>
-          </n-dynamic-input>
-        </n-tab-pane>
-
-        <!-- UI 文案 -->
-        <n-tab-pane name="labels" tab="UI 文案">
-          <n-form :model="form.ui_labels" label-placement="left" label-width="140">
-            <n-form-item label="项目称呼">
-              <n-input v-model:value="form.ui_labels.project_noun" placeholder="需求 / 缺陷 / 审查" />
-            </n-form-item>
-            <n-form-item label="创建对话框标题">
-              <n-input v-model:value="form.ui_labels.create_title" placeholder="🆕 新建需求" />
-            </n-form-item>
-            <n-form-item label="标题 placeholder">
-              <n-input v-model:value="form.ui_labels.create_placeholder" placeholder="简明描述需求目标" />
-            </n-form-item>
-            <n-form-item label="描述 placeholder">
-              <n-input v-model:value="form.ui_labels.description_placeholder" placeholder="详细描述..." />
-            </n-form-item>
-            <n-form-item label="产出物名称">
-              <n-input v-model:value="form.ui_labels.output_noun" placeholder="需求规格书 / 诊断书" />
-            </n-form-item>
-            <n-form-item label="产出物 Tab 标签">
-              <n-input v-model:value="form.ui_labels.output_tab_label" placeholder="📋 设计稿" />
-            </n-form-item>
-            <n-form-item label="定稿动作名称">
-              <n-input v-model:value="form.ui_labels.finalize_action" placeholder="敲定方案 / 生成诊断书" />
+        <!-- 输出格式 -->
+        <n-tab-pane name="output" tab="输出格式">
+          <n-form label-placement="top">
+            <n-form-item label="输出格式模板 (output_format)">
+              <n-input
+                v-model:value="form.output_format"
+                type="textarea"
+                :rows="12"
+                placeholder="定义技能产出的标准格式模板...&#10;&#10;如 Markdown 表格、JSON 结构等"
+              />
+              <template #feedback>
+                <n-text depth="3" style="font-size: 12px">
+                  定义该技能的标准化输出结构。AI 会参考此格式组织输出。留空表示无固定格式要求。
+                </n-text>
+              </template>
             </n-form-item>
           </n-form>
         </n-tab-pane>
 
-        <!-- System Prompt 预览 -->
+        <!-- 约束与示例 -->
+        <n-tab-pane name="constraints" tab="约束条件">
+          <n-form label-placement="top">
+            <n-form-item label="约束条件">
+              <n-dynamic-input
+                v-model:value="form.constraints"
+                placeholder="输入一条约束 (如：不要推测原因)"
+                :min="0"
+              />
+              <template #feedback>
+                <n-text depth="3" style="font-size: 12px">
+                  AI 执行该技能时必须遵守的约束规则
+                </n-text>
+              </template>
+            </n-form-item>
+          </n-form>
+        </n-tab-pane>
+
+        <!-- 工具与标签 -->
+        <n-tab-pane name="tools" tab="工具与标签">
+          <n-form label-placement="top">
+            <n-form-item label="推荐工具">
+              <n-select
+                v-model:value="form.recommended_tools"
+                :options="toolOptions"
+                multiple
+                placeholder="选择该技能推荐使用的工具"
+              />
+              <template #feedback>
+                <n-text depth="3" style="font-size: 12px">
+                  AI 执行该技能时推荐使用的工具（仅作参考提示）
+                </n-text>
+              </template>
+            </n-form-item>
+            <n-form-item label="标签">
+              <n-dynamic-tags v-model:value="form.tags" />
+              <template #feedback>
+                <n-text depth="3" style="font-size: 12px">
+                  用于搜索和分组的标签
+                </n-text>
+              </template>
+            </n-form-item>
+          </n-form>
+        </n-tab-pane>
+
+        <!-- 预览 -->
         <n-tab-pane name="preview" tab="🔍 预览">
           <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
-            实时预览 AI 收到的 system prompt 组装顺序（不含项目结构和代码摘要等动态部分）
+            预览技能注入到 AI 上下文中的实际内容
           </n-text>
           <div class="prompt-preview">
-            <div v-for="(section, i) in previewSections" :key="i" class="preview-section">
+            <div class="preview-section">
               <n-text depth="3" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px">
-                {{ section.label }}
+                {{ form.icon }} {{ form.name || '(未命名)' }} — 核心指令
               </n-text>
-              <n-text v-if="section.content" tag="pre" style="font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 4px 0 0; line-height: 1.5; color: #ddd">{{ section.content }}</n-text>
-              <n-text v-else depth="3" style="font-size: 12px; font-style: italic">（空 — 使用系统默认）</n-text>
+              <n-text v-if="form.instruction_prompt" tag="pre" style="font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 4px 0 0; line-height: 1.5; color: #ddd">{{ form.instruction_prompt }}</n-text>
+              <n-text v-else depth="3" style="font-size: 12px; font-style: italic">（空 — 未配置指令）</n-text>
             </div>
-            <n-divider style="margin: 8px 0" />
-            <n-text depth="3" style="font-size: 11px">
-              ℹ️ 实际运行时还会插入：项目结构、关键目录、关键文件摘要、{{ form.ui_labels.project_noun || '需求' }}上下文
-            </n-text>
+            <div v-if="form.output_format" class="preview-section" style="margin-top: 12px">
+              <n-text depth="3" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px">
+                输出格式
+              </n-text>
+              <n-text tag="pre" style="font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 4px 0 0; line-height: 1.5; color: #ddd">{{ form.output_format }}</n-text>
+            </div>
+            <div v-if="form.constraints.length" class="preview-section" style="margin-top: 12px">
+              <n-text depth="3" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px">
+                约束条件
+              </n-text>
+              <n-text tag="pre" style="font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 4px 0 0; line-height: 1.5; color: #ddd">{{ form.constraints.map(c => '- ' + c).join('\n') }}</n-text>
+            </div>
           </div>
         </n-tab-pane>
       </n-tabs>
@@ -251,46 +276,60 @@ const showEditor = ref(false)
 const editorTab = ref('basic')
 const editingSkill = ref<Skill | null>(null)
 const saving = ref(false)
+const activeCategory = ref('')
 
-const statusOptions = [
-  { label: 'draft', value: 'draft' },
-  { label: 'discussing', value: 'discussing' },
-  { label: 'planned', value: 'planned' },
-  { label: 'implementing', value: 'implementing' },
-  { label: 'reviewing', value: 'reviewing' },
-  { label: 'deploying', value: 'deploying' },
-  { label: 'deployed', value: 'deployed' },
-  { label: 'rolled_back', value: 'rolled_back' },
-  { label: 'closed', value: 'closed' },
+// 内置分类 (备用 — categories API 未返回时)
+const fallbackCategories: Record<string, { name: string; icon: string }> = {
+  general: { name: '通用', icon: '⚡' },
+  analysis: { name: '分析', icon: '🔎' },
+  coding: { name: '编码', icon: '💻' },
+  writing: { name: '写作', icon: '📝' },
+  review: { name: '审查', icon: '🔍' },
+  testing: { name: '测试', icon: '🧪' },
+}
+
+const allCategories = computed(() => {
+  return Object.keys(store.categories).length ? store.categories : fallbackCategories
+})
+
+const filteredSkills = computed(() => {
+  if (!activeCategory.value) return store.skills
+  return store.skills.filter(s => s.category === activeCategory.value)
+})
+
+const categoryOptions = computed(() =>
+  Object.entries(allCategories.value).map(([key, val]) => ({
+    label: `${val.icon} ${val.name}`,
+    value: key,
+  }))
+)
+
+const toolOptions = [
+  { label: 'ask_user — 提问用户', value: 'ask_user' },
+  { label: 'read_file — 读取文件', value: 'read_file' },
+  { label: 'search_text — 搜索文本', value: 'search_text' },
+  { label: 'get_file_tree — 获取目录树', value: 'get_file_tree' },
+  { label: 'list_directory — 列出目录', value: 'list_directory' },
+  { label: 'run_command — 执行命令', value: 'run_command' },
 ]
+
+function getCategoryLabel(key: string): string {
+  const cat = allCategories.value[key]
+  return cat ? `${cat.icon} ${cat.name}` : key
+}
 
 const defaultForm = () => ({
   name: '',
-  icon: '🎯',
+  icon: '⚡',
   description: '',
-  role_prompt: '',
-  strategy_prompt: '',
-  tool_strategy_prompt: '',
-  finalization_prompt: '',
-  output_generation_prompt: '',
-  stages: [
-    { key: 'draft', label: '草稿', status: 'draft' },
-    { key: 'discussing', label: '讨论', status: 'discussing' },
-    { key: 'planned', label: '定稿', status: 'planned' },
-    { key: 'implementing', label: '实施', status: 'implementing' },
-    { key: 'reviewing', label: '审核', status: 'reviewing' },
-    { key: 'deploying', label: '部署', status: 'deploying' },
-    { key: 'deployed', label: '完成', status: 'deployed' },
-  ] as Array<{ key: string; label: string; status: string }>,
-  ui_labels: {
-    project_noun: '',
-    create_title: '',
-    create_placeholder: '',
-    description_placeholder: '',
-    output_noun: '',
-    output_tab_label: '',
-    finalize_action: '',
-  } as Record<string, string>,
+  category: 'general',
+  instruction_prompt: '',
+  output_format: '',
+  examples: [] as Array<{ input: string; output: string }>,
+  constraints: [] as string[],
+  recommended_tools: [] as string[],
+  tags: [] as string[],
+  sort_order: 0,
 })
 
 const form = reactive(defaultForm())
@@ -308,13 +347,14 @@ function openEdit(skill: Skill) {
     name: skill.name,
     icon: skill.icon,
     description: skill.description,
-    role_prompt: skill.role_prompt,
-    strategy_prompt: skill.strategy_prompt,
-    tool_strategy_prompt: skill.tool_strategy_prompt,
-    finalization_prompt: skill.finalization_prompt,
-    output_generation_prompt: skill.output_generation_prompt,
-    stages: JSON.parse(JSON.stringify(skill.stages || [])),
-    ui_labels: { ...defaultForm().ui_labels, ...(skill.ui_labels || {}) },
+    category: skill.category,
+    instruction_prompt: skill.instruction_prompt,
+    output_format: skill.output_format,
+    examples: JSON.parse(JSON.stringify(skill.examples || [])),
+    constraints: [...(skill.constraints || [])],
+    recommended_tools: [...(skill.recommended_tools || [])],
+    tags: [...(skill.tags || [])],
+    sort_order: skill.sort_order,
   })
   editorTab.value = 'basic'
   showEditor.value = true
@@ -323,6 +363,10 @@ function openEdit(skill: Skill) {
 async function handleSave() {
   if (!form.name.trim()) {
     message.warning('请输入技能名称')
+    return
+  }
+  if (!form.instruction_prompt.trim()) {
+    message.warning('请输入核心指令')
     return
   }
   saving.value = true
@@ -370,16 +414,9 @@ async function handleDelete(skill: Skill) {
   }
 }
 
-const previewSections = computed(() => [
-  { label: '🎭 角色设定 (role_prompt)', content: form.role_prompt },
-  { label: '📐 策略指引 (strategy_prompt)', content: form.strategy_prompt },
-  { label: '🔧 工具使用策略 (tool_strategy_prompt)', content: form.tool_strategy_prompt },
-  { label: '✅ 敲定 / 终稿指令 (finalization_prompt)', content: form.finalization_prompt },
-  { label: '📄 产出生成模板 (output_generation_prompt)', content: form.output_generation_prompt },
-])
-
 onMounted(() => {
   store.fetchSkills()
+  store.fetchCategories()
 })
 </script>
 

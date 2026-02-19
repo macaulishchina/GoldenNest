@@ -2,7 +2,7 @@
 项目类型定义
 
 优先从 DB 工作流缓存读取, 回退到硬编码默认值。
-所有外部代码继续通过 get_project_type() / get_skill_for_status() 等函数访问,
+所有外部代码继续通过 get_project_type() / get_role_for_status() 等函数访问,
 内部数据源已透明切换为 DB-backed 工作流。
 
 关系: Project.project_type → Workflow.name → stages + modules + ui_labels
@@ -19,10 +19,10 @@ _FALLBACK_PROJECT_TYPES: Dict[str, Dict[str, Any]] = {
         "description": "产品需求迭代",
         "stages": [
             {"key": "draft", "label": "草稿", "status": "draft"},
-            {"key": "discussing", "label": "讨论", "status": "discussing", "skill": "需求分析"},
+            {"key": "discussing", "label": "讨论", "status": "discussing", "role": "需求分析"},
             {"key": "planned", "label": "定稿", "status": "planned"},
             {"key": "implementing", "label": "实施", "status": "implementing"},
-            {"key": "reviewing", "label": "审查", "status": "reviewing", "skill": "实现审查"},
+            {"key": "reviewing", "label": "审查", "status": "reviewing", "role": "实现审查"},
             {"key": "deploying", "label": "部署", "status": "deploying"},
             {"key": "deployed", "label": "完成", "status": "deployed"},
         ],
@@ -47,10 +47,10 @@ _FALLBACK_PROJECT_TYPES: Dict[str, Dict[str, Any]] = {
         "description": "Bug 问诊与修复",
         "stages": [
             {"key": "draft", "label": "报告", "status": "draft"},
-            {"key": "discussing", "label": "问诊", "status": "discussing", "skill": "Bug 问诊"},
+            {"key": "discussing", "label": "问诊", "status": "discussing", "role": "Bug 问诊"},
             {"key": "planned", "label": "诊断书", "status": "planned"},
             {"key": "implementing", "label": "修复", "status": "implementing"},
-            {"key": "reviewing", "label": "验证", "status": "reviewing", "skill": "实现审查"},
+            {"key": "reviewing", "label": "验证", "status": "reviewing", "role": "实现审查"},
             {"key": "deploying", "label": "部署", "status": "deploying"},
             {"key": "deployed", "label": "关闭", "status": "deployed"},
         ],
@@ -104,14 +104,14 @@ def get_all_project_types() -> List[Dict[str, Any]]:
     ]
 
 
-def get_skill_for_status(type_key: str, status: str) -> Optional[str]:
-    """根据项目类型和当前状态, 返回该阶段对应的 skill 名称 (无则返回 None)"""
+def get_role_for_status(type_key: str, status: str) -> Optional[str]:
+    """根据项目类型和当前状态, 返回该阶段对应的 role 名称 (无则返回 None)"""
     pt = _get_effective_types().get(type_key)
     if not pt:
         return None
     for stage in pt.get("stages", []):
         if stage.get("status") == status:
-            return stage.get("skill")
+            return stage.get("role")
     return None
 
 

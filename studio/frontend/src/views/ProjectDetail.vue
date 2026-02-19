@@ -177,7 +177,9 @@ import SnapshotPanel from '@/components/SnapshotPanel.vue'
 const route = useRoute()
 const store = useProjectStore()
 const message = useMessage()
-const activeTab = ref('discuss')
+const _storedTab = sessionStorage.getItem('project_detail_tab')
+const activeTab = ref(_storedTab || 'discuss')
+watch(activeTab, (v) => sessionStorage.setItem('project_detail_tab', v))
 const showPlanPanel = ref(false)
 const showReviewPanel = ref(false)
 

@@ -1,6 +1,24 @@
 <template>
   <n-space vertical :size="16">
 
+    <!-- 安全设置 -->
+    <n-card size="small" style="background: #16213e">
+      <n-space align="center" justify="space-between">
+        <n-space align="center" :size="8">
+          <n-text>🛡️ 命令伪造检测</n-text>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-text depth="3" style="font-size: 12px; cursor: help">ⓘ</n-text>
+            </template>
+            部分模型可能在文本中伪造命令执行结果而不实际调用工具。<br/>
+            开启后系统会检测此行为并强制模型通过工具执行命令。<br/>
+            可能会偶尔误判导致额外重试，按需开启。
+          </n-tooltip>
+        </n-space>
+        <n-switch v-model:value="fabricationDetection" @update:value="onFabricationToggle" :loading="settingsLoading" />
+      </n-space>
+    </n-card>
+
     <!-- 统计 -->
     <n-grid :cols="4" :x-gap="12">
       <n-gi>
@@ -33,13 +51,19 @@
           <n-text depth="3" style="font-size: 12px">
             预配置命令授权规则, AI 执行写命令时会先匹配规则, 命中则自动放行或拒绝
           </n-text>
-          <n-button type="primary" size="small" @click="showRuleModal('create')">
-            ➕ 新建规则
-          </n-button>
+          <n-space align="center" :size="12">
+            <n-space align="center" :size="6">
+              <n-switch v-model:value="showArchivedRules" size="small" />
+              <n-text depth="3" style="font-size: 12px">显示已归档项目规则</n-text>
+            </n-space>
+            <n-button type="primary" size="small" @click="showRuleModal('create')">
+              ➕ 新建规则
+            </n-button>
+          </n-space>
         </n-space>
 
         <n-spin :show="rulesLoading">
-          <n-empty v-if="!rulesLoading && rules.length === 0" description="暂无授权规则, 在命令审批弹窗选择「永久」也会自动创建">
+          <n-empty v-if="!rulesLoading && filteredRules.length === 0" description="暂无授权规则, 在命令审批弹窗选择「永久」也会自动创建">
             <template #extra>
               <n-button size="small" @click="showRuleModal('create')">创建第一条规则</n-button>
             </template>
@@ -47,7 +71,7 @@
 
           <div v-else class="rule-list">
             <div
-              v-for="rule in rules"
+              v-for="rule in filteredRules"
               :key="rule.id"
               class="rule-card"
               :class="{ 'rule-deny': rule.action === 'deny', 'rule-disabled': !rule.is_enabled }"
@@ -82,33 +106,6 @@
                 <n-text depth="3" style="font-size: 10px">
                   {{ rule.created_by }} 创建于 {{ formatDt(rule.created_at) }}
                 </n-text>
-              </div>
-            </div>
-          </div>
-        </n-spin>
-      </n-tab-pane>
-
-      <n-tab-pane name="projects" tab="📁 项目授权">
-        <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 12px">
-          以下项目已开启「写入命令自动批准」— 所有写命令将跳过确认直接执行
-        </n-text>
-        <n-spin :show="overridesLoading">
-          <n-empty v-if="!overridesLoading && overrides.length === 0" description="暂无项目开启写入命令自动批准" />
-          <div v-else class="rule-list">
-            <div v-for="o in overrides" :key="o.project_id" class="rule-card">
-              <div class="rule-header">
-                <n-space align="center" :size="8" style="flex: 1">
-                  <n-tag type="warning" size="small" :bordered="false" round>🔓 自动批准</n-tag>
-                  <n-text strong>{{ o.project_title }}</n-text>
-                </n-space>
-                <n-button
-                  size="small"
-                  type="error"
-                  secondary
-                  @click="revokeOverride(o)"
-                >
-                  🔒 撤销
-                </n-button>
               </div>
             </div>
           </div>
@@ -192,7 +189,8 @@
           <n-text depth="3" style="font-size: 11px; display: block; margin-bottom: 4px">匹配预览：</n-text>
           <n-text style="font-size: 12px">
             当命令
-            <b v-if="ruleForm.pattern_type === 'prefix'">以「{{ ruleForm.pattern }}」开头</b>
+            <b v-if="ruleForm.pattern === '*'">为任意命令（通配符 *）</b>
+            <b v-else-if="ruleForm.pattern_type === 'prefix'">以「{{ ruleForm.pattern }}」开头</b>
             <b v-else-if="ruleForm.pattern_type === 'exact'">完全等于「{{ ruleForm.pattern }}」</b>
             <b v-else-if="ruleForm.pattern_type === 'contains'">包含「{{ ruleForm.pattern }}」</b>
             <b v-else>匹配正则「{{ ruleForm.pattern }}」</b>
@@ -217,12 +215,36 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import { commandAuthApi, projectApi } from '@/api'
 
 const message = useMessage()
 const dialog = useDialog()
+
+// ---- 安全设置 ----
+const fabricationDetection = ref(false)
+const settingsLoading = ref(false)
+
+async function loadSettings() {
+  try {
+    const { data } = await commandAuthApi.getSettings()
+    fabricationDetection.value = !!data.fabrication_detection
+  } catch { /* ignore */ }
+}
+
+async function onFabricationToggle(val: boolean) {
+  settingsLoading.value = true
+  try {
+    await commandAuthApi.updateSettings({ fabrication_detection: val })
+    message.success(val ? '已开启伪造检测' : '已关闭伪造检测')
+  } catch (e: any) {
+    fabricationDetection.value = !val  // rollback
+    message.error('保存失败')
+  } finally {
+    settingsLoading.value = false
+  }
+}
 
 // ---- 统计 ----
 const stats = ref({ active_rules: 0, total_commands: 0, approved_count: 0, rejected_count: 0 })
@@ -306,11 +328,35 @@ const scopeOptions = [
   { label: '📁 项目', value: 'project' },
 ]
 const projectOptions = ref<any[]>([])
+const showArchivedRules = ref(false)
+const archivedProjectIds = ref<Set<number>>(new Set())
+
+const filteredRules = computed(() => {
+  if (showArchivedRules.value) return rules.value
+  return rules.value.filter(r => {
+    if (r.scope !== 'project' || !r.project_id) return true
+    return !archivedProjectIds.value.has(r.project_id)
+  })
+})
 
 async function loadProjects() {
   try {
     const { data } = await projectApi.list({ page_size: 200 })
-    projectOptions.value = data.map((p: any) => ({ label: p.title || `项目 #${p.id}`, value: p.id }))
+    projectOptions.value = data.map((p: any) => ({
+      label: p.title || `项目 #${p.id}`,
+      value: p.id,
+    }))
+  } catch { /* ignore */ }
+}
+
+async function loadArchivedProjectIds() {
+  try {
+    const { data } = await projectApi.list({ page_size: 500, include_archived: true })
+    const ids = new Set<number>()
+    for (const p of data) {
+      if (p.is_archived) ids.add(p.id)
+    }
+    archivedProjectIds.value = ids
   } catch { /* ignore */ }
 }
 
@@ -355,40 +401,6 @@ async function saveRule() {
   }
 }
 
-// ---- 项目覆盖 ----
-const overridesLoading = ref(false)
-const overrides = ref<any[]>([])
-
-async function loadOverrides() {
-  overridesLoading.value = true
-  try {
-    const { data } = await commandAuthApi.listProjectOverrides()
-    overrides.value = data
-  } catch (e: any) {
-    message.error('加载项目状态失败')
-  } finally {
-    overridesLoading.value = false
-  }
-}
-
-function revokeOverride(o: any) {
-  dialog.warning({
-    title: '撤销自动批准',
-    content: `确定撤销项目「${o.project_title}」的命令自动批准？之后写命令将再次需要手动确认。`,
-    positiveText: '撤销',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      try {
-        await commandAuthApi.revokeProjectOverride(o.project_id)
-        overrides.value = overrides.value.filter(x => x.project_id !== o.project_id)
-        message.success('已撤销')
-      } catch (e: any) {
-        message.error(e.response?.data?.detail || '操作失败')
-      }
-    },
-  })
-}
-
 // ---- 审计日志 ----
 const auditLoading = ref(false)
 const auditLog = ref<any[]>([])
@@ -428,12 +440,11 @@ function auditActionLabel(a: string) {
   return { approved: '✅ 批准', rejected: '🚫 拒绝', timeout: '⏰ 超时' }[a] || a
 }
 function scopeLabel(s: string) {
-  return { once: '仅本次', session: '本会话', project: '本项目', permanent: '永久', rule: '规则' }[s] || s
+  return { once: '仅本次', session: '本次回答', project: '本项目', permanent: '永久', rule: '规则' }[s] || s
 }
 function methodLabel(m: string) {
   if (m === 'manual') return '手动'
-  if (m === 'project_auto') return '项目自动'
-  if (m === 'session_cache') return '会话缓存'
+  if (m === 'session_cache') return '回答内缓存'
   if (m?.startsWith('rule:')) return `规则 #${m.split(':')[1]}`
   return m
 }
@@ -444,12 +455,13 @@ function formatDt(dt?: string) {
 
 // ---- Init ----
 onMounted(() => {
+  loadSettings()
   loadStats()
   loadRules()
+  loadArchivedProjectIds()
 })
 
 watch(activeSection, (val) => {
-  if (val === 'projects' && overrides.value.length === 0) loadOverrides()
   if (val === 'audit' && auditLog.value.length === 0) loadAuditLog()
 })
 </script>

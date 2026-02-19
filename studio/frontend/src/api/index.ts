@@ -63,12 +63,12 @@ export const commandAuthApi = {
   createRule: (data: any) => api.post('/command-auth/rules', data),
   updateRule: (id: number, data: any) => api.put(`/command-auth/rules/${id}`, data),
   deleteRule: (id: number) => api.delete(`/command-auth/rules/${id}`),
-  // 项目级自动批准
-  listProjectOverrides: () => api.get('/command-auth/project-overrides'),
-  revokeProjectOverride: (projectId: number) => api.delete(`/command-auth/project-overrides/${projectId}`),
   // 审计日志
   listAuditLog: (params?: any) => api.get('/command-auth/audit-log', { params }),
   auditLogStats: () => api.get('/command-auth/audit-log/stats'),
+  // 安全设置
+  getSettings: () => api.get('/command-auth/settings'),
+  updateSettings: (data: any) => api.put('/command-auth/settings', data),
 }
 
 // ==================== 项目 ====================
@@ -218,9 +218,20 @@ export const providerApi = {
   seedReset: () => api.post('/providers/seed-reset'),
 }
 
+// ==================== 角色管理 ====================
+export const roleApi = {
+  list: (params?: { enabled_only?: boolean }) => api.get('/roles', { params }),
+  get: (id: number) => api.get(`/roles/${id}`),
+  create: (data: any) => api.post('/roles', data),
+  update: (id: number, data: any) => api.put(`/roles/${id}`, data),
+  delete: (id: number) => api.delete(`/roles/${id}`),
+  duplicate: (id: number) => api.post(`/roles/${id}/duplicate`),
+}
+
 // ==================== 技能管理 ====================
 export const skillApi = {
-  list: (params?: { enabled_only?: boolean }) => api.get('/skills', { params }),
+  list: (params?: { enabled_only?: boolean; category?: string }) => api.get('/skills', { params }),
+  categories: () => api.get('/skills/categories'),
   get: (id: number) => api.get(`/skills/${id}`),
   create: (data: any) => api.post('/skills', data),
   update: (id: number, data: any) => api.put(`/skills/${id}`, data),

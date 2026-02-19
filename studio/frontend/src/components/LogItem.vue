@@ -7,7 +7,7 @@
     <div class="body">
       <!-- 第一行：图标+技能标签 + 标题 + 右侧元信息 -->
       <div class="title-row">
-        <span class="skill-icon">{{ skillIcon }}</span>
+        <span class="role-icon">{{ roleIcon }}</span>
         <n-tag :color="{ color: typeTag.color + '22', textColor: typeTag.color, borderColor: typeTag.color + '55' }" size="small" class="type-tag">
           {{ typeTag.label }}
         </n-tag>
@@ -56,7 +56,7 @@
 import { computed } from 'vue'
 import { NTag } from 'naive-ui'
 
-interface SkillBrief {
+interface RoleBrief {
   id?: number
   name?: string
   icon?: string
@@ -75,13 +75,13 @@ interface LogItemShape {
   updated_at?: string
   created_by?: string
   participants?: string[]
-  skill?: SkillBrief | null
+  role?: RoleBrief | null
 }
 
 const props = defineProps<{ item: LogItemShape }>()
 const emit = defineEmits<{ (e: 'click'): void }>()
 
-// ── 无 skill 时的兜底映射 ─────────────────────────────────────────
+// ── 无 role 时的兆底映射 ─────────────────────────────────────────
 const FALLBACK: Record<string, { label: string; color: string; emoji: string }> = {
   bug:     { label: '缺陷', color: '#d03050', emoji: '🐞' },
   feature: { label: '需求', color: '#2080f0', emoji: '✨' },
@@ -90,7 +90,7 @@ const FALLBACK: Record<string, { label: string; color: string; emoji: string }> 
   project: { label: '项目', color: '#63e2b7', emoji: '📋' },
 }
 
-// ── skill.name 到颜色的映射（按关键词匹配） ──────────────────────
+// ── role.name 到颜色的映射（按关键词匹配） ──────────────────────
 const NAME_COLOR: Array<{ keys: string[]; color: string }> = [
   { keys: ['bug', '缺陷', '问诊', 'fix', '修复'], color: '#d03050' },
   { keys: ['需求', 'feature', '功能', '分析'],    color: '#2080f0' },
@@ -99,7 +99,7 @@ const NAME_COLOR: Array<{ keys: string[]; color: string }> = [
   { keys: ['部署', 'deploy', '发布'],              color: '#8a2be2' },
 ]
 
-function skillColor(name = ''): string {
+function roleColor(name = ''): string {
   const n = name.toLowerCase()
   for (const { keys, color } of NAME_COLOR) {
     if (keys.some(k => n.includes(k))) return color
@@ -108,17 +108,17 @@ function skillColor(name = ''): string {
 }
 
 // ── 左侧图标 ─────────────────────────────────────────────────────
-const skillIcon = computed(() =>
-  props.item.skill?.icon ||
+const roleIcon = computed(() =>
+  props.item.role?.icon ||
   FALLBACK[props.item.log_type || props.item.type || 'project']?.emoji ||
   '📄'
 )
 
-// ── 类型标签：优先 skill.name，确保每种技能有独立颜色和名称 ──────
+// ── 类型标签：优先 role.name，确保每种角色有独立颜色和名称 ──────
 const typeTag = computed(() => {
-  const skill = props.item.skill
-  if (skill?.name) {
-    return { label: skill.name, color: skillColor(skill.name) }
+  const role = props.item.role
+  if (role?.name) {
+    return { label: role.name, color: roleColor(role.name) }
   }
   const fb = FALLBACK[props.item.log_type || props.item.type || 'project']
   return fb
@@ -139,7 +139,7 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 function statusDisplay(s = '') {
-  const stages = props.item.skill?.stages
+  const stages = props.item.role?.stages
   if (stages) {
     const st = stages.find(x => x.status === s)
     if (st) return st.label
@@ -148,7 +148,7 @@ function statusDisplay(s = '') {
 }
 
 function statusTagType(s = '') {
-  const stages = props.item.skill?.stages
+  const stages = props.item.role?.stages
   if (stages?.length && stages[stages.length - 1].status === s) return 'success'
   return STATUS_TYPE[s] ?? 'default'
 }
@@ -204,7 +204,7 @@ function onClick() { emit('click') }
   flex-wrap: nowrap;
 }
 
-.skill-icon {
+.role-icon {
   font-size: 15px;
   flex-shrink: 0;
   line-height: 1;

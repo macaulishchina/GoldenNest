@@ -2,56 +2,50 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { skillApi } from '@/api'
 
-export interface SkillStage {
-  key: string
-  label: string
-  status: string
-}
-
-export interface SkillUiLabels {
-  project_noun?: string
-  create_title?: string
-  create_placeholder?: string
-  description_placeholder?: string
-  output_noun?: string
-  output_tab_label?: string
-  finalize_action?: string
-  [key: string]: string | undefined
-}
-
 export interface Skill {
   id: number
   name: string
   icon: string
   description: string
+  category: string
   is_builtin: boolean
   is_enabled: boolean
-  role_prompt: string
-  strategy_prompt: string
-  tool_strategy_prompt: string
-  finalization_prompt: string
-  output_generation_prompt: string
-  stages: SkillStage[]
-  ui_labels: SkillUiLabels
+  instruction_prompt: string
+  output_format: string
+  examples: Array<{ input: string; output: string }>
+  constraints: string[]
+  recommended_tools: string[]
+  tags: string[]
   sort_order: number
   created_at: string
   updated_at: string
 }
 
+export interface SkillCategory {
+  name: string
+  icon: string
+}
+
 export const useSkillStore = defineStore('skill', () => {
   const skills = ref<Skill[]>([])
+  const categories = ref<Record<string, SkillCategory>>({})
   const loading = ref(false)
 
   const enabledSkills = computed(() => skills.value.filter(s => s.is_enabled))
 
-  async function fetchSkills(enabledOnly = false) {
+  async function fetchSkills(enabledOnly = false, category?: string) {
     loading.value = true
     try {
-      const { data } = await skillApi.list({ enabled_only: enabledOnly })
+      const { data } = await skillApi.list({ enabled_only: enabledOnly, category })
       skills.value = data
     } finally {
       loading.value = false
     }
+  }
+
+  async function fetchCategories() {
+    const { data } = await skillApi.categories()
+    categories.value = data
   }
 
   async function getSkill(id: number): Promise<Skill> {
@@ -83,14 +77,14 @@ export const useSkillStore = defineStore('skill', () => {
     return data
   }
 
-  function getSkillById(id: number | null | undefined): Skill | undefined {
-    if (!id) return undefined
-    return skills.value.find(s => s.id === id)
+  function getSkillByName(name: string): Skill | undefined {
+    return skills.value.find(s => s.name === name)
   }
 
   return {
-    skills, loading, enabledSkills,
-    fetchSkills, getSkill, createSkill, updateSkill, deleteSkill, duplicateSkill,
-    getSkillById,
+    skills, categories, loading, enabledSkills,
+    fetchSkills, fetchCategories, getSkill,
+    createSkill, updateSkill, deleteSkill, duplicateSkill,
+    getSkillByName,
   }
 })

@@ -17,7 +17,7 @@ from studio.backend.core.project_types import (
     get_project_type, get_all_project_types, get_stages, get_ui_labels,
     get_modules, DEFAULT_PROJECT_TYPE,
 )
-from studio.backend.models import Project, ProjectStatus, Message, Skill
+from studio.backend.models import Project, ProjectStatus, Message, Role
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/studio-api/projects", tags=["Projects"])
@@ -91,11 +91,11 @@ class ProjectSummary(BaseModel):
     updated_at: datetime
     message_count: int = 0
     participants: List[str] = Field(default_factory=list, description="参与讨论的用户列表")
-    # 项目类型信息 (取代原来的 skill 字段)
+    # 项目类型信息
     type_info: Optional[ProjectTypeInfo] = None
-    # 向后兼容: 保留 skill 字段用于旧前端
-    skill_id: Optional[int] = None
-    skill: Optional[dict] = None
+    # 角色关联
+    role_id: Optional[int] = None
+    role: Optional[dict] = None
 
     class Config:
         from_attributes = True
@@ -140,7 +140,7 @@ async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)
         message_count=0,
         participants=[],
         type_info=type_info,
-        skill=None,
+        role=None,
     )
 
 
@@ -200,7 +200,7 @@ async def list_projects(
             message_count=msg_counts.get(p.id, 0),
             participants=participants_map.get(p.id, []),
             type_info=type_info,
-            skill=None,
+            role=None,
         ))
     return summaries
 
@@ -237,7 +237,7 @@ async def get_project(project_id: int, db: AsyncSession = Depends(get_db)):
         message_count=msg_count,
         participants=participants,
         type_info=type_info,
-        skill=None,
+        role=None,
     )
 
 
@@ -314,7 +314,7 @@ async def update_project(
         message_count=msg_count,
         participants=participants,
         type_info=type_info,
-        skill=None,
+        role=None,
     )
 
 

@@ -1,9 +1,9 @@
-# 设计院 Skills 系统实施计划
+# 设计院 Roles 系统实施计划
 
-> 将设计院从"硬编码需求分析工具"升级为"数据驱动的多技能 AI 开发流水线"
+> 将设计院从"硬编码需求分析工具"升级为"数据驱动的多角色 AI 开发流水线"
 
 > **实施状态**: Phase 1-3 已完成 (2026-02-17)。Phase 4（解耦准备）待后续。
-> 3 个内置技能：需求分析、Bug 问诊、实现审查。
+> 3 个内置角色：需求分析、Bug 问诊、实现审查。
 
 ## 一、背景与目标
 
@@ -11,38 +11,38 @@
 设计院目前所有 AI 行为（角色定义、对话策略、提问风格、阶段流程、产出文档格式）全部硬编码在代码中，只能做"需求分析"一件事。新增任何工作流（如 Bug 问诊、代码审查）都需要分叉代码。
 
 ### 目标
-引入 **Skill（技能）** 抽象层，将 AI 工作流配置从代码中提取为数据库驱动的可管理实体。实现：
-1. 一个 Skill 管理界面（CRUD）
-2. 项目创建时选择 Skill
-3. 运行时根据 Skill 配置注入 prompt / 渲染阶段 / 显示文案
-4. 内置 "需求分析" 和 "Bug 问诊" 两个 Skill 验证框架
+引入 **Role（角色）** 抽象层，将 AI 工作流配置从代码中提取为数据库驱动的可管理实体。实现：
+1. 一个 Role 管理界面（CRUD）
+2. 项目创建时选择 Role
+3. 运行时根据 Role 配置注入 prompt / 渲染阶段 / 显示文案
+4. 内置 "需求分析" 和 "Bug 问诊" 两个 Role 验证框架
 
 ### 设计原则
-- **数据驱动**：Skill 配置存储在 DB 中，非硬编码
+- **数据驱动**：Role 配置存储在 DB 中，非硬编码
 - **复用优先**：ChatPanel、工具系统、上下文管理等基础设施不变
 - **渐进式**：分阶段实施，每阶段可独立交付
-- **解耦准备**：Skill 系统不依赖 GoldenNest 特有逻辑
+- **解耦准备**：Role 系统不依赖 GoldenNest 特有逻辑
 
 ---
 
-## 二、Skill 数据模型
+## 二、Role 数据模型
 
 ### 2.1 数据库表设计
 
-新增 `skills` 表：
+新增 `roles` 表：
 
 ```python
 # studio/backend/models.py
 
-class Skill(Base):
-    """AI 技能定义 — 数据驱动的工作流配置"""
-    __tablename__ = "skills"
+class Role(Base):
+    """AI 角色定义 — 数据驱动的工作流配置"""
+    __tablename__ = "roles"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), nullable=False, unique=True)  # "需求分析", "Bug 问诊"
     icon = Column(String(10), default="🎯")                   # 菜单图标
     description = Column(Text, default="")                     # 简短描述
-    is_builtin = Column(Boolean, default=False)                # 内置技能不可删除
+    is_builtin = Column(Boolean, default=False)                # 内置角色不可删除
     is_enabled = Column(Boolean, default=True)                 # 启用/禁用
 
     # ---- AI 对话配置 ----
@@ -84,8 +84,8 @@ class Skill(Base):
 
 ```python
 # Project 表新增字段
-skill_id = Column(Integer, ForeignKey("skills.id"), nullable=True)  # nullable 兼容旧数据
-skill = relationship("Skill")
+role_id = Column(Integer, ForeignKey("roles.id"), nullable=True)  # nullable 兼容旧数据
+role = relationship("Role")
 ```
 
 ### 2.3 自动迁移
@@ -93,20 +93,20 @@ skill = relationship("Skill")
 在 `main.py::_auto_migrate()` 中添加：
 
 ```python
-# skills 表通过 init_db() 自动创建
+# roles 表通过 init_db() 自动创建
 
 # projects 表迁移
-"skill_id": "ALTER TABLE projects ADD COLUMN skill_id INTEGER REFERENCES skills(id)"
+"role_id": "ALTER TABLE projects ADD COLUMN role_id INTEGER REFERENCES roles(id)"
 ```
 
 ---
 
-## 三、内置 Skill 种子数据
+## 三、内置 Role 种子数据
 
 ### 3.1 需求分析（从现有硬编码提取）
 
 ```python
-BUILTIN_SKILL_REQUIREMENT = {
+BUILTIN_ROLE_REQUIREMENT = {
     "name": "需求分析",
     "icon": "📋",
     "description": "与用户讨论产品需求，澄清边界，生成需求规格书",
@@ -195,7 +195,7 @@ BUILTIN_SKILL_REQUIREMENT = {
 ### 3.2 Bug 问诊（新增）
 
 ```python
-BUILTIN_SKILL_BUG_TRIAGE = {
+BUILTIN_ROLE_BUG_TRIAGE = {
     "name": "Bug 问诊",
     "icon": "🔍",
     "description": "像医生问诊一样定位 Bug 症状，形成诊断书，不提供解决方案",
@@ -309,42 +309,42 @@ BUILTIN_SKILL_BUG_TRIAGE = {
 
 ## 四、分阶段实施步骤
 
-### Phase 1: 数据基础 + Skill 管理界面
+### Phase 1: 数据基础 + Role 管理界面
 
-**目标**：建立 Skill 表、CRUD API、管理 UI，将现有硬编码提取为种子数据。
+**目标**：建立 Role 表、CRUD API、管理 UI，将现有硬编码提取为种子数据。
 
 #### Step 1.1 — 后端数据模型 ✅
 
 | 操作 | 文件 | 内容 |
 |------|------|------|
-| 新增 `Skill` 模型 | `studio/backend/models.py` | 添加 Skill 类（见上方数据模型） |
-| Project 添加 `skill_id` | `studio/backend/models.py` | `Project.skill_id` 外键 + relationship |
-| 自动迁移 | `studio/backend/main.py` → `_auto_migrate()` | 新增 `projects.skill_id` 列迁移 |
-| 种子数据 | `studio/backend/main.py` → `lifespan()` | 新增 `seed_skills()` 初始化两个内置 Skill |
+| 新增 `Role` 模型 | `studio/backend/models.py` | 添加 Role 类（见上方数据模型） |
+| Project 添加 `role_id` | `studio/backend/models.py` | `Project.role_id` 外键 + relationship |
+| 自动迁移 | `studio/backend/main.py` → `_auto_migrate()` | 新增 `projects.role_id` 列迁移 |
+| 种子数据 | `studio/backend/main.py` → `lifespan()` | 新增 `seed_roles()` 初始化两个内置 Role |
 
-#### Step 1.2 — 后端 Skill CRUD API ✅
+#### Step 1.2 — 后端 Role CRUD API ✅
 
-新建 `studio/backend/api/skills.py`：
+新建 `studio/backend/api/roles.py`：
 
 | 端点 | 方法 | 描述 |
 |------|------|------|
-| `/studio-api/skills` | GET | 列出所有技能（支持 `?enabled_only=true`） |
-| `/studio-api/skills/{id}` | GET | 获取单个技能详情 |
-| `/studio-api/skills` | POST | 创建自定义技能 |
-| `/studio-api/skills/{id}` | PUT | 更新技能配置 |
-| `/studio-api/skills/{id}` | DELETE | 删除技能（内置技能禁止删除） |
-| `/studio-api/skills/{id}/duplicate` | POST | 复制技能（基于内置技能创建变体） |
+| `/studio-api/roles` | GET | 列出所有角色（支持 `?enabled_only=true`） |
+| `/studio-api/roles/{id}` | GET | 获取单个角色详情 |
+| `/studio-api/roles` | POST | 创建自定义角色 |
+| `/studio-api/roles/{id}` | PUT | 更新角色配置 |
+| `/studio-api/roles/{id}` | DELETE | 删除角色（内置角色禁止删除） |
+| `/studio-api/roles/{id}/duplicate` | POST | 复制角色（基于内置角色创建变体） |
 
 在 `studio/backend/main.py` 注册路由。
 
-#### Step 1.3 — 前端 Skill 管理界面 ✅
+#### Step 1.3 — 前端 Role 管理界面 ✅
 
-新建 `studio/frontend/src/views/settings/SkillSettings.vue`，添加到设置页 Tab：
+新建 `studio/frontend/src/views/settings/RoleSettings.vue`，添加到设置页 Tab：
 
 **列表视图**：
-- 卡片式布局，每个 Skill 显示：图标 + 名称 + 描述 + 启用开关 + 内置标记
-- 操作按钮：编辑、复制、删除（内置技能只能编辑 prompt 不能删除）
-- 底部"创建新技能"按钮
+- 卡片式布局，每个 Role 显示：图标 + 名称 + 描述 + 启用开关 + 内置标记
+- 操作按钮：编辑、复制、删除（内置角色只能编辑 prompt 不能删除）
+- 底部"创建新角色"按钮
 
 **编辑视图**（Modal 或独立页面）：
 - 基本信息：名称、图标、描述
@@ -355,29 +355,29 @@ BUILTIN_SKILL_BUG_TRIAGE = {
 
 #### Step 1.4 — 前端 API 模块 ✅
 
-在 `studio/frontend/src/api/` 中新增 skill 相关 API 调用（或添加到现有 api 模块）。
+在 `studio/frontend/src/api/` 中新增 role 相关 API 调用（或添加到现有 api 模块）。
 
-新增 Pinia store `studio/frontend/src/stores/skill.ts`：
-- `skills: Skill[]`
-- `fetchSkills()`, `getSkill(id)`, `createSkill()`, `updateSkill()`, `deleteSkill()`
-- `enabledSkills` computed（给项目创建下拉用）
+新增 Pinia store `studio/frontend/src/stores/role.ts`：
+- `roles: Role[]`
+- `fetchRoles()`, `getRole(id)`, `createRole()`, `updateRole()`, `deleteRole()`
+- `enabledRoles` computed（给项目创建下拉用）
 
 ---
 
-### Phase 2: 运行时 Skill 注入
+### Phase 2: 运行时 Role 注入
 
-**目标**：项目创建时选择 Skill，运行时根据 Skill 配置驱动 prompt、阶段、UI 文案。
+**目标**：项目创建时选择 Role，运行时根据 Role 配置驱动 prompt、阶段、UI 文案。
 
 #### Step 2.1 — 项目创建流程改造 ✅
 
 | 文件 | 改动 |
 |------|------|
-| `Dashboard.vue` 新建对话框 | 增加 Skill 选择器（图标卡片式，默认选中"需求分析"） |
-| `Dashboard.vue` 标题 / 文案 | 动态替换："新建需求" → `skill.ui_labels.create_title` |
-| `ProjectList.vue` 筛选 | 增加按 Skill 类型筛选 |
+| `Dashboard.vue` 新建对话框 | 增加 Role 选择器（图标卡片式，默认选中"需求分析"） |
+| `Dashboard.vue` 标题 / 文案 | 动态替换："新建需求" → `role.ui_labels.create_title` |
+| `ProjectList.vue` 筛选 | 增加按 Role 类型筛选 |
 | `StudioLayout.vue` 菜单 | "需求项目" → "项目"（通用化） |
 
-后端 `POST /studio-api/projects` 的请求体新增 `skill_id` 字段。
+后端 `POST /studio-api/projects` 的请求体新增 `role_id` 字段。
 
 #### Step 2.2 — context_service 改造 ✅
 
@@ -385,7 +385,7 @@ BUILTIN_SKILL_BUG_TRIAGE = {
 
 ```python
 def build_project_context(
-    skill: Optional[Skill] = None,  # 新增
+    role: Optional[Role] = None,  # 新增
     extra_context: str = "",
     budget_tokens: int = 0,
     return_sections: bool = False,
@@ -395,11 +395,11 @@ def build_project_context(
 核心改动逻辑：
 
 ```python
-if skill:
-    role_text = skill.role_prompt
-    strategy_text = skill.strategy_prompt
-    tool_strategy_text = skill.tool_strategy_prompt or DEFAULT_TOOL_STRATEGY
-    finalization_text = skill.finalization_prompt or ""
+if role:
+    role_text = role.role_prompt
+    strategy_text = role.strategy_prompt
+    tool_strategy_text = role.tool_strategy_prompt or DEFAULT_TOOL_STRATEGY
+    finalization_text = role.finalization_prompt or ""
 else:
     # 兼容旧项目：使用现有硬编码（后续迁移后可移除）
     role_text = LEGACY_ROLE_PROMPT
@@ -422,59 +422,59 @@ if tool_strategy_text:
 ```python
 def build_plan_generation_prompt(
     discussion_summary: str,
-    skill: Optional[Skill] = None,
+    role: Optional[Role] = None,
 ) -> str:
-    if skill and skill.output_generation_prompt:
-        return skill.output_generation_prompt.replace("{discussion_summary}", discussion_summary)
+    if role and role.output_generation_prompt:
+        return role.output_generation_prompt.replace("{discussion_summary}", discussion_summary)
     return LEGACY_PLAN_GENERATION_PROMPT.format(discussion_summary=discussion_summary)
 ```
 
-#### Step 2.3 — discussion.py 注入 Skill ✅
+#### Step 2.3 — discussion.py 注入 Role ✅
 
 ```python
-# 获取项目关联的 skill
-skill = None
-if project.skill_id:
-    skill_result = await db.execute(select(Skill).where(Skill.id == project.skill_id))
-    skill = skill_result.scalar_one_or_none()
+# 获取项目关联的 role
+role = None
+if project.role_id:
+    role_result = await db.execute(select(Role).where(Role.id == project.role_id))
+    role = role_result.scalar_one_or_none()
 
-# 构建 extra_context（根据 skill 适配文案）
+# 构建 extra_context（根据 role 适配文案）
 noun = "需求"
-if skill and skill.ui_labels:
-    noun = skill.ui_labels.get("project_noun", "需求")
+if role and role.ui_labels:
+    noun = role.ui_labels.get("project_noun", "需求")
 extra_parts = [f"\n## 当前{noun}\n标题: {project.title}\n描述: {project.description}"]
 
-# 构建 system_prompt 传入 skill
+# 构建 system_prompt 传入 role
 system_prompt, system_sections = context_service.build_project_context(
-    skill=skill,
+    role=role,
     extra_context="\n".join(extra_parts),
     budget_tokens=system_budget,
     return_sections=True,
 )
 ```
 
-定稿 API 同理传入 `skill`。
+定稿 API 同理传入 `role`。
 
 #### Step 2.4 — 前端动态阶段渲染 ✅
 
 | 文件 | 改动 |
 |------|------|
-| `ProjectDetail.vue` | `stepLabels` 从 `project.skill.stages` 动态获取，fallback 到默认值 |
-| `ProjectDetail.vue` | `statusLabel()` 根据 `skill.stages` 映射 |
-| `ProjectDetail.vue` | 设计稿 Tab 标签用 `skill.ui_labels.output_tab_label` |
-| `ChatPanel.vue` | 定稿按钮文案用 `skill.ui_labels.finalize_action` |
+| `ProjectDetail.vue` | `stepLabels` 从 `project.role.stages` 动态获取，fallback 到默认值 |
+| `ProjectDetail.vue` | `statusLabel()` 根据 `role.stages` 映射 |
+| `ProjectDetail.vue` | 设计稿 Tab 标签用 `role.ui_labels.output_tab_label` |
+| `ChatPanel.vue` | 定稿按钮文案用 `role.ui_labels.finalize_action` |
 
-**实现方式**：Project API 返回时 eager-load `skill` 关系，前端 `project.skill.stages` / `project.skill.ui_labels` 直接使用。
+**实现方式**：Project API 返回时 eager-load `role` 关系，前端 `project.role.stages` / `project.role.ui_labels` 直接使用。
 
-#### Step 2.5 — Skill 信息通过 API 返回 ✅
+#### Step 2.5 — Role 信息通过 API 返回 ✅
 
-`GET /studio-api/projects/{id}` 响应体新增 `skill` 嵌套对象（只含 `id`, `name`, `icon`, `stages`, `ui_labels`），避免动态查询。
+`GET /studio-api/projects/{id}` 响应体新增 `role` 嵌套对象（只含 `id`, `name`, `icon`, `stages`, `ui_labels`），避免动态查询。
 
 ---
 
 ### Phase 3: 验证 & 完善
 
-**目标**：用 Bug 问诊 Skill 验证框架通用性，修复边界问题。
+**目标**：用 Bug 问诊 Role 验证框架通用性，修复边界问题。
 
 #### Step 3.1 — 验证场景 ✅
 
@@ -485,16 +485,16 @@ system_prompt, system_sections = context_service.build_project_context(
    - 阶段显示为"报告→问诊→确认→..."
    - 产出物为"诊断书"格式
 2. 创建一个需求分析项目，验证旧功能不受影响
-3. 测试 Skill 管理界面 CRUD 操作
+3. 测试 Role 管理界面 CRUD 操作
 
 #### Step 3.2 — 旧项目兼容 ✅
 
-- `skill_id IS NULL` 的旧项目使用内置"需求分析"技能行为
-- ✅ 已实现一次性迁移 `_migrate_null_skill_projects()`：启动时自动为 `skill_id IS NULL` 的项目设置默认 skill_id
+- `role_id IS NULL` 的旧项目使用内置"需求分析"角色行为
+- ✅ 已实现一次性迁移 `_migrate_null_role_projects()`：启动时自动为 `role_id IS NULL` 的项目设置默认 role_id
 
-#### Step 3.3 — 示例第三技能 ✅
+#### Step 3.3 — 示例第三角色 ✅
 
-✅ 已作为第三个内置技能加入 `BUILTIN_SKILLS` seed，启动时自动创建：
+✅ 已作为第三个内置角色加入 `BUILTIN_ROLES` seed，启动时自动创建：
 - 名称：实现审查（icon: ✅）
 - 角色：代码审查员
 - 策略：对照需求逐项检查实现完成度，按 ✅/⚠️/❌ 分级
@@ -508,7 +508,7 @@ system_prompt, system_sections = context_service.build_project_context(
 
 | 解耦项 | 当前状态 | 目标 |
 |--------|---------|------|
-| 目标项目路径 | 硬编码 `KEY_FILES`, `KEY_DIRS` 指向 GoldenNest | Skill 或全局设置配置 `workspace_path` |
+| 目标项目路径 | 硬编码 `KEY_FILES`, `KEY_DIRS` 指向 GoldenNest | Role 或全局设置配置 `workspace_path` |
 | 项目概况 | 硬编码 "家庭财富管理" | 从 workspace 的 README / CLAUDE.md 自动提取 |
 | 部署流程 | 硬编码 docker-compose | 可配置的部署脚本模板 |
 | 数据库 | 与 GoldenNest 共用 data/ 目录 | 独立 studio-data/ |
@@ -520,55 +520,55 @@ system_prompt, system_sections = context_service.build_project_context(
 ### 后端新增
 | 文件 | 描述 |
 |------|------|
-| `studio/backend/api/skills.py` | Skill CRUD API |
+| `studio/backend/api/roles.py` | Role CRUD API |
 
 ### 后端修改
 | 文件 | 改动 |
 |------|------|
-| `studio/backend/models.py` | 新增 `Skill` 模型，`Project` 增加 `skill_id` |
-| `studio/backend/main.py` | 注册 skills 路由，auto_migrate 添加 skill_id，seed_skills() |
-| `studio/backend/services/context_service.py` | `build_project_context()` 接受 Skill 参数，动态组装 prompt |
-| `studio/backend/api/discussion.py` | 读取项目 skill，传入 context_service |
-| `studio/backend/api/projects.py` | 创建项目支持 skill_id，返回关联 skill |
+| `studio/backend/models.py` | 新增 `Role` 模型，`Project` 增加 `role_id` |
+| `studio/backend/main.py` | 注册 roles 路由，auto_migrate 添加 role_id，seed_roles() |
+| `studio/backend/services/context_service.py` | `build_project_context()` 接受 Role 参数，动态组装 prompt |
+| `studio/backend/api/discussion.py` | 读取项目 role，传入 context_service |
+| `studio/backend/api/projects.py` | 创建项目支持 role_id，返回关联 role |
 
 ### 前端新增
 | 文件 | 描述 |
 |------|------|
-| `studio/frontend/src/views/settings/SkillSettings.vue` | Skill 管理界面 |
-| `studio/frontend/src/stores/skill.ts` | Skill Pinia store |
+| `studio/frontend/src/views/settings/RoleSettings.vue` | Role 管理界面 |
+| `studio/frontend/src/stores/role.ts` | Role Pinia store |
 
 ### 前端修改
 | 文件 | 改动 |
 |------|------|
-| `studio/frontend/src/views/Dashboard.vue` | 创建对话框增加 Skill 选择器，动态文案 |
-| `studio/frontend/src/views/ProjectDetail.vue` | stepLabels/statusLabel 从 skill 动态获取 |
-| `studio/frontend/src/views/ProjectList.vue` | 增加 Skill 筛选，动态 status 标签 |
+| `studio/frontend/src/views/Dashboard.vue` | 创建对话框增加 Role 选择器，动态文案 |
+| `studio/frontend/src/views/ProjectDetail.vue` | stepLabels/statusLabel 从 role 动态获取 |
+| `studio/frontend/src/views/ProjectList.vue` | 增加 Role 筛选，动态 status 标签 |
 | `studio/frontend/src/views/StudioLayout.vue` | 菜单文案："需求项目" → "项目" |
 | `studio/frontend/src/components/ChatPanel.vue` | 定稿按钮文案动态化 |
-| Settings 路由/Tab | 增加"技能管理"Tab |
+| Settings 路由/Tab | 增加"角色管理"Tab |
 
 ---
 
 ## 六、验证方案
 
 ### 自动化
-- 后端：Skill CRUD API 正确性（创建/读取/更新/删除/列表/复制）
-- 种子数据：启动后两个内置 Skill 自动创建
-- 自动迁移：旧 DB 升级正确添加 skill_id 列
+- 后端：Role CRUD API 正确性（创建/读取/更新/删除/列表/复制）
+- 种子数据：启动后两个内置 Role 自动创建
+- 自动迁移：旧 DB 升级正确添加 role_id 列
 
 ### 手动验证
 1. **需求分析项目**：行为与改造前完全一致
 2. **Bug 问诊项目**：AI 以诊断专家角色对话，不给修复方案，产出诊断书
-3. **Skill 管理**：创建自定义技能 → 用该技能创建项目 → AI 行为符合配置
-4. **兼容性**：旧项目（`skill_id=NULL`）正常使用
+3. **Role 管理**：创建自定义角色 → 用该角色创建项目 → AI 行为符合配置
+4. **兼容性**：旧项目（`role_id=NULL`）正常使用
 
 ### 关键检查点
-- [x] `context_service.build_project_context(skill=...)` 正确组装 prompt
-- [x] `build_plan_generation_prompt(skill=...)` 使用 skill 的产出模板
-- [x] ProjectDetail 阶段条根据 skill.stages 渲染
-- [x] Dashboard 创建对话框根据 skill.ui_labels 显示文案
-- [x] 内置 Skill 不可删除
-- [x] 禁用的 Skill 不出现在创建项目的选择器中
+- [x] `context_service.build_project_context(role=...)` 正确组装 prompt
+- [x] `build_plan_generation_prompt(role=...)` 使用 role 的产出模板
+- [x] ProjectDetail 阶段条根据 role.stages 渲染
+- [x] Dashboard 创建对话框根据 role.ui_labels 显示文案
+- [x] 内置 Role 不可删除
+- [x] 禁用的 Role 不出现在创建项目的选择器中
 
 ---
 
@@ -576,9 +576,9 @@ system_prompt, system_sections = context_service.build_project_context(
 
 | 决策 | 选择 | 原因 |
 |------|------|------|
-| Skill 存储方式 | DB 表 | 数据驱动，运行时可修改，支持管理 UI |
+| Role 存储方式 | DB 表 | 数据驱动，运行时可修改，支持管理 UI |
 | ProjectStatus 枚举 | 保持不变 | stages 只控制 UI 显示，底层状态复用同一套枚举 |
-| 旧项目兼容 | `skill_id=NULL` fallback 内置默认 | 零迁移成本 |
-| 目标项目路径解耦 | 延迟到 Phase 4 | 当前优先完成 Skill 框架 |
-| Skill prompt 变量 | 仅 `{discussion_summary}` | 保持简单，按需扩展 |
-| ask_user 工具定义 | 不按 Skill 定制 | 工具行为由 prompt 策略控制即可 |
+| 旧项目兼容 | `role_id=NULL` fallback 内置默认 | 零迁移成本 |
+| 目标项目路径解耦 | 延迟到 Phase 4 | 当前优先完成 Role 框架 |
+| Role prompt 变量 | 仅 `{discussion_summary}` | 保持简单，按需扩展 |
+| ask_user 工具定义 | 不按 Role 定制 | 工具行为由 prompt 策略控制即可 |

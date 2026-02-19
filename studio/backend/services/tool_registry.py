@@ -271,7 +271,9 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
         "function": {
             "name": "run_command",
             "description": (
-                "在项目工作目录中执行 shell 命令。支持常用的只读命令如 "
+                "在项目工作目录中执行 shell 命令。⚠️ 当用户要求你执行命令时，"
+                "你必须调用此工具，禁止在文本中编造执行结果。\n\n"
+                "支持常用的只读命令如 "
                 "git (log, diff, show, status, blame), ls, cat, head, tail, find, "
                 "grep, wc, diff, python3 -c 等。非只读命令需要额外授权。\n\n"
                 "常用场景：\n"
@@ -282,6 +284,8 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
                 "- `find . -name '*.py' -newer some_file` 查找新修改的文件\n"
                 "- `python3 -c \"import json; ...\"` 执行简单脚本\n"
                 "- `docker ps` 查看运行中的容器\n"
+                "- `rm file` 删除文件 (需授权)\n"
+                "- `touch file` 创建文件 (需授权)\n"
             ),
             "parameters": {
                 "type": "object",
@@ -872,27 +876,66 @@ _READONLY_COMMANDS = {
     "docker-compose": {"ps", "logs", "config", "images"},
 }
 
+# Shell 写操作符 — 出现在命令中则视为非只读
+import re as _re
+_WRITE_OPERATORS_PATTERN = _re.compile(
+    r'(?:^|\s)'
+    r'(?:'
+    r'>|>>|'           # 输出重定向
+    r'\|\s*tee\b|'     # tee 写文件
+    r'&&|;'            # 链式命令 (可能后接写命令)
+    r')'
+)
+
 COMMAND_TIMEOUT_SECONDS = 30
 
 
 def _is_readonly_command(command_str: str) -> bool:
-    """检查命令是否为只读命令"""
-    parts = command_str.strip().split()
-    if not parts:
-        return False
-    cmd = parts[0]
-    # 去掉路径前缀 (如 /usr/bin/git → git)
-    cmd = os.path.basename(cmd)
+    """检查命令是否为只读命令
 
-    allowed_subs = _READONLY_COMMANDS.get(cmd)
-    if allowed_subs is None and cmd in _READONLY_COMMANDS:
-        return True  # 该命令任何子命令都允许
-    if allowed_subs is not None:
-        # 检查第一个参数是否在允许列表中
-        if len(parts) >= 2:
-            return parts[1] in allowed_subs
-        return True  # 无参数, 视为安全
-    return False
+    检查层级:
+    1. 全局写操作符检测: >, >>, &&, ;, |tee 等
+    2. 管道链: 每个子命令都必须在白名单中
+    3. 白名单匹配: 命令 + 子命令检查
+    """
+    stripped = command_str.strip()
+    if not stripped:
+        return False
+
+    # 1) 检测写操作符 (>, >>, &&, ;, tee)
+    # 允许管道 | 但不允许 | tee
+    if _re.search(r'>{1,2}', stripped):  # > or >>
+        return False
+    if '&&' in stripped or ';' in stripped:
+        return False
+    if _re.search(r'\|\s*tee\b', stripped):
+        return False
+    # 检测反引号/子 shell 执行
+    if '`' in stripped or '$(' in stripped:
+        return False
+
+    # 2) 管道链: 每个子命令都必须在白名单中
+    pipe_segments = [s.strip() for s in stripped.split('|') if s.strip()]
+    for seg in pipe_segments:
+        parts = seg.split()
+        if not parts:
+            return False
+        cmd = os.path.basename(parts[0])
+
+        allowed_subs = _READONLY_COMMANDS.get(cmd)
+        if allowed_subs is None and cmd in _READONLY_COMMANDS:
+            continue  # 该命令任何参数都允许
+        if allowed_subs is not None:
+            if len(parts) >= 2 and parts[1] in allowed_subs:
+                continue
+            elif len(parts) < 2:
+                continue  # 无参数, 视为安全
+            else:
+                return False  # 子命令不在允许列表
+        else:
+            return False  # 命令不在白名单
+
+    return True
 
 
 async def _tool_run_command(args: Dict[str, Any], workspace: str) -> str:

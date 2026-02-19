@@ -15,7 +15,7 @@
     >
       <div style="padding: 16px; text-align: center">
         <n-text style="font-size: 20px; color: #e94560" strong>
-          {{ collapsed ? '🏗️' : '🏗️ 设计院' }}
+          {{ collapsed ? '🤖' : '🤖 AI设计院' }}
         </n-text>
       </div>
 
@@ -87,7 +87,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, h } from 'vue'
+import { ref, computed, h, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NIcon } from 'naive-ui'
 import type { MenuOption } from 'naive-ui'
@@ -138,13 +138,24 @@ const menuOptions: MenuOption[] = [
   { label: '设置', key: 'settings', icon: renderIcon(SettingsOutline) },
 ]
 
-function handleMenuClick(key: string) {
-  const routeMap: Record<string, string> = {
-    projects: '/',
-    snapshots: '/snapshots',
-    settings: '/settings',
+// 持久化每个菜单区域最后访问的路径
+const lastPaths: Record<string, string> = {
+  projects: sessionStorage.getItem('nav_projects') || '/',
+  snapshots: sessionStorage.getItem('nav_snapshots') || '/snapshots',
+  settings: sessionStorage.getItem('nav_settings') || '/settings',
+}
+
+// 监听路由变化，记录当前菜单区域的路径
+watch(() => route.fullPath, (path) => {
+  const key = activeKey.value
+  if (key) {
+    lastPaths[key] = path
+    sessionStorage.setItem(`nav_${key}`, path)
   }
-  router.push(routeMap[key] || '/')
+}, { immediate: true })
+
+function handleMenuClick(key: string) {
+  router.push(lastPaths[key] || '/')
 }
 
 function handleLogout() {

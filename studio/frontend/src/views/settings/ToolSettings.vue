@@ -33,7 +33,7 @@
               </n-space>
               <n-space :size="8" align="center">
                 <n-tag size="tiny" :bordered="false" :type="permTagType(tool.permission_key)">
-                  🔑 {{ tool.permission_key }}
+                  {{ permLabel(tool.permission_key) }}
                 </n-tag>
                 <n-switch
                   :value="tool.is_enabled"
@@ -74,6 +74,24 @@
                   {{ executorLabel(tool.executor_type) }}
                 </n-tag>
               </n-space>
+            </div>
+            <!-- 命令授权面板: 嵌入在 execute_command 工具下方 -->
+            <div v-if="tool.permission_key === 'execute_readonly_command'" style="margin-top: 12px">
+              <n-button
+                size="small"
+                quaternary
+                :type="showCommandAuth ? 'primary' : 'default'"
+                @click="showCommandAuth = !showCommandAuth"
+                style="padding: 0 8px"
+              >
+                🔒 命令授权规则
+                <n-icon :component="showCommandAuth ? ChevronUpOutline : ChevronDownOutline" style="margin-left: 4px" />
+              </n-button>
+              <n-collapse-transition :show="showCommandAuth">
+                <div style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px">
+                  <CommandAuthSettings />
+                </div>
+              </n-collapse-transition>
             </div>
           </n-card>
         </n-gi>
@@ -177,12 +195,14 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
-import { AddOutline, CreateOutline, CopyOutline, TrashOutline } from '@vicons/ionicons5'
+import { AddOutline, CreateOutline, CopyOutline, TrashOutline, ChevronDownOutline, ChevronUpOutline } from '@vicons/ionicons5'
 import { useToolStore, type ToolDef } from '@/stores/tool'
+import CommandAuthSettings from './CommandAuthSettings.vue'
 
 const message = useMessage()
 const store = useToolStore()
 
+const showCommandAuth = ref(false)
 const showEditor = ref(false)
 const editorTab = ref('basic')
 const editingTool = ref<ToolDef | null>(null)
@@ -214,6 +234,11 @@ function permTagType(key: string) {
   if (key.includes('execute')) return 'warning'
   if (key === 'ask_user') return 'success'
   return 'info'
+}
+
+function permLabel(key: string): string {
+  const perm = store.permissions.find(p => p.key === key)
+  return perm ? `${perm.icon} ${perm.label}` : `🔑 ${key}`
 }
 
 const defaultForm = () => ({

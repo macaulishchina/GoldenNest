@@ -98,10 +98,29 @@ export function useModelSelection(initialModel: string) {
       }
       groupMap[gKey].items.push(m)
     }
-    return groups.map(g => ({
+    const result = groups.map(g => ({
       type: 'group', label: g.label, key: g.key, provider_slug: g.slug,
       children: g.items.map(mapOpt),
     }))
+
+    // 如果当前选中的模型不在列表中 (列表尚未加载或被过滤掉)，
+    // 注入一个占位选项，避免 n-select 显示空白
+    const allValues = result.flatMap(g => g.children.map(c => c.value))
+    if (selectedModel.value && !allValues.includes(selectedModel.value)) {
+      result.unshift({
+        type: 'group', label: '当前', key: '_current', provider_slug: 'github',
+        children: [{
+          label: selectedModel.value, value: selectedModel.value,
+          description: '', supports_vision: false, supports_tools: true,
+          is_reasoning: false, api_backend: '', is_custom: false,
+          provider_slug: 'github', pricing_tier: '', premium_multiplier: 0,
+          is_deprecated: false, pricing_note: '',
+          max_input_tokens: 0, max_output_tokens: 0,
+        }],
+      })
+    }
+
+    return result
   })
 
   // 当前模型能力
@@ -188,9 +207,8 @@ export function useModelSelection(initialModel: string) {
     try {
       const { data } = await modelApi.list({ category: 'discussion', custom_models: studioConfig.customModelsEnabled })
       models.value = data
-      if (data.length && !data.find((m: any) => m.id === selectedModel.value)) {
-        selectedModel.value = data[0].id
-      }
+      // 不重置 selectedModel — 保持用户/项目历史选择的模型
+      // 即使模型不在列表中也不改动，避免切换项目时闪烁
     } catch {}
   }
 

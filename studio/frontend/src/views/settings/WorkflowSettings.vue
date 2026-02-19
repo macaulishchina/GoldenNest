@@ -114,10 +114,10 @@
             <div style="margin-top: 10px; padding: 6px 8px; background: rgba(255,255,255,0.03); border-radius: 6px">
               <n-space :size="4" align="center" :wrap="false" style="overflow-x: auto">
                 <template v-for="(stage, i) in wf.stages" :key="i">
-                  <n-tag size="tiny" :bordered="false" :type="stage.skill ? 'info' : 'default'" round>
+                  <n-tag size="tiny" :bordered="false" :type="stage.role ? 'info' : 'default'" round>
                     {{ stage.label }}
-                    <template v-if="stage.skill">
-                      <span style="opacity: 0.6; margin-left: 2px">· {{ stage.skill }}</span>
+                    <template v-if="stage.role">
+                      <span style="opacity: 0.6; margin-left: 2px">· {{ stage.role }}</span>
                     </template>
                   </n-tag>
                   <n-text v-if="i < wf.stages.length - 1" depth="3" style="font-size: 10px">→</n-text>
@@ -201,14 +201,14 @@
         <!-- 阶段定义 -->
         <n-tab-pane name="stages" tab="📊 阶段">
           <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 8px">
-            定义项目生命周期的阶段步骤条。每个阶段可绑定一个技能。
+            定义项目生命周期的阶段步骤条。每个阶段可绑定一个角色。
           </n-text>
           <n-dynamic-input v-model:value="wfForm.stages" :on-create="createStage" #default="{ value: stage }">
             <n-space :size="8" align="center" style="flex: 1">
               <n-input v-model:value="stage.key" placeholder="key" size="small" style="width: 100px" />
               <n-input v-model:value="stage.label" placeholder="标签" size="small" style="width: 80px" />
               <n-input v-model:value="stage.status" placeholder="status" size="small" style="width: 100px" />
-              <n-input v-model:value="stage.skill" placeholder="技能 (选填)" size="small" style="width: 120px" />
+              <n-input v-model:value="stage.role" placeholder="角色 (选填)" size="small" style="width: 120px" />
             </n-space>
           </n-dynamic-input>
         </n-tab-pane>
@@ -230,7 +230,7 @@
                 />
                 <n-input v-model:value="entry.tab_key" placeholder="tab_key" size="small" style="width: 100px" />
                 <n-input v-model:value="entry.tab_label" placeholder="Tab 标签" size="small" style="width: 140px" />
-                <n-input v-model:value="entry.skill_name" placeholder="技能 (选填)" size="small" style="width: 120px" />
+                <n-input v-model:value="entry.role_name" placeholder="角色 (选填)" size="small" style="width: 120px" />
               </n-space>
               <n-space :size="4" align="center" style="margin-left: 4px">
                 <n-text depth="3" style="font-size: 11px">阶段:</n-text>
@@ -436,7 +436,7 @@ async function handleDeleteWorkflow(wf: Workflow) {
 }
 
 function createStage() {
-  return { key: '', label: '', status: '', skill: '' }
+  return { key: '', label: '', status: '', role: '' }
 }
 
 function createModuleEntry() {
@@ -445,7 +445,7 @@ function createModuleEntry() {
     tab_key: '',
     tab_label: '',
     stage_statuses: [],
-    skill_name: '',
+    role_name: '',
     config: { mode: '' },
   }
 }

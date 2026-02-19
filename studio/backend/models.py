@@ -111,9 +111,9 @@ class StudioUser(Base):
     last_login_at = Column(DateTime, nullable=True)
 
 
-class Skill(Base):
-    """AI 技能定义 — 数据驱动的工作流配置"""
-    __tablename__ = "skills"
+class Role(Base):
+    """AI 对话角色定义 — 数据驱动的工作流配置"""
+    __tablename__ = "roles"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), nullable=False, unique=True)
@@ -134,6 +134,60 @@ class Skill(Base):
 
     # UI 文案配置 {"project_noun": "需求", "create_title": "...", ...}
     ui_labels = Column(JSON, default=lambda: {})
+
+    # 默认技能列表 — 该角色激活时自动注入的技能名称
+    # ["需求澄清", "API 设计"] — 使用名称而非 ID, 便于 seed/迁移
+    default_skills = Column(JSON, default=list)
+
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Skill(Base):
+    """
+    AI 技能定义 — 可复用的能力模块
+
+    Skill 定义 AI 的具体能力 (WHAT it can do):
+    - instruction_prompt: 核心指令, 告诉 AI 如何执行该技能
+    - output_format: 期望的输出格式模板
+    - examples: 少样本示例 (few-shot)
+    - constraints: 约束条件列表
+
+    与 Role 的关系:
+    - Role 定义 AI 是谁 (persona), Skill 定义 AI 会什么 (capability)
+    - 一个 Role 可挂载多个 Skills (通过 Role.default_skills)
+    - Workflow stage 也可独立指定 Skills
+    """
+    __tablename__ = "skills"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)
+    icon = Column(String(10), default="⚡")
+    description = Column(Text, default="")
+
+    # 分类: general, analysis, coding, writing, review, testing
+    category = Column(String(50), default="general")
+
+    is_builtin = Column(Boolean, default=False)
+    is_enabled = Column(Boolean, default=True)
+
+    # ---- 技能核心定义 ----
+    # 核心指令 — 告诉 AI 执行该技能时应遵循的详细步骤和方法论
+    instruction_prompt = Column(Text, nullable=False, default="")
+    # 输出格式模板 — 描述该技能的标准化输出结构 (Markdown/JSON 模板)
+    output_format = Column(Text, default="")
+    # 少样本示例 [{"input": "...", "output": "..."}, ...]
+    examples = Column(JSON, default=list)
+    # 约束条件 ["不要推测原因", "必须包含测试用例", ...]
+    constraints = Column(JSON, default=list)
+
+    # ---- 工具与标签 ----
+    # 推荐工具列表 — 执行该技能时推荐使用的工具名
+    # ["read_file", "search_text"]
+    recommended_tools = Column(JSON, default=list)
+    # 标签 (便于搜索和分组)
+    tags = Column(JSON, default=list)
 
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -174,7 +228,7 @@ class Project(Base):
     description = Column(Text, default="")
     status = Column(Enum(ProjectStatus), default=ProjectStatus.draft, nullable=False)
 
-    # 项目类型 (定义生命周期, 取代旧的 skill_id 1:1 模式)
+    # 项目类型 (定义生命周期)
     project_type = Column(String(50), default="requirement")  # requirement, bug, ...
 
     # 设计稿
@@ -204,8 +258,8 @@ class Project(Base):
     # AI 禁言 (群聊模式: 禁言时 AI 不自动回复)
     ai_muted = Column(Boolean, default=False)
 
-    # 技能关联 (DEPRECATED: 用 project_type 代替, 保留用于迁移兼容)
-    skill_id = Column(Integer, ForeignKey("skills.id"), nullable=True)
+    # 角色关联
+    role_id = Column(Integer, ForeignKey("roles.id"), nullable=True)
 
     # 归档
     is_archived = Column(Boolean, default=False)
@@ -223,7 +277,7 @@ class Project(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # 关系
-    skill = relationship("Skill", lazy="joined")  # DEPRECATED: 保留向后兼容
+    role = relationship("Role", lazy="joined")
     messages = relationship("Message", back_populates="project", cascade="all, delete-orphan",
                             order_by="Message.created_at")
     deployments = relationship("Deployment", back_populates="project", cascade="all, delete-orphan",
@@ -419,12 +473,12 @@ class Workflow(Base):
     is_enabled = Column(Boolean, default=True)
 
     # 阶段定义 (步骤条)
-    # [{"key":"draft","label":"草稿","status":"draft","skill":"..."}, ...]
+    # [{"key":"draft","label":"草稿","status":"draft","role":"..."}, ...]
     stages = Column(JSON, nullable=False, default=list)
 
     # 模块组装 (有序 tab 列表, 引用 WorkflowModule.name)
     # [{"module_name":"ai_chat","tab_key":"discuss","tab_label":"💬 讨论",
-    #   "stage_statuses":["draft","discussing"],"skill_name":"需求分析",
+    #   "stage_statuses":["draft","discussing"],"role_name":"需求分析",
     #   "config":{"mode":"discuss","plan_panel":true,...}}, ...]
     modules = Column(JSON, nullable=False, default=list)
 

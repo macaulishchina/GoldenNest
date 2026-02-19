@@ -6,12 +6,12 @@ export interface ProjectTypeInfo {
   key: string
   name: string
   icon: string
-  stages: { key: string; label: string; status: string; skill?: string }[]
+  stages: { key: string; label: string; status: string; role?: string }[]
   ui_labels: Record<string, string>
 }
 
 // DEPRECATED: 保留兼容旧数据, 新代码使用 type_info
-export interface SkillBrief {
+export interface RoleBrief {
   id: number
   name: string
   icon: string
@@ -47,8 +47,8 @@ export interface Project {
   project_type: string | null
   type_info: ProjectTypeInfo | null
   // DEPRECATED: 保留兼容
-  skill_id: number | null
-  skill: SkillBrief | null
+  role_id: number | null
+  role: RoleBrief | null
 }
 
 export const useProjectStore = defineStore('project', () => {

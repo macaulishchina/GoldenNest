@@ -342,6 +342,53 @@ def _build_api_messages(
     return api_messages
 
 
+# ==================== 伪造检测 ====================
+
+import re as _re
+
+# 检测 AI 在文本中伪造工具执行结果的模式
+# 策略: 宽松匹配 — 宁可误判也不放过伪造 (误判最多多调用一次模型)
+_FABRICATION_PATTERNS = [
+    # 1. 任何形式的 "已/通过/工具 + 执行" 组合
+    _re.compile(r"(已|已经|我已|我已经|已通过|通过).{0,15}(执行|运行|调用).{0,20}(命令|指令|rm|touch|mkdir|cp|mv|cat|ls|git|docker|pip|npm|cd|echo|python|curl|wget|chmod|chown|kill|bash|sh|find|grep|sed|awk)", _re.IGNORECASE),
+    # 2. 直接说 "执行了/运行了" + 命令相关
+    _re.compile(r"(执行了|运行了|已运行|已执行|调用了)\s*.{0,10}(命令|指令|工具|rm|touch|mkdir|cp|mv|cat|git|pip|npm|python)", _re.IGNORECASE),
+    # 3. 声称操作结果: "已成功删除/创建/..." 或 "文件已删除"
+    _re.compile(r"(已|已经|已成功|成功)(删除|创建|移动|复制|修改|移除|安装|卸载|停止|启动|重启|写入|清除|清空)", _re.IGNORECASE),
+    # 4. 描述命令输出/结果
+    _re.compile(r"(命令|指令).{0,20}(执行|运行).{0,10}(完成|成功|完毕|结果|输出|显示)", _re.IGNORECASE),
+    # 5. 声称文件/目录状态变化
+    _re.compile(r"(文件|目录|文件夹).{0,30}(不存在|已被删除|已删除|已创建|已移动|已被移除|已清空|已被清空)", _re.IGNORECASE),
+    # 6. 路径 + 状态描述 (如 "/tmp/5.txt 文件不存在")
+    _re.compile(r"/\S+\s+(文件|目录|文件夹)?.{0,5}(不存在|已被?删除|已被?移除|已创建)", _re.IGNORECASE),
+    # 7. 声称通过工具/tool 调用
+    _re.compile(r"(通过|使用|利用).{0,5}(工具|tool).{0,10}(调用|执行|运行)", _re.IGNORECASE),
+    # 8. 命令执行结果显示 (narrating output)
+    _re.compile(r"(执行结果|输出结果|返回结果|运行结果|结果显示|输出显示|结果如下|输出如下)", _re.IGNORECASE),
+    # 9. 声称 "No such file" 等英文命令输出 (在无 tool call 时不应出现)
+    _re.compile(r"(No such file|Permission denied|command not found|cannot remove|cannot create|Operation not permitted)", _re.IGNORECASE),
+]
+
+
+def _detect_fabrication(text: str) -> bool:
+    """
+    检测模型是否在文本中伪造了工具执行结果。
+
+    策略: 宽松匹配，宁可误判（最多多一次重试）也不放过伪造。
+    当模型输出了类似 "已通过工具调用执行 rm /tmp/3.txt" 这样的内容，
+    但实际上没有发起任何 tool_call 时，判定为伪造。
+    """
+    if not text or len(text) < 10:
+        return False
+    for pattern in _FABRICATION_PATTERNS:
+        if pattern.search(text):
+            logger.info(f"伪造检测命中模式: {pattern.pattern[:50]}... | 文本片段: {text[:100]}")
+            return True
+    return False
+
+
+# ==================== AI chat_stream ====================
+
 # 工具调用最大循环次数 (防止无限 tool-call 循环)
 # 同一 request_id 下的工具轮次应归集为一次 premium request
 MAX_TOOL_ROUNDS = 15
@@ -406,6 +453,7 @@ async def chat_stream(
     total_tool_rounds = 0
     seen_tool_calls: set = set()  # 检测重复调用 (name + args hash)
     all_tool_calls_collected: List[Dict[str, Any]] = []  # 收集所有轮次的 tool calls
+    fabrication_retries = 0  # 伪造检测重试计数
 
     while True:
         # 构建消息
@@ -452,7 +500,12 @@ async def chat_stream(
         # 注入 tools
         if tools:
             payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+            # 伪造重试时强制模型必须调用工具
+            if fabrication_retries > 0:
+                payload["tool_choice"] = "required"
+                logger.info(f"伪造重试中, 强制 tool_choice=required (retry={fabrication_retries})")
+            else:
+                payload["tool_choice"] = "auto"
 
         try:
             async with httpx.AsyncClient(timeout=300) as client:
@@ -520,6 +573,7 @@ async def chat_stream(
                         started_tool_calls: set = set()  # 已发送 tool_call_start 的 idx
                         response_has_content = False
                         stream_finish_reason = None  # 跟踪流结束原因
+                        response_text_parts: List[str] = []  # 收集完整文本用于伪造检测
 
                         async for line in response.aiter_lines():
                             if line.startswith("data: "):
@@ -545,6 +599,7 @@ async def chat_stream(
                                     if "content" in delta and delta["content"]:
                                         yield {"type": "content", "content": delta["content"]}
                                         response_has_content = True
+                                        response_text_parts.append(delta["content"])
 
                                     # Tool calls 增量累积
                                     if "tool_calls" in delta:
@@ -744,7 +799,28 @@ async def chat_stream(
                             continue  # 回到 while 循环, 重新调用模型
 
                         else:
-                            # 无 tool calls
+                            # 无 tool calls — 检测伪造 (需开关启用)
+                            if response_has_content and tools and fabrication_retries < 2:
+                                from studio.backend.api.command_auth import is_fabrication_detection_enabled
+                                if is_fabrication_detection_enabled():
+                                    full_text = "".join(response_text_parts)
+                                    if _detect_fabrication(full_text):
+                                        fabrication_retries += 1
+                                        logger.warning(f"检测到模型 {actual_model} 伪造工具执行结果, 注入纠正消息并重试 (retry={fabrication_retries})")
+                                        # 追加 assistant 伪造的回复 + 系统纠正
+                                        current_messages.append({"role": "assistant", "content": full_text})
+                                        current_messages.append({
+                                            "role": "user",
+                                            "content": (
+                                                "⚠️ 你刚才在文本中伪造了命令执行结果，这是严重违规！"
+                                                "你并没有真正执行任何命令。"
+                                                "请立即通过 tool_call 调用 run_command 工具来执行命令，"
+                                                "不要再在文本中编造结果。"
+                                            ),
+                                        })
+                                        yield {"type": "content", "content": "\n\n⚠️ 检测到 AI 伪造执行结果，正在重新要求执行...\n\n"}
+                                        continue  # 回到 while 循环重新调用模型
+
                             if not response_has_content:
                                 # 模型返回了空响应 (无内容也无工具调用)
                                 logger.warning(

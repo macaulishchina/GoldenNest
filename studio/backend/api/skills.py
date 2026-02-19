@@ -1,6 +1,14 @@
 """
 设计院 (Studio) - 技能管理 API
-数据驱动的 AI 工作流配置 CRUD
+Skill = 可复用的 AI 能力模块 (区别于 Role 的人设/策略)
+
+主流定义: Skill 包含 instruction_prompt (核心指令) + output_format (输出格式)
+         + examples (少样本) + constraints (约束) + recommended_tools
+
+与 Role 的关系:
+  Role → 定义 AI 是谁 (persona + strategy)
+  Skill → 定义 AI 会什么 (capability)
+  一个 Role 可挂载多个 Skill, Workflow stage 也可指定 Skills
 """
 import logging
 from typing import List, Optional
@@ -19,23 +27,17 @@ router = APIRouter(prefix="/studio-api/skills", tags=["Skills"])
 
 # ==================== Schemas ====================
 
-class StageItem(BaseModel):
-    key: str
-    label: str
-    status: str
-
-
 class SkillCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    icon: str = Field("🎯", max_length=10)
+    icon: str = Field("⚡", max_length=10)
     description: str = Field("", max_length=500)
-    role_prompt: str = Field("")
-    strategy_prompt: str = Field("")
-    tool_strategy_prompt: str = Field("")
-    finalization_prompt: str = Field("")
-    output_generation_prompt: str = Field("")
-    stages: List[StageItem] = Field(default_factory=list)
-    ui_labels: dict = Field(default_factory=dict)
+    category: str = Field("general", max_length=50)
+    instruction_prompt: str = Field("")
+    output_format: str = Field("")
+    examples: list = Field(default_factory=list)
+    constraints: list = Field(default_factory=list)
+    recommended_tools: list = Field(default_factory=list)
+    tags: list = Field(default_factory=list)
     sort_order: int = 0
 
 
@@ -43,14 +45,14 @@ class SkillUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     icon: Optional[str] = Field(None, max_length=10)
     description: Optional[str] = None
+    category: Optional[str] = None
     is_enabled: Optional[bool] = None
-    role_prompt: Optional[str] = None
-    strategy_prompt: Optional[str] = None
-    tool_strategy_prompt: Optional[str] = None
-    finalization_prompt: Optional[str] = None
-    output_generation_prompt: Optional[str] = None
-    stages: Optional[List[StageItem]] = None
-    ui_labels: Optional[dict] = None
+    instruction_prompt: Optional[str] = None
+    output_format: Optional[str] = None
+    examples: Optional[list] = None
+    constraints: Optional[list] = None
+    recommended_tools: Optional[list] = None
+    tags: Optional[list] = None
     sort_order: Optional[int] = None
 
 
@@ -59,34 +61,18 @@ class SkillResponse(BaseModel):
     name: str
     icon: str
     description: str
+    category: str
     is_builtin: bool
     is_enabled: bool
-    role_prompt: str
-    strategy_prompt: str
-    tool_strategy_prompt: str
-    finalization_prompt: str
-    output_generation_prompt: str
-    stages: list
-    ui_labels: dict
+    instruction_prompt: str
+    output_format: str
+    examples: list
+    constraints: list
+    recommended_tools: list
+    tags: list
     sort_order: int
     created_at: str
     updated_at: str
-
-    class Config:
-        from_attributes = True
-
-
-class SkillSummary(BaseModel):
-    """精简版, 用于项目列表/创建选择器"""
-    id: int
-    name: str
-    icon: str
-    description: str
-    is_builtin: bool
-    is_enabled: bool
-    stages: list
-    ui_labels: dict
-    sort_order: int
 
     class Config:
         from_attributes = True
@@ -96,349 +82,351 @@ class SkillSummary(BaseModel):
 
 BUILTIN_SKILLS = [
     {
-        "name": "需求分析",
-        "icon": "📋",
-        "description": "与用户讨论产品需求，澄清边界，生成需求规格书",
+        "name": "需求澄清",
+        "icon": "🔎",
+        "description": "通过结构化提问澄清模糊需求，确保需求完整、可验证",
+        "category": "analysis",
         "is_builtin": True,
         "is_enabled": True,
         "sort_order": 0,
-        "role_prompt": "你是一位资深产品经理和需求分析师，正在「设计院」中和用户讨论一个产品需求。",
-        "strategy_prompt": """## 核心原则：需求探讨优先，实现细节靠后
+        "instruction_prompt": """## 需求澄清技能
 
-你的首要任务是帮助用户把需求想清楚、说明白，而不是急于给出技术方案。
+你正在帮助用户把一个模糊的想法变成清晰、可操作的需求。
 
-### 对话策略
-1. **主动提问** — 用户描述需求后，立即用 `ask_user` 工具提出 3-5 个关键问题来澄清需求。不要等用户问你，你应该主动追问。
-2. **聚焦「做什么」** — 讨论应围绕：用户故事、交互流程、业务规则、边界条件、优先级。避免主动讨论技术实现细节（数据库设计、API 路径等），除非用户明确要求。
-3. **连续提问** — 如果一轮回答后仍有不明确的地方，继续用 `ask_user` 追问。宁可多问几轮，也不要带着模糊需求就敲定方案。
-4. **总结确认** — 每轮问答后，简要总结你对需求的理解，让用户确认或纠正。
-5. **循循善诱** — 帮助用户发现他们没想到的需求场景，如：异常流程、权限控制、数据一致性、并发场景。
+### 方法论
+1. **5W1H 框架** — 对每个需求追问:
+   - Who: 谁是目标用户？谁会受影响？
+   - What: 具体要做什么？边界在哪？
+   - When: 什么时候触发？有时间约束吗？
+   - Where: 在哪个页面/模块/环境？
+   - Why: 为什么需要这个？解决什么痛点？
+   - How: 用户如何操作？有多少步骤？
 
-### ⚠️ 绝对禁止的行为
-- **禁止"预告式回复"**：不要说"好的，让我问几个问题："、"让我继续问…"然后就停止。如果你想提问，必须在**同一次回复中直接调用 `ask_user` 工具**。
-- **禁止等待用户许可才提问**：不要说"需要我继续问吗？"或"你希望我深入哪个方面？"——直接调用 `ask_user` 提问。
-- **禁止无工具的纯确认回复**：不要用纯文字说"让我确认一下"然后停下来等用户回复。如果要确认，直接用 `ask_user` 列出确认问题。
+2. **用户故事格式** — 将需求转化为:
+   「作为 [角色]，我希望 [做什么]，以便 [达到什么目的]」
 
-### 什么时候讨论技术
-- ✅ 用户主动问"这个用什么技术实现"时
-- ✅ 需要查看代码来理解现有功能时
-- ✅ 技术约束会影响需求可行性时（如实时推送需要 WebSocket）
-- ❌ 不要主动建议数据库表结构、API 设计、组件拆分等
-- ❌ 不要在用户只描述了大概想法时就给出完整技术方案""",
-        "finalization_prompt": """## 关于敲定方案
-当用户说"敲定"时，系统会自动基于讨论历史生成需求规格书（Plan）。
-你不需要在对话中输出 Plan 格式，只需确保讨论充分、需求明确即可。
-在敲定之前，你应该主动确认：所有关键需求是否都已讨论清楚。""",
-        "output_generation_prompt": """基于以下讨论内容，生成一份结构化的 **需求规格书（Plan）**。
+3. **边界探测** — 主动追问:
+   - 异常流程: 失败了怎么办？数据不完整呢？
+   - 权限控制: 谁能操作？谁不能？
+   - 性能约束: 数据量大时怎么办？并发呢？
+   - 兼容性: 需要支持哪些端/浏览器？
 
-## 写作原则
+4. **优先级排序** — 使用 MoSCoW 方法:
+   - Must have (必须有)
+   - Should have (应该有)
+   - Could have (可以有)
+   - Won't have (本次不做)""",
+        "output_format": """### 需求清单
 
-1. **聚焦「做什么」而非「怎么做」**：详细描述功能需求、业务规则、用户交互流程、边界条件、验收标准。不要给出具体的技术实现方案（如数据库表结构、API 路径设计、组件拆分方式），除非用户在讨论中明确要求了特定实现方式。
-2. **保留用户的明确技术决策**：如果用户在讨论中主动提出了技术选型、架构约束或实现偏好，必须原样保留并标注为「用户指定」。
-3. **需求要可验证**：每个功能点应有明确的完成标准，让实现者能判断"做到了没有"。
-4. **消除歧义**：对讨论中模糊或有多种理解的地方，选择最合理的解释并明确写出，或标注为「待确认」。
-5. **不要添加臆测**：严格基于讨论内容，不添加讨论中未涉及的功能或技术假设。
-
-## 输出格式
-
-### 项目概述
-一段话描述项目目标和核心价值。
-
-### 功能需求
-按优先级分组，每个功能包含：
-- **功能名称**
-- **用户故事**: 作为 [角色]，我希望 [做什么]，以便 [达到什么目的]
-- **详细描述**: 具体的交互流程、业务规则
-- **边界条件**: 异常情况如何处理
-- **验收标准**: 可检验的完成条件列表
-
-### 非功能需求
-性能、安全、兼容性等约束（仅包含讨论中提及的）。
-
-### 用户指定的技术约束
-仅列出用户在讨论中**主动要求**的技术决策（如指定某框架、某种数据格式等）。如果没有，写「无特定技术约束，由实现者自行决定最佳方案」。
+| # | 用户故事 | 优先级 | 验收标准 | 备注 |
+|---|---------|--------|---------|------|
+| 1 | 作为...我希望...以便... | Must | ✅ 条件1 ✅ 条件2 | |
 
 ### 待确认事项
-讨论中未完全明确的问题。
-
----
-
-讨论内容：
-{discussion_summary}
-
-请直接输出需求规格书内容（不需要代码块包裹）:""",
-        "stages": [],
-        "ui_labels": {},
+- [ ] 问题1
+- [ ] 问题2""",
+        "examples": [],
+        "constraints": [
+            "不要替用户做技术决策",
+            "每个需求必须有明确的验收标准",
+            "优先使用 ask_user 工具提问，不要猜测",
+        ],
+        "recommended_tools": ["ask_user"],
+        "tags": ["需求", "分析", "提问"],
     },
     {
-        "name": "Bug 问诊",
-        "icon": "🔍",
-        "description": "像医生问诊一样定位 Bug 症状，形成诊断书，不提供解决方案",
+        "name": "API 设计",
+        "icon": "🔌",
+        "description": "设计 RESTful API 端点、请求/响应结构和错误处理",
+        "category": "coding",
         "is_builtin": True,
         "is_enabled": True,
         "sort_order": 1,
-        "role_prompt": """你是一位经验丰富的 Bug 诊断专家，正在「设计院」中帮助用户梳理一个软件缺陷。
+        "instruction_prompt": """## API 设计技能
 
-## 核心身份：诊断医生，只问诊不施救
-你的职责是通过系统化问诊，帮助用户把 Bug 的症状、特性、复现方式描述清楚，形成一份结构化的「诊断书」。
-**你绝对不要**：
-- 猜测或下结论说 Bug 的根因是什么
-- 提供任何修复方案、代码补丁、或解决建议
-- 说"可能是因为..."、"建议修改..."之类的话
+你正在帮助设计清晰、一致的 RESTful API。
 
-诊断书的目的是交给下游更强的编码模型去定位和修复，你只负责把问题描述到位。""",
-        "strategy_prompt": """## 问诊策略
+### 设计原则
+1. **资源导向** — URL 表示资源而非操作: `/users/{id}` 而非 `/getUser`
+2. **HTTP 语义** — 正确使用 GET/POST/PUT/PATCH/DELETE
+3. **一致的命名** — snake_case 字段名，复数资源名
+4. **分页与过滤** — 列表接口支持 `page`, `per_page`, `sort`, 过滤参数
+5. **错误格式** — 统一 `{"detail": "message", "code": "ERROR_CODE"}`
+6. **版本策略** — 是否需要 `/v1/` 前缀
 
-### 对话策略
-1. **症状采集** — 用户报告 Bug 后，立即用 `ask_user` 提出 3-5 个定位问题：
-   - 具体的错误现象是什么？（截图、报错信息、异常行为）
-   - 期望的正确行为是什么？
-   - 在什么条件下出现？（页面、操作步骤、数据状态）
-   - 是否稳定复现？复现步骤是什么？
-   - 什么时候开始出现的？最近有什么变更？
-2. **环境信息** — 追问运行环境：浏览器、设备、网络、数据库状态等
-3. **复现验证** — 要求用户确认复现步骤，确保步骤完整且可重复
-4. **边界探测** — 追问边界条件：
-   - 其他类似操作是否正常？
-   - 换一组数据是否还是出问题？
-   - 清缓存/重启后是否还复现？
-5. **只记不判** — 记录所有症状，但不做原因推断
+### 输出要求
+- 每个端点包含: 方法、路径、描述、请求体、响应体、状态码
+- 字段类型明确 (string, integer, boolean, array, object)
+- 必填/可选字段标注
+- 包含认证要求说明""",
+        "output_format": """### API 端点设计
 
-### 绝对禁区
-- ❌ 不要说"这个问题可能是因为..."
-- ❌ 不要说"建议你修改..."
-- ❌ 不要给出任何代码片段作为修复方案
-- ❌ 不要说"试试这样做..."
-- ✅ 可以用工具查看代码来**理解现有逻辑**，但查看后只用于完善问题描述
-- ✅ 可以说"我注意到相关代码在 xxx 文件"来帮助定位范围""",
-        "finalization_prompt": """## 关于生成诊断书
-当用户说"敲定"或"出诊断书"时，系统会自动基于问诊记录生成结构化诊断书。
-在定稿之前，你应该主动确认：
-- Bug 的症状描述是否完整
-- 复现步骤是否清晰可执行
-- 影响范围是否明确""",
-        "output_generation_prompt": """基于以下问诊记录，生成一份结构化的 **Bug 诊断书**。
-
-## 写作原则
-1. **只描述症状，不分析原因**：详细描述"是什么"和"怎么复现"，绝不推测"为什么"。
-2. **步骤可执行**：复现步骤必须精确到可以让另一个人按步操作复现。
-3. **信息分层**：从概述到细节，结构清晰。
-4. **严格基于问诊内容**：不添加问诊中未涉及的信息。
-
-## 输出格式
-
-### Bug 概述
-一段话描述：什么功能、出了什么问题、影响范围。
-
-### 症状描述
-- **预期行为**: 应该怎样
-- **实际行为**: 实际怎样
-- **错误信息**: 控制台报错、页面提示等（如有）
-
-### 复现步骤
-编号列表，每步包含：具体操作 + 预期结果 + 实际结果
-
-### 环境信息
-- 浏览器/设备/系统
-- 数据条件
-- 网络环境
-
-### 影响范围
-- 影响的功能模块
-- 影响的用户群体
-- 严重程度评估
-
-### 相关代码定位
-- 相关文件路径（仅当问诊中使用了代码查看工具时列出）
-- 不包含任何修复建议
-
-### 补充信息
-问诊中发现的其他相关线索。
-
----
-
-问诊记录：
-{discussion_summary}
-
-请直接输出诊断书内容（不需要代码块包裹）:""",
-        "stages": [],
-        "ui_labels": {},
+#### `POST /api/resource`
+- **描述**: 创建资源
+- **认证**: Bearer Token
+- **请求体**:
+```json
+{
+  "name": "string (必填)",
+  "description": "string (选填)"
+}
+```
+- **响应** (201):
+```json
+{
+  "id": 1,
+  "name": "...",
+  "created_at": "ISO8601"
+}
+```
+- **错误**: 400 验证失败, 401 未认证, 409 重复""",
+        "examples": [],
+        "constraints": [
+            "遵循 RESTful 最佳实践",
+            "字段命名使用 snake_case",
+            "所有示例使用 JSON 格式",
+        ],
+        "recommended_tools": ["read_file", "search_text"],
+        "tags": ["API", "REST", "设计", "后端"],
     },
     {
-        "name": "实现审查",
-        "icon": "✅",
-        "description": "对照需求规格书逐项检查代码实现完成度，输出审查报告",
+        "name": "代码审查",
+        "icon": "🔍",
+        "description": "审查代码质量、安全性、性能和可维护性",
+        "category": "review",
         "is_builtin": True,
         "is_enabled": True,
         "sort_order": 2,
-        "role_prompt": """你是一位严谨的代码审查员，正在「设计院」中帮助用户对照需求逐项审查代码实现。
+        "instruction_prompt": """## 代码审查技能
 
-## 核心身份：实现完成度检查员
-你的职责是拿着需求规格书/设计方案，逐项对照代码，检查每个需求点是否已正确实现。
-**你应该**：
-- 系统化地逐项检查需求是否被实现
-- 指出实现缺失、部分实现、或与需求不符之处
-- 评估代码质量（错误处理、边界条件、安全风险等）
-**你不应该**：
-- 替用户编写修复代码
-- 凭空添加需求文档中没有的检查项""",
-        "strategy_prompt": """## 审查策略
+你正在对代码变更进行专业审查。
 
-### 对话策略
-1. **收集材料** — 首先用 `ask_user` 了解审查范围：
-   - 需求文档/设计稿在哪里？（可能已在项目 Plan 里）
-   - 需要审查哪些模块的实现？
-   - 是否有特别关注的风险点？
-2. **阅读代码** — 使用 `read_file`、`search_text` 等工具系统地查看代码实现
-3. **逐项对照** — 基于需求文档，逐个功能点检查：
-   - ✅ 功能是否实现
-   - ⚠️ 实现是否完整（边界条件、错误处理）
-   - ❌ 是否有遗漏
-4. **追问澄清** — 遇到不确定的地方，用 `ask_user` 询问用户：
-   - "这个功能的预期行为是 X 还是 Y？"
-   - "这里的业务规则具体是怎样的？"
-5. **分层报告** — 按严重程度分类问题：
-   - 🔴 Critical: 功能完全缺失或逻辑错误
-   - 🟡 Warning: 实现不完整或存在潜在风险
-   - 🟢 Pass: 功能正确实现
+### 审查维度
+1. **正确性** — 逻辑是否正确？是否处理了边界情况？
+2. **安全性** — SQL 注入、XSS、敏感数据暴露、权限检查？
+3. **性能** — N+1 查询、不必要的循环、内存泄漏？
+4. **可读性** — 命名清晰？注释充分？函数长度合理？
+5. **可维护性** — DRY 原则？职责单一？耦合度？
+6. **测试覆盖** — 关键路径是否有测试？
 
-### 代码查看策略
-- ✅ 主动使用工具查看代码文件
-- ✅ 搜索关键函数/类来验证实现
-- ✅ 检查前后端是否一致
-- ✅ 检查数据库模型是否匹配需求""",
-        "finalization_prompt": """## 关于生成审查报告
-当用户说"敲定"或"出报告"时，系统会自动基于审查记录生成结构化审查报告。
-在定稿之前，你应该主动确认：
-- 所有需求条目是否都已逐一审查
-- 发现的问题是否都已记录
-- 是否有需要特别关注的风险点""",
-        "output_generation_prompt": """基于以下审查记录，生成一份结构化的 **实现审查报告**。
+### 审查方法
+- 先查看文件结构，理解改动范围
+- 逐文件审查，标注行号和严重级别
+- 区分: 🔴 必须修复 / 🟡 建议改进 / 🟢 建议(可选)
+- 对每个问题给出具体的改进建议""",
+        "output_format": """### 审查结论: ✅ 通过 / ⚠️ 有条件通过 / ❌ 需修改
 
-## 写作原则
-1. **逐项对照**：每个需求点都必须有明确的审查结论（通过/部分实现/未实现）。
-2. **有据可查**：每个结论都应引用具体的代码位置或证据。
-3. **按严重程度分级**：清晰标注问题的严重等级。
-4. **严格基于审查内容**：不添加审查中未涉及的检查项。
+### 问题列表
 
-## 输出格式
+| # | 严重级别 | 文件:行号 | 问题描述 | 建议 |
+|---|---------|----------|---------|------|
+| 1 | 🔴 必须修复 | `file.py:42` | 未检查空值 | 添加 null check |
+| 2 | 🟡 建议 | `api.py:15` | 命名不清晰 | 改为 xxx |
 
-### 审查概述
-一段话描述：审查范围、总体完成度评估、关键发现摘要。
+### 改进建议
+- 整体建议1
+- 整体建议2""",
+        "examples": [],
+        "constraints": [
+            "审查前必须先用工具读取相关代码",
+            "每个问题必须标注具体文件和行号",
+            "区分严重级别，避免所有问题一视同仁",
+            "给出具体可操作的修改建议",
+        ],
+        "recommended_tools": ["read_file", "search_text", "get_file_tree"],
+        "tags": ["代码", "审查", "质量"],
+    },
+    {
+        "name": "测试用例设计",
+        "icon": "🧪",
+        "description": "根据需求设计全面的测试用例，覆盖正常流程和边界条件",
+        "category": "testing",
+        "is_builtin": True,
+        "is_enabled": True,
+        "sort_order": 3,
+        "instruction_prompt": """## 测试用例设计技能
 
-### 审查结果总览
-| 状态 | 数量 |
-|------|------|
-| ✅ 通过 | X 项 |
-| ⚠️ 部分实现 | X 项 |
-| ❌ 未实现 | X 项 |
+你正在根据需求或代码设计测试用例。
 
-### 逐项审查详情
+### 方法论
+1. **等价类划分** — 将输入分为有效/无效等价类
+2. **边界值分析** — 测试边界条件 (min, max, min-1, max+1)
+3. **状态转换** — 测试状态机的各种路径
+4. **错误猜测** — 基于经验预测容易出错的场景
+5. **组合测试** — 多个参数组合（使用 pairwise 方法减少组合数）
 
-#### ✅ 已通过
-按编号列出：需求描述 + 实现位置 + 审查结论
+### 用例结构
+- 每个用例有: ID、标题、前置条件、步骤、预期结果、优先级
+- 覆盖: 正常流程 → 异常流程 → 边界条件 → 性能/并发
+- 按功能模块分组""",
+        "output_format": """### 测试用例
 
-#### ⚠️ 部分实现
-按编号列出：
-- **需求描述**: ...
-- **已实现部分**: ...
-- **缺失部分**: ...
-- **相关代码**: 文件路径和行号
-- **建议**: ...
+#### 模块: [功能名称]
 
-#### ❌ 未实现
-按编号列出：
-- **需求描述**: ...
-- **预期实现**: ...
-- **当前状态**: 完全缺失/逻辑错误/...
+| ID | 用例标题 | 优先级 | 前置条件 | 步骤 | 预期结果 |
+|----|---------|--------|---------|------|---------|
+| TC-001 | 正常创建 | P0 | 已登录 | 1. 填写表单 2. 点击提交 | 创建成功，返回详情 |
+| TC-002 | 必填项为空 | P0 | 已登录 | 1. 不填名称 2. 点击提交 | 提示"请输入名称" |
 
-### 代码质量备注
-审查过程中发现的代码质量问题（非功能性）：
-- 错误处理不足
-- 安全风险
-- 性能隐患
-- 代码规范
+### 覆盖统计
+- 正常流程: X 个
+- 异常流程: X 个
+- 边界条件: X 个""",
+        "examples": [],
+        "constraints": [
+            "P0 用例覆盖核心功能的正常和异常流程",
+            "边界值必须包含 null/空字符串/超长/特殊字符",
+            "并发场景至少设计一个用例",
+        ],
+        "recommended_tools": ["read_file", "search_text"],
+        "tags": ["测试", "QA", "质量"],
+    },
+    {
+        "name": "技术方案评估",
+        "icon": "⚖️",
+        "description": "对比多种技术方案的优劣，给出选型建议",
+        "category": "analysis",
+        "is_builtin": True,
+        "is_enabled": True,
+        "sort_order": 4,
+        "instruction_prompt": """## 技术方案评估技能
 
-### 总体建议
-基于审查结果的优先级建议。
+你正在帮助用户评估和对比多种技术方案。
 
----
+### 评估框架
+1. **可行性** — 技术上能实现吗？团队有能力吗？
+2. **成本** — 开发时间、维护成本、学习曲线
+3. **性能** — 能满足需求吗？扩展性如何？
+4. **生态** — 社区活跃度、文档质量、第三方集成
+5. **风险** — 技术风险、锁定风险、安全风险
+6. **未来** — 技术趋势、升级路径、向后兼容
 
-审查记录：
-{discussion_summary}
+### 评估方法
+- 列出所有候选方案
+- 定义评估维度和权重
+- 逐维度打分 (1-5)
+- 计算加权总分
+- 给出推荐和理由""",
+        "output_format": """### 方案对比
 
-请直接输出审查报告内容（不需要代码块包裹）:""",
-        "stages": [],
-        "ui_labels": {},
+| 维度 | 权重 | 方案A | 方案B | 方案C |
+|------|------|-------|-------|-------|
+| 开发成本 | 30% | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
+| 性能 | 25% | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| 可维护性 | 20% | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
+| 生态 | 15% | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
+| 风险 | 10% | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
+| **加权总分** | | **X.X** | **X.X** | **X.X** |
+
+### 推荐: 方案A
+理由: ...""",
+        "examples": [],
+        "constraints": [
+            "至少对比 2 个方案",
+            "评估维度要有明确权重",
+            "最终推荐要有充分理由",
+            "列出每个方案的主要风险",
+        ],
+        "recommended_tools": ["read_file", "search_text"],
+        "tags": ["技术", "评估", "选型"],
+    },
+    {
+        "name": "文档撰写",
+        "icon": "📝",
+        "description": "生成结构化的技术文档、用户指南或设计文档",
+        "category": "writing",
+        "is_builtin": True,
+        "is_enabled": True,
+        "sort_order": 5,
+        "instruction_prompt": """## 文档撰写技能
+
+你正在帮助生成清晰、结构化的文档。
+
+### 写作原则
+1. **读者导向** — 根据目标读者调整技术深度和用语
+2. **结构清晰** — 从概述到细节，逐层展开
+3. **示例丰富** — 每个概念配合代码示例或使用场景
+4. **可检索** — 良好的标题层级、关键词标注
+5. **保持更新** — 标注文档版本和最后更新时间
+
+### 文档类型
+- **技术设计文档**: 架构、数据流、接口定义
+- **API 文档**: 端点、参数、响应、错误码
+- **用户指南**: 功能介绍、操作步骤、FAQ
+- **变更日志**: 版本号、变更内容、影响范围""",
+        "output_format": "",
+        "examples": [],
+        "constraints": [
+            "标题层级不超过 4 级",
+            "代码示例必须可运行",
+            "关键术语首次出现时给出解释",
+        ],
+        "recommended_tools": ["read_file", "search_text", "get_file_tree"],
+        "tags": ["文档", "写作", "技术"],
     },
 ]
 
-
-async def seed_skills():
-    """初始化内置技能种子数据"""
-    async with async_session_maker() as db:
-        for skill_data in BUILTIN_SKILLS:
-            result = await db.execute(
-                select(Skill).where(Skill.name == skill_data["name"])
-            )
-            existing = result.scalar_one_or_none()
-            if not existing:
-                skill = Skill(**skill_data)
-                db.add(skill)
-                logger.info(f"✅ 创建内置技能: {skill_data['name']}")
-            else:
-                # 更新内置技能的 prompt (保持最新)
-                for key in ["role_prompt", "strategy_prompt", "tool_strategy_prompt",
-                            "finalization_prompt", "output_generation_prompt",
-                            "stages", "ui_labels", "icon", "description"]:
-                    if key in skill_data:
-                        setattr(existing, key, skill_data[key])
-                logger.info(f"🔄 更新内置技能: {skill_data['name']}")
-        await db.commit()
+# 技能分类定义
+SKILL_CATEGORIES = {
+    "general": {"name": "通用", "icon": "⚡"},
+    "analysis": {"name": "分析", "icon": "🔎"},
+    "coding": {"name": "编码", "icon": "💻"},
+    "writing": {"name": "写作", "icon": "📝"},
+    "review": {"name": "审查", "icon": "🔍"},
+    "testing": {"name": "测试", "icon": "🧪"},
+}
 
 
 # ==================== Helper ====================
 
-def _skill_to_response(skill: Skill) -> SkillResponse:
-    return SkillResponse(
-        id=skill.id,
-        name=skill.name,
-        icon=skill.icon or "🎯",
-        description=skill.description or "",
-        is_builtin=skill.is_builtin or False,
-        is_enabled=skill.is_enabled if skill.is_enabled is not None else True,
-        role_prompt=skill.role_prompt or "",
-        strategy_prompt=skill.strategy_prompt or "",
-        tool_strategy_prompt=skill.tool_strategy_prompt or "",
-        finalization_prompt=skill.finalization_prompt or "",
-        output_generation_prompt=skill.output_generation_prompt or "",
-        stages=skill.stages or [],
-        ui_labels=skill.ui_labels or {},
-        sort_order=skill.sort_order or 0,
-        created_at=skill.created_at.isoformat() + "Z" if skill.created_at else "",
-        updated_at=skill.updated_at.isoformat() + "Z" if skill.updated_at else "",
-    )
+def _skill_to_response(skill: Skill) -> dict:
+    return {
+        "id": skill.id,
+        "name": skill.name,
+        "icon": skill.icon,
+        "description": skill.description,
+        "category": skill.category or "general",
+        "is_builtin": skill.is_builtin,
+        "is_enabled": skill.is_enabled,
+        "instruction_prompt": skill.instruction_prompt or "",
+        "output_format": skill.output_format or "",
+        "examples": skill.examples or [],
+        "constraints": skill.constraints or [],
+        "recommended_tools": skill.recommended_tools or [],
+        "tags": skill.tags or [],
+        "sort_order": skill.sort_order or 0,
+        "created_at": skill.created_at.isoformat() if skill.created_at else "",
+        "updated_at": skill.updated_at.isoformat() if skill.updated_at else "",
+    }
 
 
-# ==================== Routes ====================
+# ==================== Endpoints ====================
 
 @router.get("", response_model=List[SkillResponse])
 async def list_skills(
     enabled_only: bool = False,
+    category: str = None,
     db: AsyncSession = Depends(get_db),
 ):
     """列出所有技能"""
-    query = select(Skill).order_by(Skill.sort_order, Skill.id)
+    q = select(Skill).order_by(Skill.sort_order, Skill.id)
     if enabled_only:
-        query = query.where(Skill.is_enabled.is_(True))
-    result = await db.execute(query)
+        q = q.where(Skill.is_enabled.is_(True))
+    if category:
+        q = q.where(Skill.category == category)
+    result = await db.execute(q)
     skills = result.scalars().all()
     return [_skill_to_response(s) for s in skills]
 
 
+@router.get("/categories")
+async def list_categories():
+    """获取技能分类定义"""
+    return SKILL_CATEGORIES
+
+
 @router.get("/{skill_id}", response_model=SkillResponse)
 async def get_skill(skill_id: int, db: AsyncSession = Depends(get_db)):
-    """获取技能详情"""
     result = await db.execute(select(Skill).where(Skill.id == skill_id))
     skill = result.scalar_one_or_none()
     if not skill:
@@ -448,27 +436,10 @@ async def get_skill(skill_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("", response_model=SkillResponse, status_code=status.HTTP_201_CREATED)
 async def create_skill(data: SkillCreate, db: AsyncSession = Depends(get_db)):
-    """创建自定义技能"""
-    # 检查名称唯一
     existing = await db.execute(select(Skill).where(Skill.name == data.name))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail=f"技能名「{data.name}」已存在")
-
-    skill = Skill(
-        name=data.name,
-        icon=data.icon,
-        description=data.description,
-        is_builtin=False,
-        is_enabled=True,
-        role_prompt=data.role_prompt,
-        strategy_prompt=data.strategy_prompt,
-        tool_strategy_prompt=data.tool_strategy_prompt,
-        finalization_prompt=data.finalization_prompt,
-        output_generation_prompt=data.output_generation_prompt,
-        stages=[s.model_dump() for s in data.stages],
-        ui_labels=data.ui_labels,
-        sort_order=data.sort_order,
-    )
+        raise HTTPException(status_code=409, detail=f"技能名称 '{data.name}' 已存在")
+    skill = Skill(**data.model_dump())
     db.add(skill)
     await db.flush()
     await db.refresh(skill)
@@ -477,27 +448,18 @@ async def create_skill(data: SkillCreate, db: AsyncSession = Depends(get_db)):
 
 @router.put("/{skill_id}", response_model=SkillResponse)
 async def update_skill(skill_id: int, data: SkillUpdate, db: AsyncSession = Depends(get_db)):
-    """更新技能配置"""
     result = await db.execute(select(Skill).where(Skill.id == skill_id))
     skill = result.scalar_one_or_none()
     if not skill:
         raise HTTPException(status_code=404, detail="技能不存在")
-
-    update_data = data.model_dump(exclude_unset=True)
-
-    # 检查名称唯一
-    if "name" in update_data and update_data["name"] != skill.name:
-        existing = await db.execute(select(Skill).where(Skill.name == update_data["name"]))
-        if existing.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail=f"技能名「{update_data['name']}」已存在")
-
-    # stages 需要转成 dict list
-    if "stages" in update_data and update_data["stages"] is not None:
-        update_data["stages"] = [s.model_dump() if hasattr(s, 'model_dump') else s for s in update_data["stages"]]
-
-    for key, value in update_data.items():
-        setattr(skill, key, value)
-
+    update_dict = data.model_dump(exclude_unset=True)
+    # 名称唯一性检查
+    if "name" in update_dict and update_dict["name"] != skill.name:
+        dup = await db.execute(select(Skill).where(Skill.name == update_dict["name"]))
+        if dup.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail=f"技能名称 '{update_dict['name']}' 已存在")
+    for k, v in update_dict.items():
+        setattr(skill, k, v)
     await db.flush()
     await db.refresh(skill)
     return _skill_to_response(skill)
@@ -505,7 +467,6 @@ async def update_skill(skill_id: int, data: SkillUpdate, db: AsyncSession = Depe
 
 @router.delete("/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_skill(skill_id: int, db: AsyncSession = Depends(get_db)):
-    """删除技能（内置技能不可删除）"""
     result = await db.execute(select(Skill).where(Skill.id == skill_id))
     skill = result.scalar_one_or_none()
     if not skill:
@@ -517,39 +478,59 @@ async def delete_skill(skill_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/{skill_id}/duplicate", response_model=SkillResponse, status_code=status.HTTP_201_CREATED)
 async def duplicate_skill(skill_id: int, db: AsyncSession = Depends(get_db)):
-    """复制技能"""
     result = await db.execute(select(Skill).where(Skill.id == skill_id))
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="技能不存在")
-
-    # 生成不重复的名称
+    # 生成不重复名称
     base_name = f"{source.name} (副本)"
-    name = base_name
-    counter = 2
+    suffix = 1
     while True:
-        existing = await db.execute(select(Skill).where(Skill.name == name))
-        if not existing.scalar_one_or_none():
+        name = base_name if suffix == 1 else f"{base_name} {suffix}"
+        dup = await db.execute(select(Skill).where(Skill.name == name))
+        if not dup.scalar_one_or_none():
             break
-        name = f"{base_name} {counter}"
-        counter += 1
-
+        suffix += 1
     new_skill = Skill(
         name=name,
         icon=source.icon,
         description=source.description,
+        category=source.category,
         is_builtin=False,
-        is_enabled=True,
-        role_prompt=source.role_prompt,
-        strategy_prompt=source.strategy_prompt,
-        tool_strategy_prompt=source.tool_strategy_prompt,
-        finalization_prompt=source.finalization_prompt,
-        output_generation_prompt=source.output_generation_prompt,
-        stages=source.stages,
-        ui_labels=source.ui_labels,
+        is_enabled=source.is_enabled,
+        instruction_prompt=source.instruction_prompt,
+        output_format=source.output_format,
+        examples=source.examples or [],
+        constraints=source.constraints or [],
+        recommended_tools=source.recommended_tools or [],
+        tags=source.tags or [],
         sort_order=source.sort_order + 1,
     )
     db.add(new_skill)
     await db.flush()
     await db.refresh(new_skill)
     return _skill_to_response(new_skill)
+
+
+# ==================== Seed ====================
+
+async def seed_skills():
+    """初始化内置技能 (幂等)"""
+    async with async_session_maker() as db:
+        for skill_data in BUILTIN_SKILLS:
+            result = await db.execute(
+                select(Skill).where(Skill.name == skill_data["name"])
+            )
+            existing = result.scalar_one_or_none()
+            if not existing:
+                skill = Skill(**skill_data)
+                db.add(skill)
+                logger.info(f"✅ 创建内置技能: {skill_data['name']}")
+            else:
+                # 更新内置技能的部分字段 (保留用户修改的 is_enabled, description)
+                for key in ("instruction_prompt", "output_format", "examples",
+                            "constraints", "recommended_tools", "tags",
+                            "icon", "category", "sort_order"):
+                    if key in skill_data:
+                        setattr(existing, key, skill_data[key])
+        await db.commit()
