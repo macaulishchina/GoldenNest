@@ -294,4 +294,37 @@ function onClick() { emit('click') }
   color: rgba(255, 255, 255, 0.15);
   font-size: 10px;
 }
+
+/* ── 移动端适配 ── */
+@media (max-width: 767px) {
+  .body {
+    padding: 8px 10px;
+  }
+  .title-row {
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .title {
+    font-size: 13px;
+    flex: 1;
+    min-width: 0;
+  }
+  .meta-right {
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .meta-text {
+    font-size: 11px;
+  }
+  .desc {
+    font-size: 12px;
+  }
+  .people-row {
+    gap: 4px;
+  }
+  .person-badge {
+    font-size: 10px;
+    padding: 1px 4px 1px 2px;
+  }
+}
 </style>

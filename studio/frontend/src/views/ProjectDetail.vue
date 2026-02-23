@@ -1,14 +1,14 @@
 <template>
   <div v-if="project">
     <!-- 顶部: 紧凑信息条 + 内联步骤条 -->
-    <div class="project-header-bar">
+    <div class="project-header-bar" :class="{ 'project-header-bar-mobile': isMobile }">
       <div class="project-header-left">
         <n-button text size="small" @click="$router.push('/projects')" style="padding: 0; font-size: 12px">← 返回</n-button>
-        <n-text strong style="font-size: 14px; white-space: nowrap">{{ project.title }}</n-text>
+        <n-text strong :style="{ fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? '120px' : 'none' }">{{ project.title }}</n-text>
         <n-tag :type="statusType(project.status)" size="tiny" round>{{ statusLabel(project.status) }}</n-tag>
         <n-tag v-if="project.is_archived" type="default" size="tiny" :bordered="false" round>已归档</n-tag>
       </div>
-      <div class="project-header-steps">
+      <div v-if="!isMobile" class="project-header-steps">
         <div v-for="(step, i) in stepLabels" :key="i"
              class="step-dot-item"
              :class="{ 'step-done': i + 1 < currentStep || (isAtTerminalStage && i + 1 === currentStep), 'step-current': i + 1 === currentStep && !isAtTerminalStage }">
@@ -16,7 +16,7 @@
           <span class="step-text">{{ step }}</span>
         </div>
       </div>
-      <div class="project-header-right">
+      <div class="project-header-right" :class="{ 'project-header-right-mobile': isMobile }">
         <n-button
           v-if="discussModule"
           size="tiny"
@@ -25,7 +25,7 @@
           @click="showPlanPanel = !showPlanPanel"
           style="font-size: 11px"
         >
-          {{ getModuleLabel(discussModule, 'plan_tab_label', outputTabLabel) }}
+          {{ isMobile ? '📋' : getModuleLabel(discussModule, 'plan_tab_label', outputTabLabel) }}
         </n-button>
         <n-button
           v-if="reviewModule && activeTab === reviewModule.tab_key"
@@ -35,13 +35,22 @@
           @click="showReviewPanel = !showReviewPanel"
           style="font-size: 11px"
         >
-          {{ getModuleLabel(reviewModule, 'plan_output_noun', reviewOutputNoun) }}
+          {{ isMobile ? '📋' : getModuleLabel(reviewModule, 'plan_output_noun', reviewOutputNoun) }}
         </n-button>
-        <n-button size="tiny" quaternary :type="project.is_archived ? 'warning' : 'default'" @click="toggleArchive">
+        <n-button v-if="!isMobile" size="tiny" quaternary :type="project.is_archived ? 'warning' : 'default'" @click="toggleArchive">
           {{ project.is_archived ? '取消归档' : '归档项目' }}
         </n-button>
-        <n-tag v-if="project.github_issue_number" size="tiny" :bordered="false">Issue #{{ project.github_issue_number }}</n-tag>
-        <n-tag v-if="project.github_pr_number" size="tiny" :bordered="false" type="info">PR #{{ project.github_pr_number }}</n-tag>
+        <n-tag v-if="project.github_issue_number && !isMobile" size="tiny" :bordered="false">Issue #{{ project.github_issue_number }}</n-tag>
+        <n-tag v-if="project.github_pr_number && !isMobile" size="tiny" :bordered="false" type="info">PR #{{ project.github_pr_number }}</n-tag>
+      </div>
+    </div>
+
+    <!-- 移动端: 步骤进度条 -->
+    <div v-if="isMobile" class="mobile-step-bar">
+      <div v-for="(step, i) in stepLabels" :key="i"
+           class="mobile-step-dot"
+           :class="{ 'step-done': i + 1 < currentStep || (isAtTerminalStage && i + 1 === currentStep), 'step-current': i + 1 === currentStep && !isAtTerminalStage }">
+        <span class="step-dot">{{ (i + 1 < currentStep || (isAtTerminalStage && i + 1 === currentStep)) ? '✓' : i + 1 }}</span>
       </div>
     </div>
 
@@ -63,11 +72,11 @@
           <n-alert v-if="isStageReadonly('discussing')" type="info" style="margin-bottom: 8px" :bordered="false">
             讨论阶段已完成，当前为只读模式。如需修改，请在审查阶段点击「继续迭代」。
           </n-alert>
-          <div class="discuss-layout">
+          <div class="discuss-layout" :class="{ 'discuss-layout-mobile': isMobile }">
             <div class="discuss-chat">
               <ChatPanel :key="'discuss-' + project.id" :project="project" :readonly="isStageReadonly('discussing')" @plan-finalized="onPlanFinalized" />
             </div>
-            <div v-if="showPlanPanel" class="discuss-plan">
+            <div v-if="showPlanPanel && !isMobile" class="discuss-plan">
               <div class="plan-panel-header">
                 <n-button size="tiny" quaternary circle @click="showPlanPanel = false" style="flex-shrink: 0">✕</n-button>
               </div>
@@ -75,6 +84,12 @@
                 <PlanEditor :project="project" :output-noun="getModuleLabel(mod, 'plan_output_noun', outputNoun)" :finalize-action="getModuleLabel(mod, 'finalize_action', finalizeAction)" @updated="refreshProject" />
               </div>
             </div>
+            <!-- 移动端: 设计稿面板全屏覆盖 -->
+            <n-drawer v-if="isMobile" v-model:show="showPlanPanel" placement="bottom" :height="'85vh'" :native-scrollbar="false">
+              <n-drawer-content :title="getModuleLabel(mod, 'plan_output_noun', outputNoun)" closable>
+                <PlanEditor :project="project" :output-noun="getModuleLabel(mod, 'plan_output_noun', outputNoun)" :finalize-action="getModuleLabel(mod, 'finalize_action', finalizeAction)" @updated="refreshProject" />
+              </n-drawer-content>
+            </n-drawer>
           </div>
         </n-tab-pane>
 
@@ -111,11 +126,11 @@
                 🔄 继续迭代
               </n-button>
             </div>
-            <div class="discuss-layout">
+            <div class="discuss-layout" :class="{ 'discuss-layout-mobile': isMobile }">
               <div class="discuss-chat">
                 <ChatPanel :key="'review-' + project.id" :project="project" @plan-finalized="onReviewFinalized" />
               </div>
-              <div v-if="showReviewPanel" class="discuss-plan">
+              <div v-if="showReviewPanel && !isMobile" class="discuss-plan">
                 <div class="plan-panel-header">
                   <n-button size="tiny" quaternary circle @click="showReviewPanel = false" style="flex-shrink: 0">✕</n-button>
                 </div>
@@ -123,6 +138,12 @@
                   <PlanEditor :project="project" :output-noun="getModuleLabel(mod, 'plan_output_noun', reviewOutputNoun)" :finalize-action="getModuleLabel(mod, 'finalize_action', reviewFinalizeAction)" @updated="refreshProject" />
                 </div>
               </div>
+              <!-- 移动端: 审查报告面板全屏覆盖 -->
+              <n-drawer v-if="isMobile" v-model:show="showReviewPanel" placement="bottom" :height="'85vh'" :native-scrollbar="false">
+                <n-drawer-content :title="getModuleLabel(mod, 'plan_output_noun', reviewOutputNoun)" closable>
+                  <PlanEditor :project="project" :output-noun="getModuleLabel(mod, 'plan_output_noun', reviewOutputNoun)" :finalize-action="getModuleLabel(mod, 'finalize_action', reviewFinalizeAction)" @updated="refreshProject" />
+                </n-drawer-content>
+              </n-drawer>
             </div>
           </div>
         </n-tab-pane>
@@ -163,7 +184,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { useProjectStore } from '@/stores/project'
@@ -177,6 +198,11 @@ import SnapshotPanel from '@/components/SnapshotPanel.vue'
 const route = useRoute()
 const store = useProjectStore()
 const message = useMessage()
+
+// ── 响应式检测 ──────────────────────────────────────────
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
+const isMobile = computed(() => windowWidth.value < 768)
+function _onResize() { windowWidth.value = window.innerWidth }
 const _storedTab = sessionStorage.getItem('project_detail_tab')
 const activeTab = ref(_storedTab || 'discuss')
 watch(activeTab, (v) => sessionStorage.setItem('project_detail_tab', v))
@@ -480,8 +506,13 @@ async function initAfterLoad() {
 }
 
 onMounted(async () => {
+  window.addEventListener('resize', _onResize)
   await refreshProject()
   initAfterLoad()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', _onResize)
 })
 watch(() => route.params.id, async () => {
   reviewPrepared.value = false
@@ -501,6 +532,14 @@ watch(() => route.params.id, async () => {
   margin-bottom: 6px;
   background: #16213e;
   border-radius: 8px;
+  flex-wrap: nowrap;
+  min-height: 36px;
+}
+.project-header-bar-mobile {
+  gap: 6px;
+  padding: 6px 8px;
+  flex-wrap: wrap;
+}
 
 /* 工作区信息条 */
 .workspace-info-bar {
@@ -514,9 +553,6 @@ watch(() => route.params.id, async () => {
   border-radius: 6px;
   flex-wrap: wrap;
 }
-  flex-wrap: nowrap;
-  min-height: 36px;
-}
 .project-header-left {
   display: flex;
   align-items: center;
@@ -529,6 +565,10 @@ watch(() => route.params.id, async () => {
   gap: 6px;
   flex-shrink: 0;
   margin-left: auto;
+}
+.project-header-right-mobile {
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
 /* 内联迷你步骤条 */
@@ -592,6 +632,11 @@ watch(() => route.params.id, async () => {
   min-height: 400px;
   overflow: hidden;
 }
+.discuss-layout-mobile {
+  height: calc(100vh - 180px);
+  height: calc(100dvh - 180px);
+  min-height: 300px;
+}
 .discuss-chat {
   flex: 1;
   min-width: 0;
@@ -607,6 +652,25 @@ watch(() => route.params.id, async () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* 移动端步骤条 */
+.mobile-step-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+}
+.mobile-step-dot {
+  opacity: 0.35;
+}
+.mobile-step-dot.step-done {
+  opacity: 0.6;
+}
+.mobile-step-dot.step-current {
+  opacity: 1;
 }
 .plan-panel-header {
   display: flex;

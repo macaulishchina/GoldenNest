@@ -77,17 +77,17 @@
       <n-table :bordered="false" size="small" style="margin-top: 4px">
         <thead>
           <tr>
-            <th style="width: 160px">分组</th>
+            <th class="sys-col-group">分组</th>
             <th>端点</th>
-            <th style="width: 70px">认证</th>
-            <th style="width: 90px">状态</th>
-            <th style="width: 70px">延迟</th>
-            <th style="width: 56px">操作</th>
+            <th class="sys-col-auth">认证</th>
+            <th class="sys-col-status">状态</th>
+            <th class="sys-col-latency">延迟</th>
+            <th class="sys-col-action">操作</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="ep in probeEndpoints" :key="ep.id">
-            <td style="font-size: 12px; color: #aaa">{{ ep.group }}</td>
+            <td class="sys-col-group" style="font-size: 12px; color: #aaa">{{ ep.group }}</td>
             <td>
               <div>
                 <n-text style="font-size: 12px; font-family: monospace">{{ ep.name }}</n-text>
@@ -218,3 +218,19 @@ onMounted(() => {
   fetchProbeEndpoints()
 })
 </script>
+
+<style scoped>
+.sys-col-group { width: 160px; }
+.sys-col-auth { width: 70px; }
+.sys-col-status { width: 90px; }
+.sys-col-latency { width: 70px; }
+.sys-col-action { width: 56px; }
+
+@media (max-width: 768px) {
+  .sys-col-group { display: none; }
+  .sys-col-latency { width: 50px; }
+  .sys-col-auth { width: 50px; }
+  .sys-col-status { width: 60px; }
+  .sys-col-action { width: 40px; }
+}
+</style>

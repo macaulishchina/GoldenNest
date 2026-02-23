@@ -8,20 +8,20 @@
       </n-button>
     </n-space>
 
-    <n-space style="margin-bottom: 16px">
+    <n-space style="margin-bottom: 16px" :wrap="true" :size="isMobile ? 8 : 12">
       <n-select
         v-model:value="statusFilter"
         :options="filterOptions"
         placeholder="按状态筛选"
         clearable
-        style="width: 180px"
+        :style="{ width: isMobile ? '140px' : '180px' }"
       />
       <n-select
         v-model:value="roleFilter"
         :options="roleFilterOptions"
         placeholder="按角色筛选"
         clearable
-        style="width: 180px"
+        :style="{ width: isMobile ? '140px' : '180px' }"
       />
       <n-switch v-model:value="showArchived" />
       <n-text depth="3" style="font-size: 12px">显示已归档</n-text>
@@ -66,6 +66,8 @@ import LogItem from '@/components/LogItem.vue'
 const store = useProjectStore()
 const roleStore = useRoleStore()
 const message = useMessage()
+
+const isMobile = computed(() => typeof window !== 'undefined' && window.innerWidth < 768)
 const statusFilter = ref<string | null>(null)
 const roleFilter = ref<number | null>(null)
 const showArchived = ref(false)
@@ -131,5 +133,13 @@ watch(showArchived, (val) => {
   align-items: center;
   pointer-events: auto;
   z-index: 1;
+}
+@media (max-width: 767px) {
+  .item-actions {
+    position: static;
+    transform: none;
+    padding: 4px 10px 8px;
+    justify-content: flex-end;
+  }
 }
 </style>

@@ -3,20 +3,20 @@
     <n-space vertical :size="24">
       <!-- 欢迎区 -->
       <n-card style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)">
-        <n-space justify="space-between" align="center">
+        <div class="welcome-area">
           <div>
-            <n-h2 style="margin: 0; color: #e94560">🤖 AI设计院</n-h2>
-            <n-text depth="3">AI 驱动的需求迭代平台 — 让想法变成现实</n-text>
+            <n-h2 :style="{ margin: 0, color: '#e94560', fontSize: isMobile ? '18px' : undefined }">🤖 AI设计院</n-h2>
+            <n-text depth="3" :style="{ fontSize: isMobile ? '12px' : undefined }">AI 驱动的需求迭代平台 — 让想法变成现实</n-text>
           </div>
-          <n-button type="primary" @click="showCreate = true" size="large">
+          <n-button type="primary" @click="showCreate = true" :size="isMobile ? 'medium' : 'large'">
             <template #icon><n-icon :component="AddOutline" /></template>
             新建项目
           </n-button>
-        </n-space>
+        </div>
       </n-card>
 
       <!-- 统计卡片 -->
-      <n-grid :cols="4" :x-gap="16" :y-gap="16">
+      <n-grid :cols="isMobile ? 2 : 4" :x-gap="isMobile ? 8 : 16" :y-gap="isMobile ? 8 : 16">
         <n-gi>
           <n-card size="small" style="background: #16213e">
             <n-statistic label="进行中" :value="activeCount" />
@@ -140,10 +140,10 @@
     </n-space>
 
     <!-- 新建项目对话框 -->
-    <n-modal v-model:show="showCreate" preset="dialog" :title="createDialogTitle" style="width: 600px">
+    <n-modal v-model:show="showCreate" preset="dialog" :title="createDialogTitle" style="width: 600px; max-width: 95vw">
       <n-form :model="newProject" label-placement="left" label-width="80">
         <n-form-item label="类型">
-          <n-space :size="8">
+          <div class="type-card-grid">
             <div
               v-for="pt in projectTypes"
               :key="pt.key"
@@ -154,7 +154,7 @@
               <span class="type-icon">{{ pt.icon || '📋' }}</span>
               <span class="type-name">{{ pt.name }}</span>
             </div>
-          </n-space>
+          </div>
         </n-form-item>
         <n-form-item :label="selectedTypeLabels.project_noun + '标题'">
           <n-input v-model:value="newProject.title" :placeholder="selectedTypeUiLabels.create_placeholder || ('简明描述' + selectedTypeLabels.project_noun + '目标')" />
@@ -190,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { AddOutline } from '@vicons/ionicons5'
@@ -201,6 +201,11 @@ import { snapshotApi, modelApi, projectApi } from '@/api'
 import { getProviderIcon } from '@/utils/providerIcons'
 
 const router = useRouter()
+
+// ── 响应式检测 ──────────────────────────────────────────
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
+const isMobile = computed(() => windowWidth.value < 768)
+function _onResize() { windowWidth.value = window.innerWidth }
 const message = useMessage()
 const store = useProjectStore()
 const studioConfig = useStudioConfigStore()
@@ -493,6 +498,7 @@ async function handleCreate() {
 }
 
 onMounted(async () => {
+  window.addEventListener('resize', _onResize)
   store.fetchProjects()
   try {
     const { data } = await projectApi.listTypes()
@@ -507,9 +513,26 @@ onMounted(async () => {
     models.value = data
   } catch {}
 })
+
+onUnmounted(() => {
+  window.removeEventListener('resize', _onResize)
+})
 </script>
 
 <style scoped>
+.welcome-area {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+@media (max-width: 767px) {
+  .welcome-area {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+}
 .type-card {
   display: flex; align-items: center; gap: 6px;
   padding: 6px 14px; border-radius: 8px;
@@ -520,6 +543,11 @@ onMounted(async () => {
 .type-card-active { border-color: #63e2b7; background: rgba(99,226,183,.12); }
 .type-icon { font-size: 18px; }
 .type-name { font-size: 13px; }
+.type-card-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
 /* ── 过滤器区域 ──────────────────── */
 .filter-section {
@@ -530,8 +558,26 @@ onMounted(async () => {
 
 .filter-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
+}
+@media (max-width: 767px) {
+  .filter-row {
+    gap: 6px;
+  }
+  .filter-chip {
+    padding: 3px 8px;
+    font-size: 12px;
+  }
+  .filter-chip-sm {
+    padding: 2px 6px;
+    font-size: 11px;
+  }
+}
+@media (max-width: 767px) {
+  .tag-filter-bar {
+    gap: 4px;
+  }
 }
 
 .filter-label {

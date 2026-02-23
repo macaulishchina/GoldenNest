@@ -59,24 +59,24 @@
         <n-input
           v-model:value="capSearch"
           placeholder="搜索模型名..."
-          size="small" style="width: 160px" clearable
+          size="small" :style="{ width: isMobile ? '100%' : '160px' }" clearable
         />
         <n-select
           v-model:value="capSourceFilter"
           :options="sourceFilterOptions"
           :render-label="renderSourceLabel"
-          size="small" style="width: 160px" placeholder="来源"
+          size="small" :style="{ width: isMobile ? '47%' : '160px' }" placeholder="来源"
         />
         <n-select
           v-model:value="capCompanyFilter"
           :options="companyFilterOptions"
           :render-label="renderCompanyLabel"
-          size="small" style="width: 140px" placeholder="厂商"
+          size="small" :style="{ width: isMobile ? '47%' : '140px' }" placeholder="厂商"
         />
         <n-select
           v-model:value="capPricingFilter"
           :options="pricingFilterOptions"
-          size="small" style="width: 130px" placeholder="定价"
+          size="small" :style="{ width: isMobile ? '47%' : '130px' }" placeholder="定价"
         />
         <n-button size="small" @click="fetchMergedCapabilities" :loading="loadingMerged">
           🔄 刷新
@@ -101,7 +101,7 @@
     </n-card>
 
     <!-- 定价变化确认对话框 -->
-    <n-modal v-model:show="showPricingDiffModal" preset="card" title="📊 定价变化确认" style="width: 850px">
+    <n-modal v-model:show="showPricingDiffModal" preset="card" title="📊 定价变化确认" style="width: 850px; max-width: 95vw">
       <n-alert v-if="pricingDiff.length === 0" type="success" :bordered="false">
         ✅ 定价已是最新，与 GitHub 官方文档一致，无需更新。
       </n-alert>
@@ -127,7 +127,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, h, onMounted } from 'vue'
+import { ref, computed, h, onMounted, onUnmounted } from 'vue'
 import { useMessage, NInputNumber, NTag, NText, NButton, NSwitch, NSpace, NTooltip } from 'naive-ui'
 import { modelApi, modelConfigApi } from '@/api'
 import { useStudioConfigStore } from '@/stores/studioConfig'
@@ -135,6 +135,12 @@ import { getProviderIcon } from '@/utils/providerIcons'
 
 const message = useMessage()
 const studioConfig = useStudioConfigStore()
+
+const windowWidth = ref(window.innerWidth)
+const isMobile = computed(() => windowWidth.value < 768)
+function onResize() { windowWidth.value = window.innerWidth }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
 
 // ==================== 编辑模式 ====================
 const editMode = ref(false)

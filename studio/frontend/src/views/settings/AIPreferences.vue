@@ -37,7 +37,7 @@
         <n-text depth="3" style="font-size: 11px">
           工具轮次 = AI 可查看代码的次数。免费模型多次调用不影响额度，付费模型每次都消耗高级请求。
         </n-text>
-        <n-descriptions :column="2" label-placement="left" bordered size="small">
+        <n-descriptions :column="isMobile ? 1 : 2" label-placement="left" bordered size="small">
           <n-descriptions-item label="免费模型工具轮次">
             <n-input-number
               v-model:value="studioConfig.freeToolRounds"
@@ -101,10 +101,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useStudioConfigStore } from '@/stores/studioConfig'
 
 const studioConfig = useStudioConfigStore()
+
+const windowWidth = ref(window.innerWidth)
+const isMobile = computed(() => windowWidth.value < 768)
+function onResize() { windowWidth.value = window.innerWidth }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
 
 const blacklistInput = ref('')
 function addBlacklist() {

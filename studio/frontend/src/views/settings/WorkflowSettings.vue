@@ -6,7 +6,7 @@
       功能模块是工作流的构建块 — 每个模块对应一种面板组件（AI 对话、代码实施等）。内置模块不可删除。
     </n-text>
     <n-spin :show="store.loading">
-      <n-grid :cols="2" :x-gap="12" :y-gap="12" v-if="store.modules.length">
+      <n-grid :cols="isMobile ? 1 : 2" :x-gap="12" :y-gap="12" v-if="store.modules.length">
         <n-gi v-for="mod in store.modules" :key="mod.id">
           <n-card size="small" style="background: #1a1a2e" hoverable>
             <n-space align="center" :size="10">
@@ -147,7 +147,7 @@
     </n-spin>
 
     <!-- ========== 模块编辑弹窗 ========== -->
-    <n-modal v-model:show="showModuleModal" preset="card" :title="moduleForm.id ? '编辑模块' : '新建模块'" style="width: 520px" :bordered="false">
+    <n-modal v-model:show="showModuleModal" preset="card" :title="moduleForm.id ? '编辑模块' : '新建模块'" style="width: 520px; max-width: 95vw" :bordered="false">
       <n-form :model="moduleForm" label-placement="left" label-width="80" size="small">
         <n-form-item label="标识名">
           <n-input v-model:value="moduleForm.name" :disabled="!!moduleForm.is_builtin" placeholder="如 ai_chat" />
@@ -178,7 +178,7 @@
     </n-modal>
 
     <!-- ========== 工作流编辑弹窗 ========== -->
-    <n-modal v-model:show="showWorkflowModal" preset="card" :title="wfForm.id ? '编辑工作流' : '新建工作流'" style="width: 720px; max-height: 85vh" :bordered="false">
+    <n-modal v-model:show="showWorkflowModal" preset="card" :title="wfForm.id ? '编辑工作流' : '新建工作流'" style="width: 720px; max-width: 95vw; max-height: 85vh" :bordered="false">
       <n-tabs type="segment" size="small" animated>
         <!-- 基本信息 -->
         <n-tab-pane name="basic" tab="📝 基本信息">
@@ -285,7 +285,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { NIcon } from 'naive-ui'
 import { AddOutline, CreateOutline, CopyOutline, TrashOutline } from '@vicons/ionicons5'
@@ -293,6 +293,12 @@ import { useWorkflowStore, type WorkflowModule, type Workflow, type WorkflowModu
 
 const store = useWorkflowStore()
 const message = useMessage()
+
+const windowWidth = ref(window.innerWidth)
+const isMobile = computed(() => windowWidth.value < 768)
+function onResize() { windowWidth.value = window.innerWidth }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
 const saving = ref(false)
 
 // -------- 模块编辑 --------

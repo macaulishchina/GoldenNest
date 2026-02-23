@@ -44,18 +44,18 @@
         <n-empty :description="`还没有${props.outputNoun || '设计稿'}，请在讨论区完成讨论后点击「${props.finalizeAction || '敲定方案'}」`" />
       </n-card>
 
-      <!-- 编辑模式: 左右分栏 (编辑 + 实时预览) -->
-      <div v-else-if="editing" style="display: flex; gap: 12px; height: 100%;">
+      <!-- 编辑模式: 编辑 + 实时预览 -->
+      <div v-else-if="editing" class="plan-edit-layout">
         <div style="flex: 1; min-width: 0;">
           <n-input
             v-model:value="editContent"
             type="textarea"
-            :autosize="{ minRows: 20, maxRows: 60 }"
+            :autosize="{ minRows: 15, maxRows: 60 }"
             placeholder="Markdown 格式的设计稿..."
             style="font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace; font-size: 13px;"
           />
         </div>
-        <div style="flex: 1; min-width: 0; overflow-y: auto; background: #16213e; border-radius: 6px; padding: 12px;">
+        <div class="plan-edit-preview">
           <n-text depth="3" style="font-size: 11px; display: block; margin-bottom: 8px">📖 实时预览</n-text>
           <div class="plan-markdown-body" v-html="editPreview" />
         </div>
@@ -238,4 +238,28 @@ watch(() => props.project.plan_version, () => {
 .plan-markdown-body th, .plan-markdown-body td { border: 1px solid #333; padding: 6px 12px; }
 .plan-markdown-body th { background: #0d1b2a; }
 .plan-markdown-body img { max-width: 100%; border-radius: 6px; }
+
+/* PlanEditor 编辑布局 */
+.plan-edit-layout {
+  display: flex;
+  gap: 12px;
+  height: 100%;
+}
+.plan-edit-preview {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  background: #16213e;
+  border-radius: 6px;
+  padding: 12px;
+}
+@media (max-width: 767px) {
+  .plan-edit-layout {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .plan-edit-preview {
+    max-height: 300px;
+  }
+}
 </style>

@@ -1,7 +1,7 @@
 <template>
   <div>
     <!-- 部署操作 -->
-    <n-space style="margin-bottom: 16px">
+    <n-space style="margin-bottom: 16px" :wrap="true">
       <n-button type="primary" @click="handleDeploy(false)" :loading="deploying">
         🚀 Review & Deploy
       </n-button>
@@ -23,13 +23,14 @@
           background: #0a0a0a;
           color: #00ff00;
           font-family: 'Courier New', monospace;
-          font-size: 13px;
-          padding: 16px;
+          font-size: 12px;
+          padding: 12px;
           border-radius: 8px;
           max-height: 400px;
           overflow-y: auto;
           white-space: pre-wrap;
           line-height: 1.6;
+          word-break: break-all;
         "
       >{{ deployLogs }}</div>
     </n-card>

@@ -20,7 +20,7 @@
     </n-card>
 
     <!-- 统计 -->
-    <n-grid :cols="4" :x-gap="12">
+    <n-grid :cols="isMobile ? 2 : 4" :x-gap="12" :y-gap="8">
       <n-gi>
         <n-statistic label="授权规则" :value="stats.active_rules" />
       </n-gi>
@@ -152,20 +152,20 @@
     </n-tabs>
 
     <!-- 规则编辑 Modal -->
-    <n-modal v-model:show="ruleModal.show" preset="card" :title="ruleModal.mode === 'create' ? '新建授权规则' : '编辑规则'" style="max-width: 520px" :bordered="false">
+    <n-modal v-model:show="ruleModal.show" preset="card" :title="ruleModal.mode === 'create' ? '新建授权规则' : '编辑规则'" style="max-width: 520px; width: 95vw" :bordered="false">
       <n-space vertical :size="16">
         <n-form-item label="命令模式" :show-feedback="false">
           <n-input v-model:value="ruleForm.pattern" placeholder="如: npm install, git push, pip, ..." />
         </n-form-item>
 
-        <n-space :size="16">
-          <n-form-item label="匹配方式" :show-feedback="false" style="width: 150px">
+        <n-space :size="16" :wrap="true">
+          <n-form-item label="匹配方式" :show-feedback="false" :style="{ width: isMobile ? '100%' : '150px' }">
             <n-select v-model:value="ruleForm.pattern_type" :options="patternTypeOptions" size="small" />
           </n-form-item>
-          <n-form-item label="动作" :show-feedback="false" style="width: 130px">
+          <n-form-item label="动作" :show-feedback="false" :style="{ width: isMobile ? '45%' : '130px' }">
             <n-select v-model:value="ruleForm.action" :options="actionOptions" size="small" />
           </n-form-item>
-          <n-form-item label="范围" :show-feedback="false" style="width: 130px">
+          <n-form-item label="范围" :show-feedback="false" :style="{ width: isMobile ? '45%' : '130px' }">
             <n-select v-model:value="ruleForm.scope" :options="scopeOptions" size="small" />
           </n-form-item>
         </n-space>
@@ -215,12 +215,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import { commandAuthApi, projectApi } from '@/api'
 
 const message = useMessage()
 const dialog = useDialog()
+
+const windowWidth = ref(window.innerWidth)
+const isMobile = computed(() => windowWidth.value < 768)
+function onResize() { windowWidth.value = window.innerWidth }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
 
 // ---- 安全设置 ----
 const fabricationDetection = ref(false)

@@ -1,8 +1,8 @@
 <template>
   <div>
-    <n-space justify="space-between" align="center" style="margin-bottom: 16px">
+    <n-space justify="space-between" align="center" style="margin-bottom: 16px" :wrap="true">
       <n-h3 style="margin: 0">📸 快照管理</n-h3>
-      <n-button type="primary" @click="handleCreateSnapshot" :loading="creating">
+      <n-button type="primary" @click="handleCreateSnapshot" :loading="creating" size="small">
         手动创建快照
       </n-button>
     </n-space>

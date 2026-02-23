@@ -106,10 +106,10 @@
     </n-spin>
 
     <!-- 审批 / 编辑 Modal -->
-    <n-modal v-model:show="showModal" preset="card" :title="modalTitle" style="max-width: 560px" :bordered="false">
+    <n-modal v-model:show="showModal" preset="card" :title="modalTitle" style="width: 560px; max-width: 95vw" :bordered="false">
       <n-space vertical :size="16">
         <!-- 用户名 -->
-        <n-descriptions :column="2" label-placement="left" bordered size="small">
+        <n-descriptions :column="isMobile ? 1 : 2" label-placement="left" bordered size="small">
           <n-descriptions-item label="用户名">{{ editingUser?.username }}</n-descriptions-item>
           <n-descriptions-item label="昵称">
             <n-input v-model:value="editForm.nickname" size="small" placeholder="显示昵称" />
@@ -193,9 +193,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import { userApi } from '@/api'
+
+const windowWidth = ref(window.innerWidth)
+const isMobile = computed(() => windowWidth.value < 768)
+function onResize() { windowWidth.value = window.innerWidth }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
 
 interface UserInfo {
   id: number

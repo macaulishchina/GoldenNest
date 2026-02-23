@@ -197,7 +197,7 @@
     </n-card>
 
     <!-- 添加提供商弹窗 -->
-    <n-modal v-model:show="showAddModal" preset="dialog" title="添加自定义 AI 服务提供商" positive-text="添加" negative-text="取消" @positive-click="addProvider" :loading="addingProvider">
+    <n-modal v-model:show="showAddModal" preset="dialog" title="添加自定义 AI 服务提供商" positive-text="添加" negative-text="取消" @positive-click="addProvider" :loading="addingProvider" style="width: 520px; max-width: 95vw">
       <n-form :model="newProvider" label-placement="left" label-width="90">
         <n-form-item label="标识 (slug)">
           <n-input v-model:value="newProvider.slug" placeholder="英文小写, 如 siliconflow" />
@@ -218,7 +218,7 @@
     </n-modal>
 
     <!-- 模型列表弹窗 -->
-    <n-modal v-model:show="showModelsModal" preset="card" :title="`${modelsModalProvider} - 可用模型`" style="max-width: 600px">
+    <n-modal v-model:show="showModelsModal" preset="card" :title="`${modelsModalProvider} - 可用模型`" style="width: 600px; max-width: 95vw">
       <n-spin :show="fetchingModels">
         <n-alert v-if="modelsResult.message" type="info" style="margin-bottom: 8px">
           {{ modelsResult.message }}

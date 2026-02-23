@@ -12,7 +12,7 @@
     </div>
 
     <!-- 项目信息编辑弹窗 -->
-    <n-modal v-model:show="showProjectEdit" preset="card" title="编辑项目信息" style="width: 520px; max-width: 90vw" :mask-closable="true">
+    <n-modal v-model:show="showProjectEdit" preset="card" title="编辑项目信息" style="width: 520px; max-width: 95vw" :mask-closable="true">
       <n-form label-placement="top" :show-feedback="false">
         <n-form-item label="项目名称">
           <n-input v-model:value="editProjectTitle" placeholder="项目名称" />
@@ -636,7 +636,7 @@
         </n-popover>
         <!-- 上下文内容查看气泡 -->
         <n-modal v-model:show="ctxContentModal" preset="card" :title="ctxContentTitle"
-                 style="width: min(620px, 90vw); max-height: 70vh;"
+                 style="width: min(620px, 95vw); max-height: 70vh;"
                  :bordered="false" size="small"
                  :segmented="{ content: true }">
           <n-scrollbar style="max-height: calc(70vh - 80px)">
@@ -680,7 +680,7 @@
   </div>
 
   <!-- 命令审批对话框 -->
-  <n-modal v-model:show="commandApproval.show" preset="card" title="⚠️ AI 请求执行写命令" style="max-width: 540px" :mask-closable="false" :closable="false">
+  <n-modal v-model:show="commandApproval.show" preset="card" title="⚠️ AI 请求执行写命令" style="max-width: 540px; width: 95vw" :mask-closable="false" :closable="false">
     <n-alert type="warning" :bordered="false" style="margin-bottom: 12px">
       AI 正在尝试执行以下写入命令，需要您的授权才能继续。
     </n-alert>

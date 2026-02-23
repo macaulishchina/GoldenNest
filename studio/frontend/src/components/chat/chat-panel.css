@@ -699,3 +699,153 @@
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-6px); }
 }
+
+/* ============================================================
+   移动端响应式适配 (< 768px)
+   ============================================================ */
+@media (max-width: 767px) {
+  /* ── Markdown 渲染 ── */
+  .markdown-body {
+    font-size: 13px;
+    line-height: 1.5;
+    overflow-wrap: break-word;
+  }
+  .markdown-body pre {
+    padding: 8px;
+    font-size: 11px;
+  }
+  .markdown-body code {
+    font-size: 11px;
+  }
+  .markdown-body table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ── 消息卡片 ── */
+  .markdown-body img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* ── 输入区 ── */
+  .input-area {
+    padding: 4px 6px;
+    border-radius: 6px;
+  }
+  .toolbar-row {
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .model-select-group {
+    min-width: 80px;
+    flex: 1 1 auto;
+  }
+  .action-bar {
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .action-bar-stat {
+    font-size: 9px;
+  }
+
+  /* ── 项目信息栏 ── */
+  .project-info-bar {
+    padding: 3px 8px;
+  }
+  .project-info-title {
+    font-size: 11px;
+  }
+  .project-info-desc {
+    font-size: 10px;
+  }
+  .project-info-edit-icon {
+    opacity: 0.3;
+  }
+
+  /* ── 工具调用 ── */
+  .tool-inline {
+    font-size: 10px;
+    padding: 2px 4px;
+  }
+  .tool-inline-args {
+    font-size: 9px;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
+  }
+
+  /* ── ask_user 问题卡片 ── */
+  .question-card {
+    padding: 8px 10px;
+  }
+  .question-card-header {
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .question-card-hint {
+    font-size: 9px;
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+  .question-options {
+    padding-left: 8px;
+    gap: 4px;
+  }
+  .question-option-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .question-custom-input {
+    width: calc(100% - 8px);
+    margin-left: 8px;
+    font-size: 13px;
+    padding: 6px 8px;
+  }
+  .question-submit-row {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .question-summary-row {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .question-summary-q {
+    max-width: 100%;
+  }
+
+  /* ── 上下文明细 ── */
+  .ctx-breakdown {
+    min-width: 200px;
+    max-width: 280px;
+    padding: 8px 10px;
+  }
+
+  /* ── 空对话欢迎 ── */
+  .empty-chat-welcome {
+    padding: 24px 16px;
+    min-height: 200px;
+  }
+  .empty-chat-icon {
+    font-size: 40px;
+  }
+  .empty-chat-title {
+    font-size: 16px;
+  }
+  .empty-chat-desc {
+    font-size: 12px;
+    max-width: 260px;
+  }
+
+  /* ── ask_user 回答 ── */
+  .ask-user-reply-indicator {
+    padding: 3px 8px;
+    font-size: 10px;
+    gap: 4px;
+  }
+}

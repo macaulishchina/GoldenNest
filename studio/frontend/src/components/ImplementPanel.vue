@@ -3,13 +3,13 @@
     <!-- 实施控制 -->
     <n-card style="background: #16213e; margin-bottom: 16px">
       <n-space vertical :size="12">
-        <n-space align="center" :size="12">
+        <n-space align="center" :size="12" :wrap="true">
           <n-tooltip trigger="hover" placement="bottom">
             <template #trigger>
               <n-input
                 v-model:value="baseBranch"
                 size="small"
-                style="width: 200px"
+                style="width: 160px; min-width: 100px"
                 placeholder="基础分支"
               >
                 <template #prefix>🌿</template>
@@ -55,7 +55,7 @@
 
     <!-- 状态详情 -->
     <n-card v-if="implStatus" style="background: #16213e; margin-bottom: 16px">
-      <n-descriptions :column="2" label-placement="left" bordered size="small">
+      <n-descriptions :column="isMobile ? 1 : 2" label-placement="left" bordered size="small">
         <n-descriptions-item label="状态">
           <n-tag :type="implStatusType" size="small">{{ implStatusText }}</n-tag>
         </n-descriptions-item>
@@ -147,6 +147,10 @@ import type { Project } from '@/stores/project'
 const props = defineProps<{ project: Project }>()
 const emit = defineEmits(['status-changed', 'go-review'])
 const message = useMessage()
+
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
+const isMobile = computed(() => windowWidth.value < 768)
+function _onResize() { windowWidth.value = window.innerWidth }
 
 const implStatus = ref<any>(null)
 const baseBranch = ref('main')
@@ -309,6 +313,7 @@ function stopPolling() {
 }
 
 onMounted(async () => {
+  window.addEventListener('resize', _onResize)
   // 从后端获取工作区配置 (GitHub repo 等)
   try {
     const { data } = await studioAuthApi.workspaceConfig()
@@ -322,5 +327,8 @@ onMounted(async () => {
   }
 })
 
-onUnmounted(() => stopPolling())
+onUnmounted(() => {
+  window.removeEventListener('resize', _onResize)
+  stopPolling()
+})
 </script>

@@ -361,4 +361,21 @@ async function handleBatchAction(key: string) {
     display: none;
   }
 }
+
+@media (max-width: 768px) {
+  .perm-col-project {
+    flex: 0 0 100px;
+  }
+  .perm-col-toggle {
+    min-width: 40px;
+  }
+  .perm-col-auto {
+    flex: 0 0 48px;
+  }
+  .perm-grid-header,
+  .perm-grid-row {
+    padding: 6px 8px;
+    gap: 2px;
+  }
+}
 </style>
