@@ -1,3 +1,7 @@
+include:
+  # PhotoPrism 照片管理 (profile: media)
+  - path: ./external/PhotoPrism/docker-compose.yaml
+
 services:
   # ========================
   # 入口网关 (Level 1 - 超稳定, 永远不被迭代影响)
@@ -8,6 +12,7 @@ services:
       dockerfile: gateway/Dockerfile
     container_name: golden-nest-gateway
     restart: unless-stopped
+    profiles: ["core", "all"]
     ports:
       - "${HTTP_PORT:-8088}:80"
       - "${HTTPS_PORT:-8443}:443"
@@ -16,11 +21,9 @@ services:
       - studio-uploads:/data/studio-uploads:ro
     environment:
       - HTTPS_PORT=${HTTPS_PORT:-8443}
-    depends_on:
-      - frontend
-      - studio
-      - openclaw
-      - jupyter
+    # depends_on:
+      # - frontend
+      # - studio
     networks:
       - golden-nest-network
 
@@ -31,6 +34,7 @@ services:
     image: openclaw:local
     container_name: golden-nest-openclaw
     restart: unless-stopped
+    profiles: ["openclaw"]
     environment:
       - HOME=/home/node
       - TERM=xterm-256color
@@ -60,6 +64,7 @@ services:
     build: ./studio
     container_name: golden-nest-studio
     restart: unless-stopped
+    profiles: ["core", "all"]
     environment:
       # ── Git / VCS 配置 (可选) ──
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
@@ -99,6 +104,9 @@ services:
     build: ./external/Jupyter
     container_name: golden-nest-external-jupyter
     restart: unless-stopped
+    profiles: ["tools", "all"]
+    ports:
+      - "8888:8888"
     environment:
       - JUPYTER_PORT=8888
       - JUPYTER_BASE_URL=/jupyter/
@@ -121,6 +129,7 @@ services:
     build: ./backend
     container_name: golden-nest-backend
     restart: unless-stopped
+    profiles: ["core", "all"]
     environment:
       - DATABASE_URL=sqlite+aiosqlite:////data/golden_nest.db
       - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-change-me}
@@ -145,12 +154,29 @@ services:
     build: ./frontend
     container_name: golden-nest-frontend
     restart: unless-stopped
+    profiles: ["core", "all"]
     volumes:
       - ./data/uploads/site:/usr/share/nginx/pwa-icons:ro
     environment:
       - HTTPS_PORT=${HTTPS_PORT:-8443}
     depends_on:
       - backend
+    networks:
+      - golden-nest-network
+
+  # ========================
+  # Homarr Dashboard (Level 1 - 服务器仪表盘)
+  # ========================
+  homarr:
+    image: ghcr.io/homarr-labs/homarr:latest
+    container_name: golden-nest-homarr
+    restart: unless-stopped
+    profiles: ["tools", "all"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - homarr-data:/appdata
+    environment:
+      - SECRET_ENCRYPTION_KEY=${SECRET_KEY:-68d2b8fc2e05aa319a69e64bf3dbf689912662a6683d187c5148ccc629822c64}
     networks:
       - golden-nest-network
 
@@ -164,3 +190,4 @@ volumes:
   studio-uploads:
   openclaw-config:
   openclaw-workspace:
+  homarr-data:
