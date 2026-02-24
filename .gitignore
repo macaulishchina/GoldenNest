@@ -47,6 +47,8 @@ Desktop.ini
 *.db-wal
 data/
 backend/uploads/
+external/PhotoPrism/database/
+external/PhotoPrism/storage/
 
 # 日志
 *.log
