@@ -455,7 +455,7 @@ export const externalAppApi = {
 export const aiSkillApi = {
   // 列表（可按 function_key 过滤）
   list: (functionKey?: string) =>
-    api.get('/ai-skills/', { params: functionKey ? { function_key: functionKey } : {} }),
+    api.get('/ai-skills', { params: functionKey ? { function_key: functionKey } : {} }),
   // 概览（每个功能的激活技能信息）
   summary: () => api.get('/ai-skills/summary'),
   // 创建
@@ -468,7 +468,7 @@ export const aiSkillApi = {
     parameters?: string | null
     is_active?: boolean
     sort_order?: number
-  }) => api.post('/ai-skills/', data),
+  }) => api.post('/ai-skills', data),
   // 更新
   update: (id: number, data: Record<string, any>) =>
     api.put(`/ai-skills/${id}`, data),
