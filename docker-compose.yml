@@ -20,6 +20,7 @@ services:
       - frontend
       - studio
       - openclaw
+      - jupyter
     networks:
       - golden-nest-network
 
@@ -87,6 +88,28 @@ services:
       - golden-nest-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/studio-api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ========================
+  # JupyterLab (Level 1 - 数据分析平台)
+  # ========================
+  jupyter:
+    build: ./external/Jupyter
+    container_name: golden-nest-external-jupyter
+    restart: unless-stopped
+    environment:
+      - JUPYTER_PORT=8888
+      - JUPYTER_BASE_URL=/jupyter/
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN:-}
+    volumes:
+      # 主工作目录: 映射本地项目目录 (可在 .env 中覆盖)
+      - ${JUPYTER_WORKSPACE:-/home/macaulish/workspace/showmylove}:/workspace
+    networks:
+      - golden-nest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/jupyter/api/status"]
       interval: 30s
       timeout: 10s
       retries: 3

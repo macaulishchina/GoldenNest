@@ -1,0 +1,45 @@
+# ============================================================
+# JupyterLab Docker 依赖清单
+# 从本地 conda 环境 "Jupyter" 迁移 (2026-02-23)
+# ============================================================
+
+# ── JupyterLab 核心 ─────────────────────────────────────────
+jupyterlab
+
+# ── 科学计算 & 数据分析 ─────────────────────────────────────
+numpy
+pandas
+scipy
+scikit-learn
+statsmodels
+tableone
+tabulate
+patsy
+joblib
+
+# ── 数据可视化 ──────────────────────────────────────────────
+matplotlib
+seaborn
+plotly
+ipympl
+
+# ── 数据格式 / IO ──────────────────────────────────────────
+openpyxl
+beautifulsoup4
+requests
+aiofiles
+aiosqlite
+pillow
+
+# ── JupyterLab 插件 & 增强 ─────────────────────────────────
+ipywidgets
+anywidget
+jupyter-resource-usage
+jupyter-lsp
+jupyterlab-lsp>=5.0                 # v5+ 兼容 JupyterLab 4
+jupyterlab-execute-time
+jupyterlab-spreadsheet-editor
+jupyterlab-pdf-preview
+jupyterlab-diff
+jupyterlab-eventlistener
+lckr-jupyterlab-variableinspector
