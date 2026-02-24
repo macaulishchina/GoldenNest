@@ -629,6 +629,11 @@ async def ai_generate_draft(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             function_key="announcement_draft",
+            prompt_vars={
+                "style_desc": style_desc,
+                "topic": request.topic,
+                "style": request.style,
+            },
             temperature=0.8
         )
         
@@ -695,6 +700,11 @@ async def ai_improve_content(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             function_key="announcement_improve",
+            prompt_vars={
+                "improve_desc": improve_desc,
+                "content": request.content,
+                "improve_type": request.improve_type,
+            },
             temperature=0.6
         )
         

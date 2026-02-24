@@ -723,6 +723,7 @@ async def ai_analyze_portfolio(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             function_key="investment_analyze",
+            prompt_vars={"portfolio_desc": portfolio_desc},
             temperature=0.4
         )
         

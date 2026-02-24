@@ -451,6 +451,52 @@ export const externalAppApi = {
     api.put('/external-apps/reorder', { items }),
 }
 
+// AI 技能管理 API
+export const aiSkillApi = {
+  // 列表（可按 function_key 过滤）
+  list: (functionKey?: string) =>
+    api.get('/ai-skills/', { params: functionKey ? { function_key: functionKey } : {} }),
+  // 概览（每个功能的激活技能信息）
+  summary: () => api.get('/ai-skills/summary'),
+  // 创建
+  create: (data: {
+    function_key: string
+    name: string
+    description?: string
+    system_prompt: string
+    user_prompt_template?: string | null
+    parameters?: string | null
+    is_active?: boolean
+    sort_order?: number
+  }) => api.post('/ai-skills/', data),
+  // 更新
+  update: (id: number, data: Record<string, any>) =>
+    api.put(`/ai-skills/${id}`, data),
+  // 删除
+  remove: (id: number) => api.delete(`/ai-skills/${id}`),
+  // 激活
+  activate: (id: number) => api.post(`/ai-skills/${id}/activate`),
+  // 停用
+  deactivate: (id: number) => api.post(`/ai-skills/${id}/deactivate`),
+  // 复制
+  duplicate: (id: number) => api.post(`/ai-skills/${id}/duplicate`),
+  // 预览渲染
+  preview: (id: number, vars: Record<string, any>) =>
+    api.post(`/ai-skills/${id}/preview`, { prompt_vars: vars }),
+  // 附件管理
+  addAttachment: (skillId: number, data: {
+    name: string
+    file_type?: string
+    content?: string
+    inject_mode?: string
+    sort_order?: number
+  }) => api.post(`/ai-skills/${skillId}/attachments`, data),
+  updateAttachment: (attachmentId: number, data: Record<string, any>) =>
+    api.put(`/ai-skills/attachments/${attachmentId}`, data),
+  removeAttachment: (attachmentId: number) =>
+    api.delete(`/ai-skills/attachments/${attachmentId}`),
+}
+
 // 站点配置 API - 图标 / PWA / 站点名称
 export const siteConfigApi = {
   // 获取站点信息（公开）

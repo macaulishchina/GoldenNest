@@ -15,6 +15,16 @@ from typing import Dict, List, Optional
 
 
 @dataclass
+class AIFunctionInputVar:
+    """AI 功能模板变量定义"""
+    name: str           # 变量名（即 $variable 中的 variable）
+    label: str          # 显示标签（中文）
+    type: str = "str"   # 变量类型: str, int, float, text(多行), list
+    required: bool = True
+    description: str = ""
+
+
+@dataclass
 class AIFunctionDef:
     """AI 功能定义"""
     key: str                        # 唯一标识，如 "receipt_ocr"
@@ -24,6 +34,8 @@ class AIFunctionDef:
     group: str                      # 功能分组，便于 UI 展示
     default_model: str              # DashScope 推荐默认模型
     alternative_models: List[str] = field(default_factory=list)  # 备选模型列表
+    input_variables: List[AIFunctionInputVar] = field(default_factory=list)  # 模板变量定义
+    output_format: str = "text"     # 输出格式: text, json, structured_json
 
 
 # ==================== AI 功能注册表 ====================
@@ -47,6 +59,10 @@ _register(
         group="accounting",
         default_model="qwen3-vl-plus",
         alternative_models=["qwen-vl-max", "qwen3-vl-flash", "qwen-vl-plus"],
+        input_variables=[
+            AIFunctionInputVar(name="n", label="图片数量", type="int"),
+        ],
+        output_format="json",
     ),
     AIFunctionDef(
         key="voice_transcription",
@@ -56,6 +72,7 @@ _register(
         group="accounting",
         default_model="qwen3-omni-flash",
         alternative_models=["qwen-omni-turbo"],
+        output_format="text",
     ),
     AIFunctionDef(
         key="voice_parse",
@@ -65,6 +82,10 @@ _register(
         group="accounting",
         default_model="qwen-plus",
         alternative_models=["qwen-turbo", "qwen3-max", "qwen-flash"],
+        input_variables=[
+            AIFunctionInputVar(name="text", label="转录文本", type="text"),
+        ],
+        output_format="json",
     ),
     AIFunctionDef(
         key="auto_category",
@@ -74,6 +95,11 @@ _register(
         group="accounting",
         default_model="qwen-flash",
         alternative_models=["qwen-turbo", "qwen-plus"],
+        input_variables=[
+            AIFunctionInputVar(name="description", label="消费描述"),
+            AIFunctionInputVar(name="amount", label="消费金额", required=False),
+        ],
+        output_format="text",
     ),
     AIFunctionDef(
         key="duplicate_detection",
@@ -83,6 +109,15 @@ _register(
         group="accounting",
         default_model="qwen-flash",
         alternative_models=["qwen-turbo", "qwen-plus"],
+        input_variables=[
+            AIFunctionInputVar(name="new_description", label="新记录描述"),
+            AIFunctionInputVar(name="new_amount", label="新记录金额"),
+            AIFunctionInputVar(name="new_category", label="新记录分类"),
+            AIFunctionInputVar(name="existing_description", label="已有记录描述"),
+            AIFunctionInputVar(name="existing_amount", label="已有记录金额"),
+            AIFunctionInputVar(name="existing_category", label="已有记录分类"),
+        ],
+        output_format="json",
     ),
     AIFunctionDef(
         key="import_parse",
@@ -92,6 +127,11 @@ _register(
         group="accounting",
         default_model="qwen-plus",
         alternative_models=["qwen3-max", "qwen-turbo"],
+        input_variables=[
+            AIFunctionInputVar(name="content", label="文件文本内容", type="text"),
+            AIFunctionInputVar(name="source_type", label="文件来源类型"),
+        ],
+        output_format="json",
     ),
     AIFunctionDef(
         key="import_vision",
@@ -101,6 +141,10 @@ _register(
         group="accounting",
         default_model="qwen3-vl-plus",
         alternative_models=["qwen-vl-max", "qwen3-vl-flash"],
+        input_variables=[
+            AIFunctionInputVar(name="n", label="页面数量", type="int"),
+        ],
+        output_format="json",
     ),
 )
 
@@ -114,6 +158,7 @@ _register(
         group="asset",
         default_model="qwen3-vl-plus",
         alternative_models=["qwen-vl-max", "qwen3-vl-flash"],
+        output_format="json",
     ),
 )
 
@@ -127,6 +172,10 @@ _register(
         group="chat",
         default_model="qwen-plus",
         alternative_models=["qwen3-max", "qwen-turbo"],
+        input_variables=[
+            AIFunctionInputVar(name="tool_list", label="可用工具列表", type="text"),
+        ],
+        output_format="json",
     ),
     AIFunctionDef(
         key="chat_reply",
@@ -136,6 +185,12 @@ _register(
         group="chat",
         default_model="qwen-plus",
         alternative_models=["qwen3-max", "qwen-turbo"],
+        input_variables=[
+            AIFunctionInputVar(name="persona_prefix", label="角色人设前缀", required=False),
+            AIFunctionInputVar(name="nickname", label="用户昵称"),
+            AIFunctionInputVar(name="data_section", label="查询数据段", type="text", required=False),
+        ],
+        output_format="text",
     ),
 )
 
@@ -149,6 +204,10 @@ _register(
         group="chat",
         default_model="qwen-plus",
         alternative_models=["qwen3-max", "qwen-turbo"],
+        input_variables=[
+            AIFunctionInputVar(name="tool_list", label="可用工具列表", type="text"),
+        ],
+        output_format="json",
     ),
     AIFunctionDef(
         key="pet_chat",
@@ -158,6 +217,21 @@ _register(
         group="chat",
         default_model="qwen-plus",
         alternative_models=["qwen3-max", "qwen-flash-character"],
+        input_variables=[
+            AIFunctionInputVar(name="pet_name", label="宠物名称"),
+            AIFunctionInputVar(name="pet_form", label="宠物形态"),
+            AIFunctionInputVar(name="emoji", label="宠物表情"),
+            AIFunctionInputVar(name="level", label="等级", type="int"),
+            AIFunctionInputVar(name="total_exp", label="总经验", type="int"),
+            AIFunctionInputVar(name="pet_age_days", label="年龄(天)", type="int"),
+            AIFunctionInputVar(name="mood", label="心情"),
+            AIFunctionInputVar(name="happiness", label="心情值", type="int"),
+            AIFunctionInputVar(name="checkin_streak", label="连续签到天数", type="int"),
+            AIFunctionInputVar(name="personality_text", label="性格描述", type="text"),
+            AIFunctionInputVar(name="nickname", label="主人昵称"),
+            AIFunctionInputVar(name="data_section", label="查询数据段", type="text", required=False),
+        ],
+        output_format="json",
     ),
 )
 
@@ -171,6 +245,15 @@ _register(
         group="analysis",
         default_model="qwen-plus",
         alternative_models=["qwen3-max", "qwen-turbo"],
+        input_variables=[
+            AIFunctionInputVar(name="time_range", label="时间范围"),
+            AIFunctionInputVar(name="deposit_total", label="总存入"),
+            AIFunctionInputVar(name="withdraw_total", label="总支出"),
+            AIFunctionInputVar(name="income_total", label="投资收益"),
+            AIFunctionInputVar(name="transaction_count", label="交易笔数", type="int"),
+            AIFunctionInputVar(name="transaction_desc", label="交易记录描述", type="text"),
+        ],
+        output_format="json",
     ),
     AIFunctionDef(
         key="transaction_categorize",
@@ -180,6 +263,11 @@ _register(
         group="analysis",
         default_model="qwen-flash",
         alternative_models=["qwen-turbo", "qwen-plus"],
+        input_variables=[
+            AIFunctionInputVar(name="description", label="交易描述"),
+            AIFunctionInputVar(name="amount", label="交易金额"),
+        ],
+        output_format="json",
     ),
 )
 
@@ -193,6 +281,10 @@ _register(
         group="tools",
         default_model="qwen-plus",
         alternative_models=["qwen3-max", "qwen-turbo"],
+        input_variables=[
+            AIFunctionInputVar(name="context", label="目标/需求描述", type="text"),
+        ],
+        output_format="json",
     ),
     AIFunctionDef(
         key="todo_prioritize",
@@ -202,6 +294,10 @@ _register(
         group="tools",
         default_model="qwen-flash",
         alternative_models=["qwen-turbo", "qwen-plus"],
+        input_variables=[
+            AIFunctionInputVar(name="tasks_json", label="任务列表JSON", type="text"),
+        ],
+        output_format="json",
     ),
 )
 
@@ -215,6 +311,10 @@ _register(
         group="analysis",
         default_model="qwen-plus",
         alternative_models=["qwen3-max", "qwen-turbo"],
+        input_variables=[
+            AIFunctionInputVar(name="portfolio_desc", label="投资组合描述", type="text"),
+        ],
+        output_format="json",
     ),
 )
 
@@ -228,6 +328,12 @@ _register(
         group="tools",
         default_model="qwen-plus",
         alternative_models=["qwen3-max", "qwen-turbo"],
+        input_variables=[
+            AIFunctionInputVar(name="style_desc", label="写作风格描述"),
+            AIFunctionInputVar(name="topic", label="公告主题"),
+            AIFunctionInputVar(name="style", label="风格代码"),
+        ],
+        output_format="json",
     ),
     AIFunctionDef(
         key="announcement_improve",
@@ -237,6 +343,12 @@ _register(
         group="tools",
         default_model="qwen-plus",
         alternative_models=["qwen3-max", "qwen-turbo"],
+        input_variables=[
+            AIFunctionInputVar(name="improve_desc", label="改进方向描述"),
+            AIFunctionInputVar(name="content", label="原公告内容", type="text"),
+            AIFunctionInputVar(name="improve_type", label="改进类型"),
+        ],
+        output_format="json",
     ),
 )
 
@@ -265,6 +377,17 @@ def get_function_registry_for_api() -> List[dict]:
             "group_name": AI_FUNCTION_GROUPS.get(func.group, {}).get("name", func.group),
             "default_model": func.default_model,
             "alternative_models": func.alternative_models,
+            "input_variables": [
+                {
+                    "name": v.name,
+                    "label": v.label,
+                    "type": v.type,
+                    "required": v.required,
+                    "description": v.description,
+                }
+                for v in func.input_variables
+            ],
+            "output_format": func.output_format,
         })
     # 按分组 order 排序
     group_order = {k: v["order"] for k, v in AI_FUNCTION_GROUPS.items()}

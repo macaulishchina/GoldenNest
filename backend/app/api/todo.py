@@ -837,6 +837,7 @@ async def ai_suggest_tasks(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             function_key="todo_suggest",
+            prompt_vars={"context": request.context},
             temperature=0.7
         )
         
@@ -969,6 +970,7 @@ urgency_score: 0-100，数字越大越紧急
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             function_key="todo_prioritize",
+            prompt_vars={"task_info": json.dumps(task_info, ensure_ascii=False, indent=2)},
             temperature=0.3
         )
         

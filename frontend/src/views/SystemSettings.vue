@@ -226,6 +226,9 @@
       </n-spin>
     </n-card>
 
+    <!-- AI 技能管理（独立组件） -->
+    <AISkillManager />
+
     <!-- 功能模型配置 Modal -->
     <n-modal v-model:show="showFnConfigModal" :title="`配置: ${fnConfigTarget?.name || ''}`" preset="dialog" style="width: 500px">
       <n-form label-placement="left" label-width="90px">
@@ -306,6 +309,7 @@ import { useMessage } from 'naive-ui'
 import { AddOutline } from '@vicons/ionicons5'
 import { aiConfigApi } from '@/api'
 import { getShowAIModelInfo, setShowAIModelInfo } from '@/utils/aiModelNotify'
+import AISkillManager from '@/components/AISkillManager.vue'
 
 const message = useMessage()
 

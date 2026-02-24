@@ -26,7 +26,7 @@ from slowapi.errors import RateLimitExceeded
 from app.core.config import settings, UPLOAD_DIR, BASE_DIR
 from app.core.database import init_db
 from app.core.limiter import limiter
-from app.api import auth, family, deposit, equity, investment, transaction, achievement, gift, vote, pet, announcement, report, approval, todo, calendar, asset, ai_config, ai_chat, bet, accounting, site_config, external_app
+from app.api import auth, family, deposit, equity, investment, transaction, achievement, gift, vote, pet, announcement, report, approval, todo, calendar, asset, ai_config, ai_chat, ai_skill, bet, accounting, site_config, external_app
 from app.services.notification import set_external_base_url, detect_external_url_from_headers
 import os
 
@@ -48,8 +48,10 @@ async def lifespan(app: FastAPI):
         async with async_session_maker() as db:
             await ai_config.sync_active_provider_to_config(db)
         # 加载功能模型配置缓存
-        from app.services.ai_service import load_function_model_configs
+        from app.services.ai_service import load_function_model_configs, load_skill_cache
         await load_function_model_configs()
+        # 加载 AI 技能缓存
+        await load_skill_cache()
     except Exception as e:
         print(f"⚠️ 加载 AI 服务商配置失败（可能是首次启动）: {e}")
     
@@ -205,6 +207,7 @@ app.include_router(calendar.router, prefix="/api", tags=["共享日历"])  # 共
 app.include_router(bet.router, prefix="/api/bet", tags=["家庭赌注"])  # 家庭赌注系统
 app.include_router(accounting.router, prefix="/api/accounting", tags=["记账系统"])  # 家庭记账系统
 app.include_router(ai_config.router, prefix="/api/ai-config", tags=["AI 配置"])  # AI 服务商管理
+app.include_router(ai_skill.router, prefix="/api/ai-skills", tags=["AI 技能"])  # AI 技能管理
 app.include_router(ai_chat.router, prefix="/api", tags=["AI 助手"])  # AI 通用对话助手
 app.include_router(site_config.router, prefix="/api/site-config", tags=["站点配置"])  # 站点图标/PWA
 app.include_router(external_app.router, prefix="/api/external-apps", tags=["外部应用"])  # 第三方应用中心

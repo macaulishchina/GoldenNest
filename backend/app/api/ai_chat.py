@@ -21,6 +21,7 @@ from app.services.ai_tools import (
     build_tool_selection_prompt, execute_tools, TOOL_LIST_TEXT,
 )
 from app.services.ai_accounting import transcribe_audio_file
+from app.services.ai_service import resolve_skill, _skill_cache_loaded, load_skill_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai/chat", tags=["AI Chat"])
@@ -83,6 +84,7 @@ async def chat_with_ai(
                 system_prompt=tool_prompt,
                 history=recent_history,
                 function_key="chat_tool_call",
+                prompt_vars={"tool_list_text": TOOL_LIST_TEXT, "message": request.message},
                 temperature=0.1,
             )
 
@@ -133,6 +135,11 @@ async def chat_with_ai(
             system_prompt=system_prompt,
             history=history,
             function_key="chat_reply",
+            prompt_vars={
+                "persona_prefix": persona_prefix,
+                "nickname": current_user.nickname,
+                "data_section": data_section,
+            },
             temperature=0.7,
         )
 

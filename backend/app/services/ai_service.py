@@ -26,6 +26,7 @@ import asyncio
 import re
 import contextvars
 from dataclasses import dataclass
+from string import Template
 from typing import Optional, Dict, Any, List
 
 import httpx
@@ -106,6 +107,116 @@ async def load_function_model_configs():
 async def refresh_function_model_cache():
     """刷新缓存（配置变更后调用）"""
     await load_function_model_configs()
+
+
+# ==================== AI 技能缓存 ====================
+
+# 内存缓存: function_key -> {skill_id, system_prompt, user_prompt_template, parameters, attachments}
+_skill_cache: Dict[str, Dict[str, Any]] = {}
+_skill_cache_loaded = False
+
+
+async def load_skill_cache():
+    """从数据库加载所有激活的 AI 技能到内存缓存"""
+    global _skill_cache, _skill_cache_loaded
+    try:
+        from app.core.database import async_session_maker
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+        from app.models.models import AISkill, AISkillAttachment
+
+        async with async_session_maker() as db:
+            result = await db.execute(
+                select(AISkill)
+                .where(AISkill.is_active == True)
+                .options(selectinload(AISkill.attachments))
+            )
+            skills = result.scalars().all()
+
+            cache: Dict[str, Dict[str, Any]] = {}
+            for skill in skills:
+                attachments = []
+                for att in skill.attachments:
+                    attachments.append({
+                        "name": att.name,
+                        "file_type": att.file_type,
+                        "content": att.content or "",
+                        "inject_mode": att.inject_mode,
+                    })
+
+                # 解析 parameters JSON
+                params = {}
+                if skill.parameters:
+                    try:
+                        params = json.loads(skill.parameters)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                cache[skill.function_key] = {
+                    "skill_id": skill.id,
+                    "name": skill.name,
+                    "system_prompt": skill.system_prompt or "",
+                    "user_prompt_template": skill.user_prompt_template,
+                    "parameters": params,
+                    "attachments": attachments,
+                }
+
+            _skill_cache = cache
+            _skill_cache_loaded = True
+            logger.info(f"已加载 {len(cache)} 条 AI 技能到缓存")
+    except Exception as e:
+        logger.warning(f"加载 AI 技能缓存失败: {e}")
+        _skill_cache_loaded = True
+
+
+async def refresh_skill_cache():
+    """刷新技能缓存（技能变更后调用）"""
+    await load_skill_cache()
+
+
+def resolve_skill(function_key: str, prompt_vars: Optional[Dict[str, Any]] = None):
+    """
+    从缓存获取激活技能并渲染模板。
+
+    Args:
+        function_key: AI 功能标识
+        prompt_vars: 模板变量字典
+
+    Returns:
+        tuple: (system_prompt, user_prompt_template_or_none, parameters_dict)
+
+    Raises:
+        ValueError: 未配置技能
+    """
+    if function_key not in _skill_cache:
+        raise ValueError(f"未配置 AI 技能: {function_key}，请在系统设置中初始化技能数据")
+
+    skill = _skill_cache[function_key]
+    safe_vars = prompt_vars or {}
+
+    # 使用 string.Template 的 safe_substitute 渲染（$variable 语法，缺失变量保留原样）
+    system_prompt = Template(skill["system_prompt"]).safe_substitute(safe_vars)
+    user_prompt = None
+    if skill["user_prompt_template"]:
+        user_prompt = Template(skill["user_prompt_template"]).safe_substitute(safe_vars)
+
+    # 注入附件内容
+    for att in skill.get("attachments", []):
+        content = att["content"]
+        if not content:
+            continue
+
+        if att["inject_mode"] == "system_append":
+            system_prompt += f"\n\n{content}"
+        elif att["inject_mode"] == "user_prepend":
+            if user_prompt:
+                user_prompt = f"{content}\n\n{user_prompt}"
+            else:
+                user_prompt = content
+        elif att["inject_mode"] == "reference":
+            system_prompt += f"\n\n--- 参考资料：{att['name']} ---\n{content}\n--- 参考资料结束 ---"
+
+    return system_prompt, user_prompt, skill["parameters"]
 
 
 def _get_ai_config(key: str) -> str:
@@ -238,6 +349,7 @@ class AIService:
         history: list = None,
         model: str = "",
         function_key: str = "",
+        prompt_vars: Optional[Dict[str, Any]] = None,
         max_tokens: int = 2000,
         temperature: float = 0.7,
     ) -> str:
@@ -246,14 +358,33 @@ class AIService:
 
         Args:
             user_prompt: 用户输入
-            system_prompt: 系统提示词（可选）
+            system_prompt: 系统提示词（可选，显式传入时覆盖技能配置）
             history: 历史对话列表（可选）
             model: 强制覆盖模型（可选，优先级最高）
-            function_key: 功能标识（可选，用于按功能选择模型）
+            function_key: 功能标识（可选，用于按功能选择模型和技能）
+            prompt_vars: 技能模板变量（可选，传入时从 DB 技能解析 prompt）
             max_tokens: 最大输出 token 数
             temperature: 生成温度
         """
-        messages = self._build_messages_with_history(system_prompt, user_prompt, history)
+        # 如果传入 prompt_vars 且有 function_key，从技能缓存解析 prompt
+        # 技能存在时覆盖传入的 prompt；技能不存在时回退到传入的 prompt
+        resolved_system = system_prompt
+        resolved_user = user_prompt
+        if prompt_vars is not None and function_key:
+            try:
+                skill_system, skill_user, skill_params = resolve_skill(function_key, prompt_vars)
+                resolved_system = skill_system  # 技能 prompt 优先
+                if skill_user:  # 技能定义了 user_prompt_template 时使用
+                    resolved_user = skill_user
+                # 技能参数覆盖默认值
+                if "temperature" in skill_params:
+                    temperature = skill_params["temperature"]
+                if "max_tokens" in skill_params:
+                    max_tokens = skill_params["max_tokens"]
+            except ValueError as e:
+                logger.warning(f"技能解析失败，使用传入的 prompt: {e}")
+
+        messages = self._build_messages_with_history(resolved_system, resolved_user, history)
         return await self._call_chat(
             messages=messages,
             model=model,
@@ -270,20 +401,37 @@ class AIService:
         system_prompt: str = "",
         model: str = "",
         function_key: str = "",
+        prompt_vars: Optional[Dict[str, Any]] = None,
         max_tokens: int = 2000,
         temperature: float = 0.1,
     ) -> str:
         """视觉理解：文本 + 图片 → AI 回复。"""
+        # 技能解析：技能存在时覆盖传入的 prompt；技能不存在时回退到传入的 prompt
+        resolved_system = system_prompt
+        resolved_text = text
+        if prompt_vars is not None and function_key:
+            try:
+                skill_system, skill_user, skill_params = resolve_skill(function_key, prompt_vars)
+                resolved_system = skill_system  # 技能 prompt 优先
+                if skill_user:
+                    resolved_text = skill_user
+                if "temperature" in skill_params:
+                    temperature = skill_params["temperature"]
+                if "max_tokens" in skill_params:
+                    max_tokens = skill_params["max_tokens"]
+            except ValueError as e:
+                logger.warning(f"技能解析失败，使用传入的 prompt: {e}")
+
         if not image_base64.startswith("data:"):
             image_base64 = f"data:image/jpeg;base64,{image_base64}"
 
         messages: List[Dict[str, Any]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
+        if resolved_system:
+            messages.append({"role": "system", "content": resolved_system})
         messages.append({
             "role": "user",
             "content": [
-                {"type": "text", "text": text},
+                {"type": "text", "text": resolved_text},
                 {"type": "image_url", "image_url": {"url": image_base64}},
             ],
         })
@@ -304,6 +452,7 @@ class AIService:
         history: list = None,
         model: str = "",
         function_key: str = "",
+        prompt_vars: Optional[Dict[str, Any]] = None,
         max_tokens: int = 2000,
         temperature: float = 0.1,
     ) -> Optional[Dict[str, Any]]:
@@ -314,6 +463,7 @@ class AIService:
             history=history,
             model=model,
             function_key=function_key,
+            prompt_vars=prompt_vars,
             max_tokens=max_tokens,
             temperature=temperature,
         )
@@ -327,6 +477,7 @@ class AIService:
         system_prompt: str = "",
         model: str = "",
         function_key: str = "",
+        prompt_vars: Optional[Dict[str, Any]] = None,
         max_tokens: int = 2000,
         temperature: float = 0.1,
     ) -> Optional[Dict[str, Any]]:
@@ -337,6 +488,7 @@ class AIService:
             system_prompt=system_prompt,
             model=model,
             function_key=function_key,
+            prompt_vars=prompt_vars,
             max_tokens=max_tokens,
             temperature=temperature,
         )
@@ -369,6 +521,8 @@ class AIService:
         # 确保缓存已加载
         if not _cache_loaded:
             await load_function_model_configs()
+        if not _skill_cache_loaded:
+            await load_skill_cache()
 
         # 解析配置
         cfg = _resolve_config_for_function(function_key)

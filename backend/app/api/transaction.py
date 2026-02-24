@@ -288,6 +288,14 @@ async def analyze_transactions_with_ai(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             function_key="transaction_analyze",
+            prompt_vars={
+                "time_range": time_range.value,
+                "deposit_total": f"{deposit_total:,.2f}",
+                "withdraw_total": f"{withdraw_total:,.2f}",
+                "income_total": f"{income_total:,.2f}",
+                "transaction_count": str(len(transactions)),
+                "transaction_desc": transaction_desc,
+            },
             temperature=0.5
         )
         
@@ -346,6 +354,10 @@ async def categorize_transaction_with_ai(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             function_key="transaction_categorize",
+            prompt_vars={
+                "description": request.description,
+                "amount": f"{request.amount:,.2f}",
+            },
             temperature=0.3
         )
         

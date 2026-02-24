@@ -12,7 +12,7 @@ from app.schemas.accounting import (
     AccountingVoiceTranscriptResponse,
     PhotoRecognizeItem,
 )
-from app.services.ai_service import ai_service
+from app.services.ai_service import ai_service, resolve_skill, _skill_cache_loaded, load_skill_cache
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,20 @@ async def parse_receipt_images(image_data_list: List[str]) -> List[PhotoRecogniz
 """
 
     try:
+        # 尝试从技能缓存获取 prompt（支持在线编辑）
+        try:
+            if not _skill_cache_loaded:
+                import asyncio
+                asyncio.get_event_loop()  # ensure we're in an event loop context
+                # load_skill_cache is called at startup; this is a safety net
+            skill_system, skill_user, skill_params = resolve_skill("receipt_ocr", {"n": str(n)})
+            system_content = skill_system
+            if skill_user:
+                prompt = skill_user
+        except (ValueError, Exception) as e:
+            logger.debug(f"receipt_ocr 技能未配置，使用代码默认 prompt: {e}")
+            system_content = "你是专业的消费凭证识别助手，能从小票、发票、订单截图、账单等各类图片中准确提取消费信息。只返回JSON。"
+
         # 构建多图消息内容
         content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
         for img_b64 in image_data_list:
@@ -79,7 +93,7 @@ async def parse_receipt_images(image_data_list: List[str]) -> List[PhotoRecogniz
 
         # 直接构建消息调用底层API
         messages = [
-            {"role": "system", "content": "你是专业的消费凭证识别助手，能从小票、发票、订单截图、账单等各类图片中准确提取消费信息。只返回JSON。"},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": content},
         ]
 
@@ -385,6 +399,7 @@ async def parse_voice_text(text: str) -> List[PhotoRecognizeItem]:
             user_prompt=prompt,
             system_prompt="你是记账助手，从语音内容中提取消费记录。只返回JSON。",
             function_key="voice_parse",
+            prompt_vars={"text": text},
             temperature=0.1,
         )
 
@@ -542,6 +557,7 @@ async def categorize_entry(description: str, amount: Optional[float] = None) -> 
             user_prompt=prompt,
             system_prompt="你是一个消费分类助手，根据用户提供的消费信息返回最合适的分类代码。",
             function_key="auto_category",
+            prompt_vars={"description": description, "amount": str(amount) if amount else "未知"},
         )
 
         # 清理返回值（去除可能的空格、换行）
@@ -619,6 +635,14 @@ async def check_duplicate_with_ai(
             user_prompt=prompt,
             system_prompt="你是一个重复检测专家，能够准确判断两条记账记录是否为重复。",
             function_key="duplicate_detection",
+            prompt_vars={
+                "new_entry_description": new_entry_description,
+                "new_entry_amount": str(new_entry_amount),
+                "new_entry_category": new_entry_category,
+                "existing_entry_description": existing_entry_description,
+                "existing_entry_amount": str(existing_entry_amount),
+                "existing_entry_category": existing_entry_category,
+            },
         )
 
         # 解析JSON响应
@@ -824,8 +848,19 @@ async def _parse_pdf_as_images(file_bytes: bytes) -> List[PhotoRecognizeItem]:
             "image_url": {"url": img_b64},
         })
 
+    # 尝试从技能缓存获取 prompt
+    system_content = "你是消费记录解析助手，从文档图片中精确提取每一笔消费信息并返回JSON数组。只返回JSON，不要解释。"
+    try:
+        skill_system, skill_user, skill_params = resolve_skill("import_vision", {"n": str(n)})
+        system_content = skill_system
+        if skill_user:
+            # 替换用户 prompt（content 数组的第一个 text 元素）
+            content[0] = {"type": "text", "text": skill_user}
+    except (ValueError, Exception) as e:
+        logger.debug(f"import_vision 技能未配置，使用代码默认 prompt: {e}")
+
     messages = [
-        {"role": "system", "content": "你是消费记录解析助手，从文档图片中精确提取每一笔消费信息并返回JSON数组。只返回JSON，不要解释。"},
+        {"role": "system", "content": system_content},
         {"role": "user", "content": content},
     ]
 
@@ -1129,6 +1164,7 @@ async def _parse_text_with_ai(text: str, source_type: str) -> List[PhotoRecogniz
             user_prompt=prompt,
             system_prompt="你是消费记录解析助手，从文本中提取消费信息并返回JSON数组。只返回JSON，不要解释。",
             function_key="import_parse",
+            prompt_vars={"text": text, "source_type": source_type},
             temperature=0.1,
             max_tokens=4000,
         )

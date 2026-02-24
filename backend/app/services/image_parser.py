@@ -113,6 +113,7 @@ class ImageParserService:
             image_base64=data_url,
             system_prompt=SYSTEM_PROMPT,
             function_key="asset_ocr",
+            prompt_vars={},
             max_tokens=1000,
             temperature=0.1,
         )

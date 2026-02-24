@@ -1283,7 +1283,7 @@ async def chat_with_pet(
     宠物根据对话内容自主判断是否需要查询主人的财务数据
     """
     from app.services.ai_service import ai_service
-    from app.services.ai_tools import build_tool_selection_prompt, execute_tools
+    from app.services.ai_tools import build_tool_selection_prompt, execute_tools, TOOL_LIST_TEXT
     
     if not ai_service.is_configured:
         raise HTTPException(status_code=503, detail="AI 服务暂未配置")
@@ -1326,6 +1326,7 @@ async def chat_with_pet(
             system_prompt=tool_prompt,
             history=recent_history if recent_history else None,
             function_key="pet_tool_call",
+            prompt_vars={"tool_list_text": TOOL_LIST_TEXT, "message": request.message},
             temperature=0.1,
         )
         logger.info(f"Pet chat tool decision: {tool_decision}")
@@ -1388,6 +1389,20 @@ async def chat_with_pet(
             system_prompt=system_prompt,
             history=history,
             function_key="pet_chat",
+            prompt_vars={
+                "pet_name": pet.name,
+                "pet_config_name": pet_config['name'],
+                "pet_emoji": pet_config['emoji'],
+                "level": str(pet.level),
+                "total_exp": str(pet.total_exp),
+                "age_days": str(pet_age_days),
+                "mood": mood,
+                "happiness": str(current_happiness),
+                "checkin_streak": str(checkin_streak),
+                "personality_text": _get_pet_personality(pet.pet_type, pet.level),
+                "nickname": current_user.nickname,
+                "data_section": data_section,
+            },
             temperature=0.9
         )
         

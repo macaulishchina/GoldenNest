@@ -981,6 +981,60 @@ class AIFunctionModelConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+# ==================== AI 技能管理模型 ====================
+
+class AISkill(Base):
+    """AI 技能表 — 每个 function_key 可有多套提示词实现，激活的那套生效
+
+    设计理念：功能点是固定的（由 ai_functions.py 注册），但同一个功能点可以有多种 prompt 实现。
+    管理员可以编辑、新增、删除不同的技能实现，通过 is_active 切换当前生效的版本。
+    """
+    __tablename__ = "ai_skills"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    function_key: Mapped[str] = mapped_column(String(50), index=True)                 # 对应 AI_FUNCTION_REGISTRY 的 key
+    name: Mapped[str] = mapped_column(String(100))                                     # 技能名称（如"默认"、"简洁版"、"专业版"）
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)            # 技能说明
+    system_prompt: Mapped[str] = mapped_column(Text, default="")                       # 系统提示词模板，支持 $variable 占位符
+    user_prompt_template: Mapped[Optional[str]] = mapped_column(Text, nullable=True)   # 用户提示词模板，为空时由调用方传入
+    parameters: Mapped[Optional[str]] = mapped_column(Text, nullable=True)             # JSON: {"temperature": 0.7, "max_tokens": 2000, "top_p": 1.0}
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True)        # 同一 function_key 仅一个激活
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)                        # 排序
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 关联附件
+    attachments: Mapped[List["AISkillAttachment"]] = relationship(
+        "AISkillAttachment", back_populates="skill", cascade="all, delete-orphan",
+        order_by="AISkillAttachment.sort_order"
+    )
+
+
+class AISkillAttachment(Base):
+    """AI 技能附件 — 为技能提供额外的上下文数据（参考文档、示例数据等）
+
+    inject_mode 决定附件内容如何注入到 prompt 中：
+    - system_append: 追加到 system prompt 末尾
+    - user_prepend: 插入到 user prompt 前面
+    - reference: 作为独立参考段落嵌入 system prompt（带标题）
+    """
+    __tablename__ = "ai_skill_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    skill_id: Mapped[int] = mapped_column(ForeignKey("ai_skills.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))                 # 附件名称
+    file_type: Mapped[str] = mapped_column(String(20), default="text")  # text / markdown / json / csv
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 内联内容
+    file_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # 大文件路径
+    inject_mode: Mapped[str] = mapped_column(String(20), default="system_append")  # system_append / user_prepend / reference
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # 关联
+    skill: Mapped["AISkill"] = relationship("AISkill", back_populates="attachments")
+
+
 class ExternalApp(Base):
     """第三方外部应用配置表 — 全局配置，所有用户可用"""
     __tablename__ = "external_apps"
