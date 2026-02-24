@@ -49,6 +49,8 @@ data/
 backend/uploads/
 external/PhotoPrism/database/
 external/PhotoPrism/storage/
+external/PhotoPrism/ollama/
+external/PhotoPrism/open-webui/
 
 # 日志
 *.log
@@ -62,8 +64,6 @@ htmlcov/
 
 # 构建产物
 frontend/dist/
-studio/frontend/dist/
-studio/frontend/node_modules/
 *.egg
 *.whl
 

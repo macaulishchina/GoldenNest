@@ -1,0 +1,3 @@
+[submodule "studio"]
+	path = studio
+	url = git@github.com:macaulishchina/AI-Studio.git
