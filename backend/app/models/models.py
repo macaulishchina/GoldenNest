@@ -979,3 +979,22 @@ class AIFunctionModelConfig(Base):
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)  # 该功能的 AI 能力是否启用
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ExternalApp(Base):
+    """第三方外部应用配置表 — 全局配置，所有用户可用"""
+    __tablename__ = "external_apps"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100))                          # 应用名称
+    url: Mapped[str] = mapped_column(String(500))                           # 应用 URL
+    icon_type: Mapped[str] = mapped_column(String(10), default="emoji")     # 图标类型：emoji / image
+    icon_emoji: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)   # emoji 字符
+    icon_image: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # 图标图片路径
+    description: Mapped[Optional[str]] = mapped_column(String(200), nullable=True) # 简短描述
+    open_mode: Mapped[str] = mapped_column(String(20), default="new_tab")   # 打开方式：new_tab / fullscreen
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)             # 排序权重（越小越靠前）
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)          # 是否激活（控制是否展示给用户）
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, onupdate=datetime.utcnow)

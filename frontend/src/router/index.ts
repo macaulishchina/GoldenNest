@@ -122,6 +122,11 @@ const router = createRouter({
           component: () => import('@/views/Accounting.vue')
         },
         {
+          path: 'app-portal',
+          name: 'AppPortal',
+          component: () => import('@/views/AppPortal.vue')
+        },
+        {
           path: 'system-settings',
           name: 'SystemSettings',
           component: () => import('@/views/SystemSettings.vue')

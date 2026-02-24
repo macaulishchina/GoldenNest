@@ -365,6 +365,10 @@
                 <n-icon :size="20"><TrophyOutline /></n-icon>
                 <span>成就殿堂</span>
               </div>
+              <div class="drawer-menu-item" @click="navigateAndClose('/app-portal')">
+                <n-icon :size="20"><AppsOutline /></n-icon>
+                <span>应用中心</span>
+              </div>
             </div>
           </div>
           
@@ -442,7 +446,8 @@ import {
   CameraOutline,
   ClipboardOutline,
   CalendarOutline,
-  DiceOutline
+  DiceOutline,
+  AppsOutline
 } from '@vicons/ionicons5'
 import { api } from '@/api'
 
@@ -496,7 +501,8 @@ const availableModules = [
   { key: 'announcement', label: '公告', icon: markRaw(MegaphoneOutline) },
   { key: 'bet', label: '赌注', icon: markRaw(DiceOutline) },
   { key: 'accounting', label: '记账', icon: markRaw(WalletOutline) },
-  { key: 'achievement', label: '成就', icon: markRaw(TrophyOutline) }
+  { key: 'achievement', label: '成就', icon: markRaw(TrophyOutline) },
+  { key: 'app-portal', label: '应用', icon: markRaw(AppsOutline) }
 ]
 
 // 用户自定义的快捷模块
@@ -841,6 +847,11 @@ const menuOptions = computed<MenuOption[]>(() => [
         label: '成就殿堂',
         key: 'achievement',
         icon: renderIcon(TrophyOutline)
+      },
+      {
+        label: '应用中心',
+        key: 'app-portal',
+        icon: renderIcon(AppsOutline)
       }
     ]
   },

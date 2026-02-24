@@ -210,6 +210,62 @@
         <n-empty v-if="!equity?.members?.length" description="暂无成员数据" />
       </n-card>
       </div>
+
+      <!-- 常用应用 -->
+      <n-card v-if="externalApps.length > 0" class="section-card card-hover external-apps-card" style="margin-top: 16px" @click="router.push('/app-portal')">
+        <div class="target-header">
+          <h2 class="target-title">🧩 常用应用</h2>
+        </div>
+        <div class="external-apps-grid">
+          <div
+            v-for="app in externalApps.slice(0, 8)"
+            :key="app.id"
+            class="external-app-item"
+            @click.stop="handleExternalAppClick(app)"
+          >
+            <div class="external-app-icon">
+              <span v-if="app.icon_type === 'emoji'" class="ext-icon-emoji">{{ app.icon_emoji || '🔗' }}</span>
+              <img v-else-if="app.icon_image" :src="app.icon_image" class="ext-icon-img" />
+              <span v-else class="ext-icon-emoji">🔗</span>
+            </div>
+            <span class="external-app-name">{{ app.name }}</span>
+          </div>
+        </div>
+      </n-card>
+
+      <!-- 全屏嵌入应用 -->
+      <Teleport to="body">
+        <Transition name="fade-slide">
+          <div v-if="fullscreenApp" class="fullscreen-overlay">
+            <div class="fullscreen-header">
+              <div class="fullscreen-title">
+                <span v-if="fullscreenApp.icon_type === 'emoji'" style="font-size: 20px">{{ fullscreenApp.icon_emoji || '🔗' }}</span>
+                <img v-else-if="fullscreenApp.icon_image" :src="fullscreenApp.icon_image" style="width: 24px; height: 24px; object-fit: contain; border-radius: 4px" />
+                <span>{{ fullscreenApp.name }}</span>
+              </div>
+              <div class="fullscreen-actions">
+                <n-button text @click="openFullscreenInNewTab" title="在新标签页打开">
+                  <template #icon><n-icon :size="20"><OpenOutline /></n-icon></template>
+                </n-button>
+                <n-button text @click="fullscreenApp = null" title="关闭">
+                  <template #icon><n-icon :size="22"><CloseOutline /></n-icon></template>
+                </n-button>
+              </div>
+            </div>
+            <iframe
+              :src="fullscreenApp.url"
+              class="fullscreen-iframe"
+              frameborder="0"
+              allow="fullscreen; clipboard-write; clipboard-read; camera; microphone"
+              referrerpolicy="no-referrer-when-downgrade"
+              @load="fullscreenLoading = false"
+            />
+            <div v-if="fullscreenLoading" class="fullscreen-loading">
+              <n-spin size="large" />
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
     </template>
     
     <!-- 没有家庭时的引导 -->
@@ -231,7 +287,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { equityApi, familyApi, transactionApi, investmentApi } from '@/api'
+import { equityApi, familyApi, transactionApi, investmentApi, externalAppApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { usePrivacyStore } from '@/stores/privacy'
 import UserAvatar from '@/components/UserAvatar.vue'
@@ -241,7 +297,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { PieChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import { NIcon } from 'naive-ui'
-import { List as ListOutline, ChevronUp as ChevronUpOutline } from '@vicons/ionicons5'
+import { List as ListOutline, ChevronUp as ChevronUpOutline, OpenOutline, CloseOutline } from '@vicons/ionicons5'
 
 use([CanvasRenderer, PieChart, TitleComponent, TooltipComponent, LegendComponent])
 
@@ -256,6 +312,9 @@ const balance = ref(0) // 当前余额
 const investmentSummary = ref<any>(null) // 理财汇总
 const showSavingsHelp = ref(false) // 储蓄说明展开状态
 const showEquityDetail = ref(false) // 股权详情展开状态
+const externalApps = ref<any[]>([]) // 外部应用列表
+const fullscreenApp = ref<any>(null) // 全屏嵌入的应用
+const fullscreenLoading = ref(false) // 全屏iframe加载中
 
 // 当前用户的成员信息
 const currentMember = computed(() => {
@@ -481,6 +540,11 @@ async function loadData() {
       
       // 投资汇总
       investmentSummary.value = investmentRes.data
+
+      // 加载外部应用（独立加载，不影响主数据）
+      externalAppApi.list().then(res => {
+        externalApps.value = res.data || []
+      }).catch(() => {})
     } catch (err) {
       console.error('Error loading dashboard data:', err)
       // 即使数据加载失败，仍然保持hasFamily=true，显示空状态
@@ -493,7 +557,34 @@ async function loadData() {
 
 onMounted(() => {
   loadData()
+  window.addEventListener('keydown', handleFullscreenKeydown)
 })
+
+import { onUnmounted } from 'vue'
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleFullscreenKeydown)
+})
+
+function handleFullscreenKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && fullscreenApp.value) {
+    fullscreenApp.value = null
+  }
+}
+
+function handleExternalAppClick(app: any) {
+  if (app.open_mode === 'fullscreen') {
+    fullscreenLoading.value = true
+    fullscreenApp.value = app
+  } else {
+    window.open(app.url, '_blank', 'noopener,noreferrer')
+  }
+}
+
+function openFullscreenInNewTab() {
+  if (fullscreenApp.value) {
+    window.open(fullscreenApp.value.url, '_blank', 'noopener,noreferrer')
+  }
+}
 </script>
 
 <style scoped>
@@ -632,6 +723,10 @@ onMounted(() => {
 @media (max-width: 768px) {
   .assets-grid {
     grid-template-columns: 1fr;
+  }
+  .external-apps-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
   }
 }
 
@@ -1362,5 +1457,138 @@ onMounted(() => {
 .fade-slide-leave-to {
   opacity: 0;
   transform: translateY(-10px);
+}
+
+/* 外部应用网格 */
+.external-apps-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.external-app-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 4px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.external-app-item:hover {
+  background: var(--n-action-color, #f5f5f8);
+}
+
+.external-app-item:active {
+  transform: scale(0.95);
+}
+
+.external-app-icon {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--n-action-color, #f0f0f5);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.ext-icon-emoji {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.ext-icon-img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.external-app-name {
+  font-size: 12px;
+  color: var(--n-text-color, #333);
+  text-align: center;
+  line-height: 1.3;
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 80px;
+}
+
+/* 常用应用卡片可点击 */
+.external-apps-card {
+  cursor: pointer;
+}
+
+.external-apps-card:hover {
+  border-color: var(--n-primary-color, #18a058);
+}
+
+/* 全屏嵌入覆盖层 */
+.fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--n-body-color, #fff);
+  display: flex;
+  flex-direction: column;
+}
+
+.fullscreen-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: var(--n-primary-color, #18a058);
+  color: #fff;
+  flex-shrink: 0;
+  height: 48px;
+  box-sizing: border-box;
+}
+
+.fullscreen-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.fullscreen-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.fullscreen-actions :deep(.n-button) {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.fullscreen-actions :deep(.n-button:hover) {
+  color: #fff !important;
+}
+
+.fullscreen-iframe {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: var(--n-body-color, #fff);
+}
+
+.fullscreen-loading {
+  position: absolute;
+  inset: 48px 0 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 </style>

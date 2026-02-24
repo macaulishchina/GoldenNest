@@ -408,6 +408,49 @@ export const announcementAiApi = {
     api.post('/announcements/ai/improve', data)
 }
 
+// 外部应用 API - 第三方应用中心
+export const externalAppApi = {
+  // 获取激活的应用列表（所有用户）
+  list: () => api.get('/external-apps/'),
+  // 获取所有应用（管理员）
+  listAll: () => api.get('/external-apps/all'),
+  // 创建应用（管理员）
+  create: (data: {
+    name: string
+    url: string
+    icon_type?: string
+    icon_emoji?: string
+    description?: string
+    open_mode?: string
+    sort_order?: number
+    is_active?: boolean
+  }) => api.post('/external-apps/', data),
+  // 更新应用（管理员）
+  update: (id: number, data: {
+    name?: string
+    url?: string
+    icon_type?: string
+    icon_emoji?: string
+    description?: string
+    open_mode?: string
+    sort_order?: number
+    is_active?: boolean
+  }) => api.put(`/external-apps/${id}`, data),
+  // 删除应用（管理员）
+  remove: (id: number) => api.delete(`/external-apps/${id}`),
+  // 上传应用图标（管理员）
+  uploadIcon: (id: number, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`/external-apps/${id}/icon`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+  // 批量更新排序（管理员）
+  reorder: (items: Array<{ id: number; sort_order: number }>) =>
+    api.put('/external-apps/reorder', { items }),
+}
+
 // 站点配置 API - 图标 / PWA / 站点名称
 export const siteConfigApi = {
   // 获取站点信息（公开）
