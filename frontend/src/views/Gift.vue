@@ -234,6 +234,9 @@
                       <span class="sender-name">{{ gift.from_user_nickname }}</span>
                       送给你
                       <n-tag type="warning" size="small">{{ (gift.amount * 100).toFixed(2) }}% 股权</n-tag>
+                      <n-tag type="success" size="small" :bordered="false">
+                        ¥{{ formatMoney(gift.gift_money || (gift.amount * totalSavings)) }}
+                      </n-tag>
                     </div>
                     <div class="gift-time">{{ formatTime(gift.created_at) }}</div>
                   </div>
@@ -288,6 +291,9 @@
                       送给
                       <span class="sender-name">{{ gift.to_user_nickname }}</span>
                       <n-tag type="warning" size="small">{{ (gift.amount * 100).toFixed(2) }}% 股权</n-tag>
+                      <n-tag type="success" size="small" :bordered="false">
+                        ¥{{ formatMoney(gift.gift_money || (gift.amount * totalSavings)) }}
+                      </n-tag>
                     </div>
                     <div class="gift-time">{{ formatTime(gift.created_at) }}</div>
                   </div>

@@ -161,10 +161,7 @@
 
     <!-- 待审批的理财申请 -->
     <n-card title="待审批申请" class="card-hover" style="margin-bottom: 24px" v-if="pendingApprovals.length > 0">
-      <!-- 桌面端：表格 -->
-      <n-data-table class="desktop-only" :columns="approvalColumns" :data="pendingApprovals" :bordered="false" />
-      <!-- 移动端：卡片列表 -->
-      <div class="mobile-only approval-cards">
+      <div class="approval-cards">
         <div v-for="item in pendingApprovals" :key="item.id" class="approval-card">
           <div class="approval-card-header">
             <n-tag size="small" type="info">{{ requestTypeLabels[item.request_type] || item.request_type }}</n-tag>
@@ -187,13 +184,9 @@
     </n-card>
 
     <n-card title="理财产品列表" class="card-hover">
-      <!-- 桌面端：表格 -->
-      <n-data-table class="desktop-only" :columns="columns" :data="investments" :loading="loading" :bordered="false" />
-      <!-- 移动端：卡片列表 -->
-      <div class="mobile-only">
-        <n-spin :show="loading">
-          <div class="investment-cards" v-if="investments.length > 0">
-            <div v-for="item in investments" :key="item.id" class="investment-card" :class="{ 'deleted': item.is_deleted }" @click="!item.is_deleted && openHistoryModal(item)" @touchstart="(e: TouchEvent) => onLongPressStart(e, item)" @touchend="onLongPressEnd" @touchmove="onLongPressEnd" @contextmenu.prevent>
+      <n-spin :show="loading">
+        <div class="investment-cards" v-if="investments.length > 0">
+          <div v-for="item in investments" :key="item.id" class="investment-card" :class="{ 'deleted': item.is_deleted }" @click="!item.is_deleted && openHistoryModal(item)" @touchstart="(e: TouchEvent) => onLongPressStart(e, item)" @touchend="onLongPressEnd" @touchmove="onLongPressEnd" @contextmenu.prevent="!item.is_deleted && openDetailModal(item)">
               <div class="card-header">
                 <span class="product-name">{{ item.name }}</span>
                 <n-tag :type="item.is_deleted ? 'error' : (item.is_active ? 'success' : 'default')" size="small">
@@ -246,9 +239,8 @@
               </div>
             </div>
           </div>
-          <n-empty v-else description="暂无理财产品" />
-        </n-spin>
-      </div>
+        <n-empty v-else description="暂无理财产品" />
+      </n-spin>
     </n-card>
 
     <!-- 登记收益弹窗（改为更新价值） -->
@@ -464,7 +456,7 @@
               <!-- 凭证图片展示 -->
               <div v-if="item.image_data" class="history-voucher" style="margin-top: 8px">
                 <n-image
-                  :src="item.image_data"
+                  :src="'/api' + item.image_data"
                   width="80"
                   height="80"
                   style="border-radius: 4px; border: 1px solid var(--theme-border)"
@@ -480,7 +472,7 @@
                   type="primary" 
                   size="tiny" 
                   style="margin-left: 8px"
-                  @click.stop="showVoucherPreview(item.image_data)"
+                  @click.stop="showVoucherPreview('/api' + item.image_data)"
                 >
                   查看大图
                 </n-button>
@@ -524,7 +516,7 @@
         <n-form-item label="凭证图片">
           <div v-if="selectedDetailInvestment?.image_data" style="margin-bottom: 8px">
             <n-image
-              :src="selectedDetailInvestment.image_data"
+              :src="'/api' + selectedDetailInvestment.image_data"
               width="100"
               height="100"
               style="border-radius: 4px"
@@ -629,13 +621,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted, h, computed } from 'vue'
-import { useMessage, useDialog, NButton, NTag, NSpace, NInput, NRadio, NRadioGroup } from 'naive-ui'
+import { useMessage, useDialog, NButton, NInput } from 'naive-ui'
 import { storeToRefs } from 'pinia'
-import { investmentApi, approvalApi, transactionApi, assetApi, investmentAiApi } from '@/api'
+import { api, investmentApi, approvalApi, assetApi, investmentAiApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { useApprovalStore } from '@/stores/approval'
 import { usePrivacyStore } from '@/stores/privacy'
-import { SendOutline, CashOutline } from '@vicons/ionicons5'
+import { SendOutline } from '@vicons/ionicons5'
 import { formatShortDateTime, formatLocalDate } from '@/utils/date'
 import { checkAndShowAchievements } from '@/utils/achievement'
 import dayjs from 'dayjs'
@@ -974,81 +966,6 @@ const requestTypeLabels: Record<string, string> = {
   investment_decrease: '投资减持',
   investment_delete: '删除产品'
 }
-
-const columns = computed(() => [
-  { title: '产品名称', key: 'name' },
-  { title: '类型', key: 'investment_type', render: (row: any) => typeLabels[row.investment_type] || row.investment_type },
-  { title: '币种', key: 'currency', render: (row: any) => row.currency && row.currency !== 'CNY' ? row.currency : '' },
-  { title: '初始本金', key: 'principal', render: (row: any) => formatInvAmountWithCNY(row, 'principal') },
-  { title: '当前持仓', key: 'current_principal', render: (row: any) => formatInvAmountWithCNY(row, 'current_principal') },
-  { title: '总收益', key: 'total_return', render: (row: any) => {
-    const cur = row.currency || 'CNY'
-    const sym = currencySymbols[cur] || '¥'
-    return h('span', { style: { color: (row.total_return || 0) >= 0 ? 'var(--theme-success)' : 'var(--theme-error)' } }, `${sym}${formatMoney(row.total_return || 0)}`)
-  }},
-  { title: 'ROI', key: 'roi', render: (row: any) => {
-    const roi = row.roi || 0
-    return h('span', { style: { color: roi >= 0 ? 'var(--theme-success)' : 'var(--theme-error)' } }, `${roi.toFixed(2)}%`)
-  }},
-  { title: '年化', key: 'annualized_return', render: (row: any) => {
-    const rate = row.annualized_return || 0
-    if (rate <= 0) return '-'
-    return h('span', { style: { color: 'var(--theme-info)', fontWeight: 600 } }, `${rate.toFixed(2)}%`)
-  }},
-  { title: '状态', key: 'is_active', render: (row: any) => {
-    if (row.is_deleted) return h(NTag, { type: 'error', size: 'small' }, { default: () => '已删除' })
-    return h(NTag, { type: row.is_active ? 'success' : 'default', size: 'small' }, { default: () => row.is_active ? '持有中' : '已结束' })
-  }},
-  { title: '开始日期', key: 'start_date', render: (row: any) => formatLocalDate(row.start_date) },
-  { 
-    title: '操作', 
-    key: 'actions',
-    render: (row: any) => {
-      if (row.is_deleted) return h('span', { style: { color: 'var(--theme-text-tertiary)' } }, '已删除')
-      return h(NSpace, { size: 'small' }, {
-        default: () => [
-          h(NButton, { size: 'small', text: true, type: 'primary', onClick: () => openIncomeModal(row) }, { default: () => '更新价值' }),
-          h(NButton, { size: 'small', text: true, type: 'info', onClick: () => openIncreaseModal(row) }, { default: () => '增持' }),
-          h(NButton, { size: 'small', text: true, type: 'warning', onClick: () => openDecreaseModal(row) }, { default: () => '减持' }),
-          h(NButton, { size: 'small', text: true, type: 'default', onClick: () => openHistoryModal(row) }, { default: () => '详细' }),
-          h(NButton, { size: 'small', text: true, type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' })
-        ]
-      })
-    }
-  }
-])
-
-const approvalColumns = computed(() => [
-  { title: '申请人', key: 'requester_nickname' },
-  { 
-    title: '类型', 
-    key: 'request_type',
-    render: (row: any) => h(NTag, { size: 'small', type: 'info' }, { default: () => requestTypeLabels[row.request_type] || row.request_type })
-  },
-  { 
-    title: '详情', 
-    key: 'details', 
-    render: (row: any) => row.title || '-'
-  },
-  { title: '申请时间', key: 'created_at', render: (row: any) => dayjs(row.created_at).format('YYYY-MM-DD HH:mm') },
-  { 
-    title: '审批进度', 
-    key: 'progress',
-    render: (row: any) => `${row.approved_count || 0}/${getRequiredCount(row)}`
-  },
-  { 
-    title: '操作', 
-    key: 'actions',
-    render: (row: any) => {
-      const canApprove = row.requester_id !== userStore.user?.id && !row.has_voted
-      if (!canApprove) return h('span', { style: 'color: var(--theme-text-tertiary)' }, row.has_voted ? '已投票' : '等待他人')
-      return h(NSpace, { size: 'small' }, { default: () => [
-        h(NButton, { size: 'small', type: 'success', onClick: () => handleApprove(row.id, true) }, { default: () => '同意' }),
-        h(NButton, { size: 'small', type: 'error', onClick: () => handleApprove(row.id, false) }, { default: () => '拒绝' })
-      ]})
-    }
-  }
-])
 
 async function loadData() {
   loading.value = true
@@ -1487,6 +1404,191 @@ onMounted(loadData)
   display: none;
 }
 
+/* ===== 理财产品卡片样式（PC + 移动端通用） ===== */
+.investment-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.investment-card {
+  background: linear-gradient(135deg, var(--theme-bg-secondary) 0%, var(--theme-border-light) 100%);
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid var(--theme-border);
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.investment-card:hover {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+  border-color: var(--theme-success);
+}
+
+.investment-card.deleted {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.investment-card .card-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 8px;
+  min-height: 24px;
+  flex-wrap: wrap;
+}
+
+.investment-card .product-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--theme-text-primary);
+  word-break: break-all;
+}
+
+.investment-card .card-type {
+  margin-bottom: 10px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.investment-card .card-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 10px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.investment-card .card-stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 10px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.investment-card .stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.investment-card .stat-label {
+  font-size: 11px;
+  color: var(--theme-text-secondary);
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.investment-card .stat-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--theme-text-primary);
+}
+
+.investment-card .stat-value.profit {
+  color: var(--theme-success);
+}
+
+.investment-card .stat-value.loss {
+  color: var(--theme-error);
+}
+
+.investment-card .card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  gap: 8px;
+}
+
+.investment-card .start-date {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.investment-card .deleted-text {
+  font-size: 12px;
+  color: var(--theme-text-tertiary);
+}
+
+/* ===== 待审批卡片样式（PC + 移动端通用） ===== */
+.approval-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.approval-card {
+  background: var(--theme-warning-bg);
+  border-radius: 10px;
+  padding: 12px;
+  border: 1px solid var(--theme-warning);
+}
+
+.approval-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.approval-time {
+  font-size: 11px;
+  color: var(--theme-text-tertiary);
+}
+
+.approval-card-body {
+  margin-bottom: 10px;
+}
+
+.approval-requester {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--theme-text-primary);
+  margin-bottom: 4px;
+}
+
+.approval-detail {
+  font-size: 13px;
+  color: var(--theme-text-secondary);
+}
+
+.approval-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--theme-border);
+}
+
+.approval-progress {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+}
+
+.approval-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.approval-wait {
+  font-size: 12px;
+  color: var(--theme-text-tertiary);
+}
+
 /* 移动端响应式 */
 @media (max-width: 767px) {
   .desktop-only {
@@ -1494,6 +1596,16 @@ onMounted(loadData)
   }
   .mobile-only {
     display: block !important;
+  }
+
+  /* 移动端卡片单列 */
+  .investment-cards {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .investment-card {
+    padding: 12px;
   }
 
   .page-container {
@@ -1658,180 +1770,6 @@ onMounted(loadData)
   /* 卡片间距 */
   :deep(.n-card) {
     margin-bottom: 16px !important;
-  }
-
-  /* ===== 理财产品卡片样式 ===== */
-  .investment-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .investment-card {
-    background: linear-gradient(135deg, var(--theme-bg-secondary) 0%, var(--theme-border-light) 100%);
-    border-radius: 16px;
-    padding: 12px;
-    border: 1px solid var(--theme-border);
-    position: relative;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-    transition: all 0.3s ease;
-  }
-  
-  .investment-card:hover {
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-    transform: translateY(-2px);
-    border-color: var(--theme-success);
-  }
-
-  .investment-card .card-header {
-    display: flex;
-    align-items: center;
-    margin-bottom: 10px;
-    gap: 8px;
-    min-height: 24px;
-    flex-wrap: wrap;
-  }
-
-  .investment-card .product-name {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--theme-text-primary);
-    word-break: break-all;
-  }
-
-  .investment-card .card-type {
-    margin-bottom: 10px;
-    display: flex;
-    gap: 6px;
-    align-items: center;
-  }
-
-  .investment-card .card-stats {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-    margin-bottom: 10px;
-    background: rgba(0, 0, 0, 0.05);
-    border-radius: 12px;
-    padding: 10px;
-  }
-
-  .investment-card .card-stats-row {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    margin-bottom: 10px;
-    background: rgba(0, 0, 0, 0.05);
-    border-radius: 12px;
-    padding: 10px;
-  }
-
-  .investment-card .stat-item {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  .investment-card .stat-label {
-    font-size: 11px;
-    color: var(--theme-text-secondary);
-    font-weight: 500;
-    letter-spacing: 0.5px;
-  }
-
-  .investment-card .stat-value {
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--theme-text-primary);
-  }
-
-  .investment-card .stat-value.profit {
-    color: var(--theme-success);
-  }
-
-  .investment-card .stat-value.loss {
-    color: var(--theme-error);
-  }
-
-  .investment-card .card-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-top: 8px;
-    border-top: 1px solid rgba(0, 0, 0, 0.08);
-    gap: 8px;
-  }
-
-  .investment-card .start-date {
-    font-size: 12px;
-    color: var(--theme-text-secondary);
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  /* ===== 待审批卡片样式 ===== */
-  .approval-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .approval-card {
-    background: var(--theme-warning-bg);
-    border-radius: 10px;
-    padding: 12px;
-    border: 1px solid var(--theme-warning);
-  }
-
-  .approval-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-  }
-
-  .approval-time {
-    font-size: 11px;
-    color: var(--theme-text-tertiary);
-  }
-
-  .approval-card-body {
-    margin-bottom: 10px;
-  }
-
-  .approval-requester {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--theme-text-primary);
-    margin-bottom: 4px;
-  }
-
-  .approval-detail {
-    font-size: 13px;
-    color: var(--theme-text-secondary);
-  }
-
-  .approval-card-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-top: 10px;
-    border-top: 1px solid var(--theme-border);
-  }
-
-  .approval-progress {
-    font-size: 12px;
-    color: var(--theme-text-secondary);
-  }
-
-  .approval-actions {
-    display: flex;
-    gap: 8px;
-  }
-
-  .approval-wait {
-    font-size: 12px;
-    color: var(--theme-text-tertiary);
   }
 
   /* ===== 移动端紧凑表单样式 ===== */

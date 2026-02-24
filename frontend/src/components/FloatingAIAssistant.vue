@@ -63,7 +63,7 @@
 
         <!-- Tab: 快捷功能设置 -->
         <template v-if="menuTab === 'shortcut'">
-          <div class="shortcut-hint">双击按钮可快速跳转</div>
+          <div class="shortcut-hint">点击按钮可快速跳转</div>
           <div class="shortcut-options">
             <div
               v-for="mod in quickActionModules"
@@ -238,10 +238,11 @@ const showChat = ref(false)
 const showMenu = ref(false)
 const isMinimized = ref(false)
 const longPressTimer = ref<number | null>(null)
+let singleTapTimer: number | null = null
 const menuTab = ref<'assistant' | 'shortcut'>('assistant')
 let lastTouchTime = 0
 let lastTapTime = 0
-const DOUBLE_TAP_MS = 300
+const DOUBLE_TAP_MS = 200
 
 // Personal characters (presets + custom), persisted in localStorage
 const personalCharacters = ref<PersonalChar[]>([])
@@ -440,14 +441,13 @@ function startDrag(e: MouseEvent | TouchEvent) {
   dragStartPos.value = { x: clientX, y: clientY }
   dragOffset.value = { x: clientX - position.value.x, y: clientY - position.value.y }
 
-  if ('touches' in e) {
-    longPressTimer.value = window.setTimeout(() => {
-      showMenu.value = true
-      menuTab.value = 'assistant'
-      isDragging.value = false
-      wasDragged.value = true
-    }, 500)
-  }
+  // Long press → open config menu (both touch and mouse)
+  longPressTimer.value = window.setTimeout(() => {
+    isDragging.value = false
+    wasDragged.value = true
+    showMenu.value = true
+    menuTab.value = 'assistant'
+  }, 500)
 }
 
 function handleDragMove(e: MouseEvent | TouchEvent) {
@@ -492,15 +492,17 @@ function handleTap() {
 
   const now = Date.now()
   if (now - lastTapTime < DOUBLE_TAP_MS) {
-    // Double-tap → quick action
+    // Double-tap → cancel pending single-tap and execute quick action
     lastTapTime = 0
+    if (singleTapTimer) { clearTimeout(singleTapTimer); singleTapTimer = null }
     executeQuickAction()
     return
   }
   lastTapTime = now
-  setTimeout(() => {
+  // Defer single-tap to allow double-tap cancellation (200ms, barely perceptible)
+  singleTapTimer = window.setTimeout(() => {
+    singleTapTimer = null
     if (lastTapTime === now) {
-      // Single tap confirmed → toggle chat
       showChat.value = !showChat.value
     }
   }, DOUBLE_TAP_MS)
@@ -529,6 +531,7 @@ function handleContextMenu(e: MouseEvent) {
   if (!(target instanceof HTMLElement)) return
   if (target.closest('.floating-assistant')) {
     e.preventDefault()
+    // Right-click on desktop → open config menu (same as double-tap)
     showMenu.value = true
     menuTab.value = 'assistant'
   }
@@ -687,7 +690,7 @@ async function handlePetChat(userMessage: string, history: any[] = []): Promise<
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
-  touch-action: none;
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   transition: transform 0.2s ease;
 }
