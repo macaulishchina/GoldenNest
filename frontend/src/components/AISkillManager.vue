@@ -1,5 +1,5 @@
 <template>
-  <n-card title="🎨 AI 技能管理" :bordered="false" style="margin-top: 16px">
+  <n-card title="🎨 AI 技能管理" :bordered="false">
     <template #header-extra>
       <n-space :size="8">
         <n-button size="small" quaternary @click="loadSkills" :loading="loading">刷新</n-button>
@@ -37,8 +37,8 @@
                 <span style="margin-left: 6px; font-weight: 500">{{ skill.name }}</span>
               </div>
               <div class="skill-desc">{{ skill.description || '无描述' }}</div>
-              <div class="skill-meta">
-                <n-tag size="tiny" :bordered="false">{{ skill.function_key }}</n-tag>
+              <div class="skill-fn-key">
+                <n-tag size="tiny" :bordered="false" style="max-width: 100%; white-space: normal; word-break: break-all; height: auto; line-height: 1.4">{{ skill.function_key }}</n-tag>
                 <span v-if="skill.attachments?.length" class="skill-attachment-count">
                   📎 {{ skill.attachments.length }} 个附件
                 </span>
@@ -413,10 +413,10 @@ onMounted(loadSkills)
   margin-top: 2px;
 }
 
-.skill-meta {
+.skill-fn-key {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   margin-top: 4px;
 }
 
@@ -450,5 +450,17 @@ onMounted(loadSkills)
 
 .var-tag:hover {
   opacity: 0.8;
+}
+
+@media (max-width: 768px) {
+  .skill-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .skill-item-right {
+    margin-top: 6px;
+    align-self: flex-end;
+  }
 }
 </style>

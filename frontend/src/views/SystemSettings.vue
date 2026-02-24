@@ -1,103 +1,162 @@
 <template>
   <div class="system-settings">
-    <n-card title="🤖 AI 服务商管理" :bordered="false">
-      <template #header-extra>
-        <n-button type="primary" @click="showAddModal = true">
-          <template #icon><n-icon><AddOutline /></n-icon></template>
-          添加服务商
-        </n-button>
-      </template>
+    <n-tabs type="line" animated default-value="providers" :tabs-padding="8">
+      <!-- Tab 1: 服务商管理 -->
+      <n-tab-pane name="providers" tab="🤖 服务商管理">
+        <div class="tab-content">
+          <n-space justify="end" style="margin-bottom: 12px">
+            <n-button type="primary" @click="showAddModal = true">
+              <template #icon><n-icon><AddOutline /></n-icon></template>
+              添加服务商
+            </n-button>
+          </n-space>
 
-      <!-- AI 状态概览 -->
-      <n-alert :type="aiStatus.configured ? 'success' : 'warning'" style="margin-bottom: 16px">
-        <template #header>
-          当前 AI 服务状态
-        </template>
-        <span v-if="aiStatus.configured">
-          ✅ 已配置 — {{ aiStatus.provider_name }} / {{ aiStatus.model }}
-          <n-tag :bordered="false" size="small" type="info" style="margin-left: 8px">
-            {{ aiStatus.source === 'database' ? '页面配置' : '环境变量' }}
-          </n-tag>
-        </span>
-        <span v-else>⚠️ 未配置 AI 服务，图片识别等功能不可用</span>
-      </n-alert>
+          <!-- AI 状态概览 -->
+          <n-alert :type="aiStatus.configured ? 'success' : 'warning'" style="margin-bottom: 16px">
+            <template #header>当前 AI 服务状态</template>
+            <span v-if="aiStatus.configured">
+              ✅ 已配置 — {{ aiStatus.provider_name }} / {{ aiStatus.model }}
+              <n-tag :bordered="false" size="small" type="info" style="margin-left: 8px">
+                {{ aiStatus.source === 'database' ? '页面配置' : '环境变量' }}
+              </n-tag>
+            </span>
+            <span v-else>⚠️ 未配置 AI 服务，图片识别等功能不可用</span>
+          </n-alert>
 
-      <!-- 显示 AI 模型信息开关 -->
-      <div class="ai-model-toggle">
-        <div class="ai-model-toggle-left">
-          <span class="ai-model-toggle-label">✦ 显示 AI 模型调用信息</span>
-          <span class="ai-model-toggle-desc">开启后，每次 AI 调用时将短暂显示使用的功能和模型名</span>
+          <!-- 显示 AI 模型信息开关 -->
+          <div class="ai-model-toggle">
+            <div class="ai-model-toggle-left">
+              <span class="ai-model-toggle-label">✦ 显示 AI 模型调用信息</span>
+              <span class="ai-model-toggle-desc">开启后，每次 AI 调用时将短暂显示使用的功能和模型名</span>
+            </div>
+            <n-switch v-model:value="showAIModelInfoVal" @update:value="onToggleAIModelInfo" />
+          </div>
+
+          <!-- 服务商列表 -->
+          <n-spin :show="loading">
+            <div v-if="providers.length === 0 && !loading" style="text-align: center; padding: 40px; color: var(--theme-text-tertiary)">
+              暂无已配置的 AI 服务商，点击「添加服务商」开始配置
+            </div>
+
+            <n-space vertical :size="12">
+              <n-card
+                v-for="p in providers"
+                :key="p.id"
+                size="small"
+                :bordered="true"
+                :style="{ borderLeft: p.is_active ? '3px solid #18a058' : '3px solid transparent' }"
+              >
+                <div class="provider-card">
+                  <div class="provider-header">
+                    <div class="provider-title">
+                      <n-tag :type="p.is_active ? 'success' : (p.is_enabled ? 'default' : 'error')" size="small" :bordered="false">
+                        {{ p.is_active ? '✅ 活跃' : (p.is_enabled ? '待机' : '已禁用') }}
+                      </n-tag>
+                      <span class="provider-name">{{ p.name }}</span>
+                      <n-tag size="tiny" :bordered="false" type="info">{{ p.provider_type }}</n-tag>
+                    </div>
+                    <n-space :size="4">
+                      <n-button v-if="!p.is_active && p.is_enabled" size="small" type="success" ghost @click="handleActivate(p)">
+                        激活
+                      </n-button>
+                      <n-button v-if="p.is_active" size="small" type="warning" ghost @click="handleDeactivate(p)">
+                        取消激活
+                      </n-button>
+                      <n-button size="small" ghost @click="openEditModal(p)">编辑</n-button>
+                      <n-popconfirm @positive-click="handleDelete(p)">
+                        <template #trigger>
+                          <n-button size="small" type="error" ghost>删除</n-button>
+                        </template>
+                        确定删除服务商「{{ p.name }}」？
+                      </n-popconfirm>
+                    </n-space>
+                  </div>
+
+                  <div class="provider-info">
+                    <div class="info-row">
+                      <span class="info-label">Base URL:</span>
+                      <span class="info-value">{{ p.base_url }}</span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-label">API Key:</span>
+                      <span class="info-value">{{ p.api_key_masked || '未配置' }}</span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-label">当前模型:</span>
+                      <n-space align="center" :size="8">
+                        <span class="info-value">{{ p.default_model || '未选择' }}</span>
+                        <n-button size="tiny" text type="primary" @click="openModelSelector(p)" :loading="modelLoadingId === p.id">
+                          选择模型
+                        </n-button>
+                      </n-space>
+                    </div>
+                  </div>
+                </div>
+              </n-card>
+            </n-space>
+          </n-spin>
         </div>
-        <n-switch v-model:value="showAIModelInfoVal" @update:value="onToggleAIModelInfo" />
-      </div>
+      </n-tab-pane>
 
-      <!-- 服务商列表 -->
-      <n-spin :show="loading">
-        <div v-if="providers.length === 0 && !loading" style="text-align: center; padding: 40px; color: var(--theme-text-tertiary)">
-          暂无已配置的 AI 服务商，点击右上角「添加服务商」开始配置
-        </div>
-        
-        <n-space vertical :size="12">
-          <n-card
-            v-for="p in providers"
-            :key="p.id"
-            size="small"
-            :bordered="true"
-            :style="{ borderLeft: p.is_active ? '3px solid #18a058' : '3px solid transparent' }"
-          >
-            <div class="provider-card">
-              <div class="provider-header">
-                <div class="provider-title">
-                  <n-tag :type="p.is_active ? 'success' : (p.is_enabled ? 'default' : 'error')" size="small" :bordered="false">
-                    {{ p.is_active ? '✅ 活跃' : (p.is_enabled ? '待机' : '已禁用') }}
-                  </n-tag>
-                  <span class="provider-name">{{ p.name }}</span>
-                  <n-tag size="tiny" :bordered="false" type="info">{{ p.provider_type }}</n-tag>
-                </div>
-                <n-space :size="4">
-                  <n-button v-if="!p.is_active && p.is_enabled" size="small" type="success" ghost @click="handleActivate(p)">
-                    激活
-                  </n-button>
-                  <n-button v-if="p.is_active" size="small" type="warning" ghost @click="handleDeactivate(p)">
-                    取消激活
-                  </n-button>
-                  <n-button size="small" ghost @click="openEditModal(p)">编辑</n-button>
-                  <n-popconfirm @positive-click="handleDelete(p)">
-                    <template #trigger>
-                      <n-button size="small" type="error" ghost>删除</n-button>
-                    </template>
-                    确定删除服务商「{{ p.name }}」？
-                  </n-popconfirm>
-                </n-space>
-              </div>
-              
-              <div class="provider-info">
-                <div class="info-row">
-                  <span class="info-label">Base URL:</span>
-                  <span class="info-value">{{ p.base_url }}</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">API Key:</span>
-                  <span class="info-value">{{ p.api_key_masked || '未配置' }}</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">当前模型:</span>
-                  <n-space align="center" :size="8">
-                    <span class="info-value">{{ p.default_model || '未选择' }}</span>
-                    <n-button size="tiny" text type="primary" @click="openModelSelector(p)" :loading="modelLoadingId === p.id">
-                      选择模型
+      <!-- Tab 2: 功能模型配置 -->
+      <n-tab-pane name="functions" tab="🎯 功能模型">
+        <div class="tab-content">
+          <n-space justify="end" style="margin-bottom: 12px">
+            <n-button size="small" quaternary @click="loadFunctionConfigs" :loading="fnLoading">
+              刷新
+            </n-button>
+          </n-space>
+
+          <n-alert type="info" :bordered="false" style="margin-bottom: 16px">
+            可为每个 AI 功能单独指定服务商和模型。未配置的功能将使用上方全局活跃服务商的默认模型。
+          </n-alert>
+
+          <n-spin :show="fnLoading">
+            <div v-if="fnGroups.length === 0 && !fnLoading" style="text-align: center; padding: 30px; color: var(--theme-text-tertiary)">
+              暂无功能注册信息
+            </div>
+
+            <div v-for="group in fnGroups" :key="group.key" class="fn-group">
+              <div class="fn-group-title">{{ group.icon }} {{ group.name }}</div>
+              <div class="fn-list">
+                <div v-for="fn in group.functions" :key="fn.key" class="fn-item">
+                  <div class="fn-item-left">
+                    <div class="fn-name">
+                      {{ fn.name }}
+                      <n-tag v-if="!fn.is_enabled" size="tiny" type="error" :bordered="false" style="margin-left: 6px">已禁用</n-tag>
+                      <n-tag v-else-if="fn.source === 'function'" size="tiny" type="success" :bordered="false" style="margin-left: 6px">自定义</n-tag>
+                    </div>
+                    <div class="fn-desc">{{ fn.description }}</div>
+                    <div class="fn-model-info">
+                      <n-tag size="tiny" :bordered="false" :type="fn.is_enabled ? 'info' : 'default'">
+                        {{ fn.resolved_model || '未配置' }}
+                      </n-tag>
+                      <span class="fn-capability">{{ capabilityLabel(fn.capability) }}</span>
+                    </div>
+                  </div>
+                  <div class="fn-item-right">
+                    <n-button size="small" text type="primary" @click="openFnConfigModal(fn)">
+                      配置
                     </n-button>
-                  </n-space>
+                    <n-button v-if="fn.source === 'function'" size="small" text type="warning" @click="handleResetFnConfig(fn)">
+                      重置
+                    </n-button>
+                  </div>
                 </div>
               </div>
             </div>
-          </n-card>
-        </n-space>
-      </n-spin>
-    </n-card>
+          </n-spin>
+        </div>
+      </n-tab-pane>
+
+      <!-- Tab 3: AI 技能管理 -->
+      <n-tab-pane name="skills" tab="🎨 AI 技能">
+        <AISkillManager />
+      </n-tab-pane>
+    </n-tabs>
 
     <!-- 添加/编辑服务商 Modal -->
-    <n-modal v-model:show="showAddModal" :title="editingProvider ? '编辑服务商' : '添加 AI 服务商'" preset="dialog" style="width: 520px">
+    <n-modal v-model:show="showAddModal" :title="editingProvider ? '编辑服务商' : '添加 AI 服务商'" preset="dialog" style="width: 520px; max-width: 95vw">
       <n-form ref="formRef" :model="formData" :rules="formRules" label-placement="left" label-width="100px">
         <!-- 模板选择（仅新建时） -->
         <n-form-item v-if="!editingProvider" label="服务商模板">
@@ -147,7 +206,7 @@
     </n-modal>
 
     <!-- 模型选择 Modal -->
-    <n-modal v-model:show="showModelModal" title="选择模型" preset="dialog" style="width: 600px">
+    <n-modal v-model:show="showModelModal" title="选择模型" preset="dialog" style="width: 600px; max-width: 95vw">
       <n-spin :show="modelsLoading">
         <div v-if="modelList.length === 0 && !modelsLoading" style="text-align: center; padding: 20px; color: var(--theme-text-tertiary)">
           无法获取模型列表，请检查 API Key 和 Base URL 是否正确
@@ -177,60 +236,8 @@
       </n-spin>
     </n-modal>
 
-    <!-- ==================== 功能级模型配置 ==================== -->
-    <n-card title="🎯 功能级模型配置" :bordered="false" style="margin-top: 16px">
-      <template #header-extra>
-        <n-button size="small" quaternary @click="loadFunctionConfigs" :loading="fnLoading">
-          刷新
-        </n-button>
-      </template>
-
-      <n-alert type="info" :bordered="false" style="margin-bottom: 16px">
-        可为每个 AI 功能单独指定服务商和模型。未配置的功能将使用上方全局活跃服务商的默认模型。
-      </n-alert>
-
-      <n-spin :show="fnLoading">
-        <div v-if="fnGroups.length === 0 && !fnLoading" style="text-align: center; padding: 30px; color: var(--theme-text-tertiary)">
-          暂无功能注册信息
-        </div>
-
-        <div v-for="group in fnGroups" :key="group.key" class="fn-group">
-          <div class="fn-group-title">{{ group.icon }} {{ group.name }}</div>
-          <div class="fn-list">
-            <div v-for="fn in group.functions" :key="fn.key" class="fn-item">
-              <div class="fn-item-left">
-                <div class="fn-name">
-                  {{ fn.name }}
-                  <n-tag v-if="!fn.is_enabled" size="tiny" type="error" :bordered="false" style="margin-left: 6px">已禁用</n-tag>
-                  <n-tag v-else-if="fn.source === 'function'" size="tiny" type="success" :bordered="false" style="margin-left: 6px">自定义</n-tag>
-                </div>
-                <div class="fn-desc">{{ fn.description }}</div>
-                <div class="fn-model-info">
-                  <n-tag size="tiny" :bordered="false" :type="fn.is_enabled ? 'info' : 'default'">
-                    {{ fn.resolved_model || '未配置' }}
-                  </n-tag>
-                  <span class="fn-capability">{{ capabilityLabel(fn.capability) }}</span>
-                </div>
-              </div>
-              <div class="fn-item-right">
-                <n-button size="small" text type="primary" @click="openFnConfigModal(fn)">
-                  配置
-                </n-button>
-                <n-button v-if="fn.source === 'function'" size="small" text type="warning" @click="handleResetFnConfig(fn)">
-                  重置
-                </n-button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </n-spin>
-    </n-card>
-
-    <!-- AI 技能管理（独立组件） -->
-    <AISkillManager />
-
     <!-- 功能模型配置 Modal -->
-    <n-modal v-model:show="showFnConfigModal" :title="`配置: ${fnConfigTarget?.name || ''}`" preset="dialog" style="width: 500px">
+    <n-modal v-model:show="showFnConfigModal" :title="`配置: ${fnConfigTarget?.name || ''}`" preset="dialog" style="width: 500px; max-width: 95vw">
       <n-form label-placement="left" label-width="90px">
         <n-form-item label="服务商">
           <n-select
@@ -274,7 +281,7 @@
     </n-modal>
 
     <!-- 功能模型选择 Modal -->
-    <n-modal v-model:show="showFnModelPicker" title="选择模型" preset="dialog" style="width: 600px">
+    <n-modal v-model:show="showFnModelPicker" title="选择模型" preset="dialog" style="width: 600px; max-width: 95vw">
       <n-spin :show="fnModelPickerLoading">
         <n-input
           v-if="fnPickerModels.length > 0"
@@ -693,6 +700,10 @@ async function openFnModelPicker() {
   padding: 16px;
 }
 
+.tab-content {
+  padding: 4px 0;
+}
+
 .provider-card {
   display: flex;
   flex-direction: column;
@@ -779,6 +790,10 @@ async function openFnModelPicker() {
   .system-settings {
     padding: 8px;
   }
+
+  .tab-content {
+    padding: 0;
+  }
   
   .provider-header {
     flex-direction: column;
@@ -799,6 +814,12 @@ async function openFnModelPicker() {
   .fn-item-right {
     margin-top: 6px;
     align-self: flex-end;
+  }
+
+  .ai-model-toggle {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
   }
 }
 
