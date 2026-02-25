@@ -12,7 +12,10 @@
       <div class="page-header">
         <div class="header-top">
           <h3 class="page-title">📒 家庭记账</h3>
-          <n-button type="primary" size="small" @click="openCreateModal">+ 新建记账</n-button>
+          <div style="display: flex; gap: 8px; align-items: center">
+            <n-button type="info" size="small" @click="openAiAnalyzeModal">🤖 AI分析</n-button>
+            <n-button type="primary" size="small" @click="openCreateModal">+ 新建记账</n-button>
+          </div>
         </div>
         <div class="stats-box">
           <div class="stats-box-top">
@@ -725,6 +728,80 @@
         <n-button class="receipt-close" circle size="small" @click="showImageModal = false">✕</n-button>
       </div>
     </n-modal>
+
+    <!-- AI 分析抽屉 -->
+    <n-drawer
+      v-model:show="showAiAnalyzeDrawer"
+      :width="isMobile ? '100%' : 560"
+      placement="right"
+    >
+      <n-drawer-content :title="'🤖 AI 消费分析'" :native-scrollbar="false" closable>
+        <!-- 分析范围说明 -->
+        <div class="ai-analyze-scope">
+          <n-descriptions label-placement="left" :column="1" size="small" bordered>
+            <n-descriptions-item label="时间范围">
+              {{ aiAnalyzeScopeText }}
+            </n-descriptions-item>
+            <n-descriptions-item v-if="filterCategory" label="分类筛选">
+              {{ getCategoryLabel(filterCategory) }}
+            </n-descriptions-item>
+            <n-descriptions-item v-if="filterConsumer !== null" label="消费人">
+              {{ filterConsumer === 0 ? '家庭共同' : (familyMembers.find(m => m.user_id === filterConsumer)?.nickname || '未知') }}
+            </n-descriptions-item>
+            <n-descriptions-item v-if="filterAccounted !== null" label="入账状态">
+              {{ filterAccounted === 'true' ? '仅已入账' : '仅未入账' }}
+            </n-descriptions-item>
+          </n-descriptions>
+          <n-text depth="3" style="font-size: 12px; margin-top: 8px; display: block">
+            💡 分析基于当前页面筛选条件，如无时间筛选则默认分析近一年数据
+          </n-text>
+        </div>
+
+        <n-divider style="margin: 12px 0" />
+
+        <!-- 加载状态 -->
+        <div v-if="aiAnalyzing" class="ai-analyze-loading">
+          <n-spin size="large" />
+          <div style="margin-top: 16px; text-align: center; color: var(--theme-text-secondary)">
+            <div>🤖 AI 正在分析消费数据...</div>
+            <div style="font-size: 12px; margin-top: 4px">通常需要 10-30 秒，请耐心等待</div>
+          </div>
+        </div>
+
+        <!-- 分析结果 -->
+        <div v-else-if="aiAnalysisResult" class="ai-analyze-result">
+          <!-- 元数据摘要 -->
+          <n-alert type="info" style="margin-bottom: 12px">
+            <span>共分析 <strong>{{ aiAnalysisResult.meta.total_count }}</strong> 条记录，</span>
+            <span>总计 <strong>¥{{ aiAnalysisResult.meta.total_amount.toFixed(2) }}</strong>，</span>
+            <span>时间范围：{{ aiAnalysisResult.meta.date_range }}</span>
+          </n-alert>
+          <!-- AI 分析文本 -->
+          <div class="ai-analysis-text" v-html="renderMarkdown(aiAnalysisResult.analysis)"></div>
+        </div>
+
+        <!-- 空状态 / 错误 -->
+        <n-empty v-else-if="aiAnalysisError" :description="aiAnalysisError" style="margin: 40px 0">
+          <template #extra>
+            <n-button type="primary" @click="runAiAnalysis">重新分析</n-button>
+          </template>
+        </n-empty>
+
+        <template #footer>
+          <n-space justify="end">
+            <n-button @click="showAiAnalyzeDrawer = false">关闭</n-button>
+            <n-button
+              type="primary"
+              :loading="aiAnalyzing"
+              :disabled="aiAnalyzing"
+              @click="runAiAnalysis"
+            >
+              {{ aiAnalysisResult ? '重新分析' : '开始分析' }}
+            </n-button>
+          </n-space>
+        </template>
+      </n-drawer-content>
+    </n-drawer>
   </div>
 </template>
 
@@ -1927,7 +2004,75 @@ async function importEntriesDirect(entries: any[]) {
   }
 }
 
-// ==================== 原有函数（保留向后兼容） ====================
+// ==================== AI 分析功能 ====================
+
+const showAiAnalyzeDrawer = ref(false)
+const aiAnalyzing = ref(false)
+const aiAnalysisResult = ref<any>(null)
+const aiAnalysisError = ref<string | null>(null)
+
+const aiAnalyzeScopeText = computed(() => {
+  if (filterDateRange.value) {
+    const start = dayjs(filterDateRange.value[0]).format('YYYY-MM-DD')
+    const end = dayjs(filterDateRange.value[1]).format('YYYY-MM-DD')
+    return `${start} 至 ${end}`
+  }
+  // 默认近一年
+  const end = dayjs().format('YYYY-MM-DD')
+  const start = dayjs().subtract(1, 'year').format('YYYY-MM-DD')
+  return `${start} 至 ${end}（默认近一年）`
+})
+
+function openAiAnalyzeModal() {
+  aiAnalysisResult.value = null
+  aiAnalysisError.value = null
+  showAiAnalyzeDrawer.value = true
+}
+
+async function runAiAnalysis() {
+  aiAnalyzing.value = true
+  aiAnalysisError.value = null
+  try {
+    const params: any = {}
+    if (filterDateRange.value) {
+      params.start_date = dayjs(filterDateRange.value[0]).toISOString()
+      params.end_date = dayjs(filterDateRange.value[1]).endOf('day').toISOString()
+    } else {
+      // 默认近一年
+      params.start_date = dayjs().subtract(1, 'year').startOf('day').toISOString()
+      params.end_date = dayjs().endOf('day').toISOString()
+    }
+    if (filterCategory.value) params.category = filterCategory.value
+    if (filterConsumer.value !== null) params.consumer_id = filterConsumer.value
+    if (filterAccounted.value !== null) params.is_accounted = filterAccounted.value === 'true'
+
+    const { data } = await api.post('/accounting/ai-analyze', params, { timeout: 90000 })
+    aiAnalysisResult.value = data
+  } catch (error: any) {
+    const detail = error.response?.data?.detail || 'AI 分析失败，请稍后重试'
+    aiAnalysisError.value = detail
+    message.error(detail)
+  } finally {
+    aiAnalyzing.value = false
+  }
+}
+
+function renderMarkdown(text: string): string {
+  if (!text) return ''
+  // 简单的 Markdown 渲染：加粗、标题、列表
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/^### (.+)$/gm, '<h4>$1</h4>')
+    .replace(/^## (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^# (.+)$/gm, '<h2>$1</h2>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+    .replace(/\n/g, '<br>')
+}
 
 // 初始化
 // 监听路由 query 参数，支持从浮动按钮双击快捷进入语音/拍照记账
@@ -2449,5 +2594,52 @@ onMounted(() => {
   .entry-row2 {
     white-space: normal;
   }
+}
+
+/* ===== AI 分析抽屉 ===== */
+.ai-analyze-scope {
+  margin-bottom: 4px;
+}
+
+.ai-analyze-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60px 0;
+}
+
+.ai-analyze-result {
+  padding-bottom: 16px;
+}
+
+.ai-analysis-text {
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--theme-text-primary, #1f2937);
+}
+
+.ai-analysis-text h2,
+.ai-analysis-text h3,
+.ai-analysis-text h4 {
+  margin: 16px 0 8px;
+  color: var(--theme-text-primary, #1f2937);
+}
+
+.ai-analysis-text h4 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.ai-analysis-text ul {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+
+.ai-analysis-text li {
+  margin-bottom: 4px;
+}
+
+.ai-analysis-text strong {
+  color: var(--theme-purple, #6366f1);
 }
 </style>
