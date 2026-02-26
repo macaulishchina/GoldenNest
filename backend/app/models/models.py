@@ -1052,3 +1052,23 @@ class ExternalApp(Base):
     created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, onupdate=datetime.utcnow)
+
+
+# ==================== AI 记账分析报告模型 ====================
+
+class AccountingAIReport(Base):
+    """AI 记账分析报告表 — 存储生成的 AI 消费分析历史快照"""
+    __tablename__ = "accounting_ai_reports"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id"))
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))  # 触发人
+    title: Mapped[str] = mapped_column(String(200))                   # 报告标题
+    date_from: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)   # 分析起始日期
+    date_to: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)     # 分析截止日期
+    member_filter: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # 成员筛选（JSON 数组）
+    category_filter: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # 分类筛选
+    entry_count: Mapped[int] = mapped_column(Integer, default=0)      # 分析条目数
+    total_amount: Mapped[float] = mapped_column(Float, default=0)     # 分析总金额
+    report_data: Mapped[str] = mapped_column(Text)                    # 报告内容（JSON 格式）
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
