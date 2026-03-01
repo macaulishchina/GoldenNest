@@ -64,6 +64,9 @@ htmlcov/
 
 # 构建产物
 frontend/dist/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 *.egg
 *.whl
 
@@ -91,3 +94,4 @@ backend/.backend_test_pid
 frontend/.frontend_test_pid
 
 TODO.md
+studio

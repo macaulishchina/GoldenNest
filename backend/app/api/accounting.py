@@ -226,10 +226,26 @@ async def create_entries_from_photos(
         # 第一条关联图片，其余条不重复关联
         image_data = first_image if idx == 0 and first_image else None
 
+        # 消费人：默认当前录入用户；0/None 表示家庭共同；否则必须是家庭成员
+        consumer_id = current_user.id
+        if item.consumer_id in (None, 0):
+            consumer_id = None
+        else:
+            consumer_result = await db.execute(
+                select(FamilyMember).where(
+                    and_(
+                        FamilyMember.user_id == item.consumer_id,
+                        FamilyMember.family_id == family.id
+                    )
+                )
+            )
+            if consumer_result.scalar_one_or_none():
+                consumer_id = item.consumer_id
+
         new_entry = AccountingEntry(
             family_id=family.id,
             user_id=current_user.id,
-            consumer_id=current_user.id,
+            consumer_id=consumer_id,
             amount=item.amount,
             category=category_enum,
             description=item.description,

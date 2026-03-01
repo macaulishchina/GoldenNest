@@ -287,6 +287,9 @@
                   <n-form-item label="描述" :show-feedback="false" size="small">
                     <n-input v-model:value="item.description" type="textarea" size="small" :autosize="{ minRows: 1, maxRows: 3 }" />
                   </n-form-item>
+                  <n-form-item label="消费人" :show-feedback="false" size="small">
+                    <n-select v-model:value="item.consumer_id" :options="consumerOptionsWithFamily" size="small" placeholder="默认家庭共同" />
+                  </n-form-item>
                 </div>
               </div>
             </template>
@@ -379,8 +382,8 @@
                   <n-form-item label="描述" :show-feedback="false" size="small">
                     <n-input v-model:value="item.description" type="textarea" size="small" :autosize="{ minRows: 1, maxRows: 3 }" />
                   </n-form-item>
-                  <n-form-item label="消费人" :show-feedback="false" size="small">
-                    <n-select v-model:value="item.consumer_id" :options="consumerOptionsWithFamily" size="small" placeholder="默认家庭共同" />
+                  <n-form-item label="承担消费人" :show-feedback="false" size="small">
+                    <n-select v-model:value="item.consumer_id" :options="consumerOptionsWithFamily" size="small" placeholder="默认当前录入人" />
                   </n-form-item>
                 </div>
               </div>
@@ -1321,6 +1324,7 @@ async function handlePhotoRecognize() {
     photoRecognizeResults.value = (data.items || []).map((item: any) => ({
       ...item,
       entry_date_ts: item.entry_date ? new Date(item.entry_date).getTime() : Date.now(),
+      consumer_id: userStore.user?.id ?? 0,
     }))
 
     if (photoRecognizeResults.value.length === 0) {
@@ -1354,7 +1358,7 @@ async function handlePhotoCreateConfirm() {
     description: r.description,
     category: r.category,
     entry_date: r.entry_date_ts ? dayjs(r.entry_date_ts).toISOString() : dayjs().toISOString(),
-    consumer_id: null,
+    consumer_id: r.consumer_id === 0 ? null : (r.consumer_id || null),
   }))
 
   // 先检查重复
@@ -1400,6 +1404,7 @@ async function photoCreateDirect(itemIndices?: number[]) {
       category: r.category,
       entry_date: r.entry_date_ts ? dayjs(r.entry_date_ts).toISOString() : null,
       confidence: r.confidence,
+      consumer_id: r.consumer_id === 0 ? null : (r.consumer_id || null),
     }))
 
     if (items.length === 0) {

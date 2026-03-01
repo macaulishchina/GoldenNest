@@ -64,7 +64,7 @@ services:
     build: ./studio
     container_name: golden-nest-studio
     restart: unless-stopped
-    profiles: ["core", "all"]
+    profiles: ["studio", "all"]
     environment:
       # ── Git / VCS 配置 (可选) ──
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}

@@ -91,6 +91,7 @@ class PhotoRecognizeItem(BaseModel):
     entry_date: Optional[str] = Field(None, description="消费日期 ISO格式，null表示无法识别")
     confidence: float = Field(0.8, ge=0, le=1, description="识别置信度 0-1")
     consumer_type: str = Field("family", description="消费类型: personal=个人消费, family=家庭消费")
+    consumer_id: Optional[int] = Field(None, description="承担消费人ID（0/None 表示家庭共同）")
 
 
 class PhotoRecognizeResponse(BaseModel):
