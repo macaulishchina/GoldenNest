@@ -18,7 +18,7 @@ logging.getLogger("watchfiles").setLevel(logging.WARNING)
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -219,13 +219,57 @@ app.mount("/uploads", StaticFiles(directory=uploads_root), name="uploads")
 
 
 @app.get("/api/health")
-async def health_check():
-    """健康检查接口"""
-    return {
+async def health_check(request: Request):
+    """健康检查接口 - 浏览器访问时返回优雅的 HTML 页面，API 调用时返回 JSON"""
+    accept = request.headers.get("accept", "")
+    data = {
         "status": "healthy",
         "project": settings.PROJECT_NAME,
         "version": settings.VERSION
     }
+    # 浏览器直接访问（Accept 含 text/html）时返回可视化页面
+    if "text/html" in accept:
+        html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>小金库 · 连接诊断</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+background:#0f172a;color:#e2e8f0;min-height:100vh;min-height:100dvh;
+display:flex;align-items:center;justify-content:center;padding:24px}}
+.card{{background:#1e293b;border-radius:24px;padding:48px 36px;max-width:360px;
+width:100%;text-align:center;box-shadow:0 25px 60px rgba(0,0,0,.5)}}
+.pulse{{width:64px;height:64px;border-radius:50%;background:#22c55e;margin:0 auto 24px;
+position:relative;animation:heartbeat 2s ease-in-out infinite}}
+.pulse::after{{content:'';position:absolute;inset:-8px;border-radius:50%;
+border:2px solid #22c55e;animation:ripple 2s ease-out infinite;opacity:0}}
+@keyframes heartbeat{{0%,100%{{transform:scale(1)}}50%{{transform:scale(1.05)}}}}
+@keyframes ripple{{0%{{transform:scale(.8);opacity:.6}}100%{{transform:scale(1.4);opacity:0}}}}
+.check{{font-size:28px;line-height:64px;color:#0f172a}}
+h1{{font-size:20px;font-weight:600;margin-bottom:6px}}
+.version{{font-size:13px;color:#64748b;margin-bottom:32px}}
+.btn{{display:block;width:100%;padding:14px;border:none;border-radius:12px;
+font-size:15px;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none}}
+.btn-back{{background:#3b82f6;color:#fff;margin-bottom:10px}}
+.btn-back:active{{background:#2563eb;transform:scale(.98)}}
+.info{{margin-top:20px;font-size:11px;color:#475569;line-height:1.6}}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="pulse"><span class="check">✓</span></div>
+  <h1>服务器运行正常</h1>
+  <p class="version">{settings.PROJECT_NAME} · v{settings.VERSION}</p>
+  <a href="/" class="btn btn-back">返回登录</a>
+  <p class="info">如果之前遇到连接问题，现在可以安全返回。<br>此页面表示浏览器已信任服务器证书。</p>
+</div>
+</body>
+</html>"""
+        return HTMLResponse(content=html)
+    return data
 
 
 # 全局异常处理

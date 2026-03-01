@@ -28,9 +28,13 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      const userStore = useUserStore()
-      userStore.logout()
-      window.location.href = '/login'
+      // 登录接口的 401 表示凭据错误，不应触发跳转，由调用方处理
+      const url = error.config?.url || ''
+      if (!url.includes('/auth/login')) {
+        const userStore = useUserStore()
+        userStore.logout()
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }
@@ -39,10 +43,10 @@ api.interceptors.response.use(
 // API 接口
 export const authApi = {
   login: (username: string, password: string) => {
-    const formData = new FormData()
-    formData.append('username', username)
-    formData.append('password', password)
-    return api.post('/auth/login', formData, {
+    const params = new URLSearchParams()
+    params.append('username', username)
+    params.append('password', password)
+    return api.post('/auth/login', params, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     })
   },

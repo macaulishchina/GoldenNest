@@ -30,16 +30,28 @@ export const useUserStore = defineStore('user', () => {
     localStorage.setItem('token', newToken)
   }
   
+  // fetchUser 去重：防止并发调用导致竞态
+  let _fetchPromise: Promise<void> | null = null
+
   async function fetchUser() {
     if (!token.value) return
     
-    try {
-      const response = await authApi.getMe()
-      user.value = response.data
-    } catch (error) {
-      console.error('Failed to fetch user:', error)
-      logout()
-    }
+    // 如果已有请求在飞行中，复用同一个 Promise
+    if (_fetchPromise) return _fetchPromise
+
+    _fetchPromise = (async () => {
+      try {
+        const response = await authApi.getMe()
+        user.value = response.data
+      } catch (error) {
+        console.error('Failed to fetch user:', error)
+        logout()
+      } finally {
+        _fetchPromise = null
+      }
+    })()
+
+    return _fetchPromise
   }
   
   function logout() {

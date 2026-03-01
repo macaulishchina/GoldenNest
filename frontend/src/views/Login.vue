@@ -6,10 +6,13 @@
     </div>
     
     <div class="auth-card">
-      <div class="logo">
-        <span class="logo-icon">🏠</span>
+      <div class="logo" @click="handleLogoTap">
+        <span class="logo-icon" :class="{ 'logo-shake': logoShaking }">🏠</span>
         <h1>小金库</h1>
-        <p class="subtitle">Golden Nest · 家庭财富共创计划</p>
+        <p class="subtitle">
+          <template v-if="tapCountdown > 0">还需点击 {{ tapCountdown }} 次</template>
+          <template v-else>Golden Nest · 家庭财富共创计划</template>
+        </p>
       </div>
       
       <n-tabs v-model:value="activeTab" type="segment" animated>
@@ -48,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useMessage, type FormInst } from 'naive-ui'
 import { authApi } from '@/api'
@@ -64,9 +67,59 @@ const loading = ref(false)
 const activeTab = ref('login')
 const loginFormRef = ref<FormInst | null>(null)
 const registerFormRef = ref<FormInst | null>(null)
+const serverOffline = ref(false)
 
 const loginForm = ref({ username: '', password: '' })
 const registerForm = ref({ username: '', email: '', nickname: '', password: '' })
+
+// Logo 连按彩蛋（类似 Android 开发者模式）
+const TAP_THRESHOLD = 10
+const TAP_TIMEOUT = 2000 // 连击超时重置
+const tapCount = ref(0)
+const tapCountdown = ref(0)
+const logoShaking = ref(false)
+let tapTimer: ReturnType<typeof setTimeout> | null = null
+
+function handleLogoTap() {
+  // 重置超时计时器
+  if (tapTimer) clearTimeout(tapTimer)
+  tapTimer = setTimeout(() => {
+    tapCount.value = 0
+    tapCountdown.value = 0
+  }, TAP_TIMEOUT)
+
+  tapCount.value++
+  const remaining = TAP_THRESHOLD - tapCount.value
+
+  // 最后 3 次显示倒数
+  if (remaining > 0 && remaining <= 3) {
+    tapCountdown.value = remaining
+    logoShaking.value = true
+    setTimeout(() => { logoShaking.value = false }, 300)
+  } else if (remaining > 3) {
+    // 轻微反馈
+    logoShaking.value = true
+    setTimeout(() => { logoShaking.value = false }, 150)
+  }
+
+  // 达到阈值，打开诊断页
+  if (tapCount.value >= TAP_THRESHOLD) {
+    tapCount.value = 0
+    tapCountdown.value = 0
+    window.open(window.location.origin + '/api/health', '_blank')
+  }
+}
+
+// 页面加载时检测服务器连通性（仅用于彩蛋提示，不阻断登录）
+onMounted(async () => {
+  try {
+    const { api } = await import('@/api')
+    await api.get('/health', { timeout: 5000 })
+    serverOffline.value = false
+  } catch {
+    serverOffline.value = true
+  }
+})
 
 const loginRules = {
   username: { required: true, message: '请输入用户名', trigger: 'blur' },
@@ -91,7 +144,13 @@ async function handleLogin() {
     const redirect = route.query.redirect as string || '/'
     router.push(redirect)
   } catch (e: any) {
-    message.error(e.response?.data?.detail || '登录失败')
+    if (e.response) {
+      message.error(e.response.data?.detail || '用户名或密码错误')
+    } else if (e.code === 'ECONNABORTED' || e.message?.includes('timeout')) {
+      message.error('请求超时，请检查网络连接', { duration: 5000 })
+    } else {
+      message.error('无法连接服务器，请检查网络或点击 Logo 10 次进行诊断', { duration: 6000 })
+    }
   } finally {
     loading.value = false
   }
@@ -116,11 +175,13 @@ async function handleRegister() {
 <style scoped>
 .auth-container {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
   position: relative;
+  overflow: hidden;
   /* 不设置背景，使用 body 的主题背景 */
 }
 
@@ -143,12 +204,25 @@ async function handleRegister() {
 .logo {
   text-align: center;
   margin-bottom: 32px;
+  cursor: default;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .logo-icon {
   font-size: 48px;
   display: block;
   margin-bottom: 12px;
+  transition: transform 0.15s;
+}
+
+.logo-icon.logo-shake {
+  animation: logo-shake 0.3s ease;
+}
+
+@keyframes logo-shake {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
 }
 
 .logo h1 {
@@ -161,5 +235,6 @@ async function handleRegister() {
   font-size: 14px;
   color: var(--theme-text-secondary, #64748b);
   margin: 8px 0 0;
+  min-height: 22px;
 }
 </style>
