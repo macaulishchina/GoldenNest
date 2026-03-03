@@ -180,6 +180,48 @@ services:
     networks:
       - golden-nest-network
 
+  # ========================
+  # Mihomo + MetaCubeXD (Level 1 - 代理与可视化控制)
+  # 访问: /proxy-ui/
+  # ========================
+  mihomo:
+    image: metacubex/mihomo:latest
+    container_name: golden-nest-mihomo
+    restart: unless-stopped
+    profiles: ["tools", "all"]
+    command: ["-d", "/root/.config/mihomo"]
+    volumes:
+      - /home/macaulish/.config/mihomo:/root/.config/mihomo
+    ports:
+      - "7890:7890"
+      - "7891:7891"
+    networks:
+      - golden-nest-network
+
+  metacubexd:
+    image: ghcr.io/metacubex/metacubexd:latest
+    container_name: golden-nest-metacubexd
+    restart: unless-stopped
+    profiles: ["tools", "all"]
+    depends_on:
+      - mihomo
+    networks:
+      - golden-nest-network
+
+  # ========================
+  # FRP Web 配置客户端 (Level 1 - 内网穿透管理)
+  # 访问: /frpc/
+  # ========================
+  frp-web:
+    build: ./external/frp-web
+    container_name: golden-nest-frp-web
+    restart: unless-stopped
+    profiles: ["tools", "all"]
+    volumes:
+      - ./data/frp:/etc/frp
+    networks:
+      - golden-nest-network
+
 networks:
   golden-nest-network:
     driver: bridge
