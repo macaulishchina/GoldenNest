@@ -7,6 +7,7 @@ import base64
 import os
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from pydantic import BaseModel, Field
 from sqlalchemy import select, func, and_, or_, desc, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -1242,3 +1243,200 @@ async def check_duplicates(
         possible_duplicates_count=possible_count,
         unique_count=unique_count
     )
+
+
+# ==================== AI 分析 ====================
+
+class AccountingAnalyzeRequest(BaseModel):
+    start_date: Optional[datetime] = Field(None, description="开始日期")
+    end_date: Optional[datetime] = Field(None, description="结束日期")
+    category: Optional[str] = Field(None, description="分类筛选")
+    consumer_id: Optional[int] = Field(None, description="消费人筛选（0=家庭共同）")
+    is_accounted: Optional[bool] = Field(None, description="入账状态筛选")
+
+
+MIN_ENTRIES_FOR_ANALYSIS = 5
+MAX_ENTRIES_FOR_ANALYSIS = 2000
+
+
+@router.post("/ai-analyze", response_model=dict)
+async def ai_analyze_accounting(
+    request: AccountingAnalyzeRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    对指定范围内的记账数据进行 AI 分析。
+    分析内容包括：消费分布、按人分摊、时间趋势、行为洞察与建议。
+    """
+    from app.services.ai_service import ai_service
+
+    if not ai_service.is_configured:
+        raise HTTPException(status_code=503, detail="AI 服务暂未配置，请联系管理员")
+
+    family, _ = await get_user_family(current_user, db)
+
+    # 构建查询条件
+    conditions = [AccountingEntry.family_id == family.id]
+
+    if request.start_date:
+        conditions.append(AccountingEntry.entry_date >= request.start_date)
+
+    if request.end_date:
+        conditions.append(AccountingEntry.entry_date <= request.end_date)
+
+    if request.category:
+        try:
+            category_enum = AccountingCategory(request.category)
+            conditions.append(AccountingEntry.category == category_enum)
+        except ValueError:
+            pass
+
+    if request.is_accounted is not None:
+        conditions.append(AccountingEntry.is_accounted == request.is_accounted)
+
+    if request.consumer_id is not None:
+        if request.consumer_id == 0:
+            conditions.append(AccountingEntry.consumer_id.is_(None))
+        else:
+            conditions.append(AccountingEntry.consumer_id == request.consumer_id)
+
+    # 查询总条数
+    count_result = await db.execute(
+        select(func.count(AccountingEntry.id)).where(and_(*conditions))
+    )
+    total_count = count_result.scalar() or 0
+
+    if total_count < MIN_ENTRIES_FOR_ANALYSIS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"数据不足（当前 {total_count} 条），至少需要 {MIN_ENTRIES_FOR_ANALYSIS} 条记录才能生成分析"
+        )
+
+    # 查询记账条目（最多 MAX_ENTRIES_FOR_ANALYSIS 条）
+    result = await db.execute(
+        select(AccountingEntry)
+        .where(and_(*conditions))
+        .order_by(desc(AccountingEntry.entry_date))
+        .limit(MAX_ENTRIES_FOR_ANALYSIS)
+    )
+    entries = result.scalars().all()
+
+    # 收集消费人昵称映射
+    consumer_ids = {e.consumer_id for e in entries if e.consumer_id}
+    consumer_names: dict = {}
+    if consumer_ids:
+        users_result = await db.execute(
+            select(User.id, User.nickname).where(User.id.in_(consumer_ids))
+        )
+        consumer_names = {row[0]: row[1] for row in users_result.fetchall()}
+
+    # 构建 AI 分析用的数据摘要
+    total_amount = sum(e.amount for e in entries)
+
+    # 按分类汇总
+    by_category: dict = {}
+    for e in entries:
+        cat = CATEGORY_NAMES.get(e.category.value, e.category.value)
+        by_category[cat] = by_category.get(cat, 0) + e.amount
+
+    # 按消费人汇总
+    by_consumer: dict = {}
+    for e in entries:
+        name = consumer_names.get(e.consumer_id, "家庭共同") if e.consumer_id else "家庭共同"
+        by_consumer[name] = by_consumer.get(name, 0) + e.amount
+
+    # 按月汇总（取最近 12 个月的）
+    by_month: dict = {}
+    for e in entries:
+        key = e.entry_date.strftime("%Y-%m")
+        by_month[key] = by_month.get(key, 0) + e.amount
+    by_month_sorted = dict(sorted(by_month.items()))
+
+    # 构建条目摘要（取金额前 50 条，节省 token）
+    top_entries = sorted(entries, key=lambda e: e.amount, reverse=True)[:50]
+    entry_lines = []
+    for e in top_entries:
+        consumer_name = consumer_names.get(e.consumer_id, "家庭共同") if e.consumer_id else "家庭共同"
+        cat = CATEGORY_NAMES.get(e.category.value, e.category.value)
+        entry_lines.append(
+            f"- {e.entry_date.strftime('%Y-%m-%d')} | {cat} | {consumer_name} | ¥{e.amount:.2f} | {e.description}"
+        )
+    entry_summary = "\n".join(entry_lines)
+
+    # 时间范围说明
+    if entries:
+        oldest = min(e.entry_date for e in entries)
+        newest = max(e.entry_date for e in entries)
+        date_range_str = f"{oldest.strftime('%Y-%m-%d')} 至 {newest.strftime('%Y-%m-%d')}"
+    else:
+        date_range_str = "未知"
+
+    category_summary = "\n".join(
+        f"  - {cat}: ¥{amt:.2f}（占 {amt/total_amount*100:.1f}%）"
+        for cat, amt in sorted(by_category.items(), key=lambda x: x[1], reverse=True)
+    )
+    consumer_summary = "\n".join(
+        f"  - {name}: ¥{amt:.2f}（占 {amt/total_amount*100:.1f}%）"
+        for name, amt in sorted(by_consumer.items(), key=lambda x: x[1], reverse=True)
+    )
+    monthly_summary = "\n".join(
+        f"  - {month}: ¥{amt:.2f}"
+        for month, amt in by_month_sorted.items()
+    )
+
+    prompt_data = f"""以下是家庭记账数据摘要，请进行全面分析。
+
+【分析范围】
+- 时间区间：{date_range_str}
+- 共 {len(entries)} 条记录（总额 ¥{total_amount:.2f}）
+
+【按分类汇总】
+{category_summary}
+
+【按消费人汇总】
+{consumer_summary}
+
+【按月趋势】
+{monthly_summary}
+
+【金额最高的前50条明细】（格式：日期 | 分类 | 消费人 | 金额 | 描述）
+{entry_summary}
+
+---
+请从以下三个维度进行分析，并在每个维度结尾给出可操作的具体建议：
+
+1. **消费分布与分摊分析**：各人消费占比是否合理？是否存在明显的不均衡？各类目支出占比及主要消费场景是什么？
+
+2. **时间趋势分析**：消费是否呈现出明显的周期性或趋势变化？哪个月消费最高/最低？未来短期消费走势预判。
+
+3. **行为洞察与建议**：识别最显著的消费问题或机会，给出 2-4 条针对家庭的可执行建议（每条包含：问题描述、建议行动、预期效果）。
+
+请使用中文回复，语气友好且专业，适当使用 emoji，内容层次清晰，可读性强。"""
+
+    try:
+        analysis = await ai_service.chat(
+            user_prompt=prompt_data,
+            system_prompt="你是家庭财务分析专家，擅长从消费数据中发现规律、识别问题并给出实用建议。请基于用户提供的真实数据进行分析，不要编造数字。",
+            function_key="accounting_analyze",
+            prompt_vars={
+                "date_range": date_range_str,
+                "total_count": str(len(entries)),
+                "total_amount": f"{total_amount:.2f}",
+            },
+            max_tokens=3000,
+            temperature=0.7,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 分析失败：{str(e)[:200]}")
+
+    return {
+        "analysis": analysis,
+        "meta": {
+            "total_count": len(entries),
+            "total_amount": round(total_amount, 2),
+            "date_range": date_range_str,
+            "by_category": by_category,
+            "by_consumer": by_consumer,
+        }
+    }
