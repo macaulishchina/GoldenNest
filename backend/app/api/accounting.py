@@ -4,19 +4,21 @@
 from datetime import datetime
 from typing import Optional, List
 import base64
+import json
 import os
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy import select, func, and_, or_, desc, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.config import UPLOAD_DIR
 from app.models.models import (
     User, Family, FamilyMember, AccountingEntry, AccountingCategory,
-    AccountingEntrySource, Transaction, TransactionType
+    AccountingEntrySource, Transaction, TransactionType, AccountingAIReport
 )
 from app.schemas.accounting import (
     AccountingEntryCreate, AccountingEntryPhotoCreate, AccountingEntryVoiceCreate,
@@ -27,6 +29,7 @@ from app.schemas.accounting import (
     PhotoRecognizeResponse, PhotoRecognizeItem, PhotoCreateRequest,
 )
 from app.services.ai_accounting import parse_receipt_images, transcribe_voice, categorize_entry, check_duplicate_with_ai, transcribe_audio_file, parse_voice_text, parse_import_file
+from app.services.ai_service import ai_service
 
 router = APIRouter()
 
@@ -1242,3 +1245,368 @@ async def check_duplicates(
         possible_duplicates_count=possible_count,
         unique_count=unique_count
     )
+
+
+# ==================== AI 分析 Schemas ====================
+
+class AIAnalyzeRequest(BaseModel):
+    """AI 分析请求"""
+    title: str = "家庭消费 AI 分析报告"
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    consumer_id: Optional[int] = None   # None = 全部成员
+    category: Optional[str] = None      # None = 全部分类
+    save_to_history: bool = True
+
+
+class PersonAnalysis(BaseModel):
+    name: str
+    user_id: Optional[int] = None
+    total: float
+    percentage: float
+    count: int
+    top_categories: List[str]
+
+
+class AIReportData(BaseModel):
+    overall_summary: str
+    per_person: List[PersonAnalysis]
+    trends: str
+    prediction: str
+    suggestions: List[dict]  # [{title, detail}]
+
+
+class AIAnalyzeResponse(BaseModel):
+    report_id: Optional[int] = None   # 保存后的 id
+    title: str
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    entry_count: int
+    total_amount: float
+    report_data: AIReportData
+    created_at: datetime
+
+
+class AIReportSummary(BaseModel):
+    id: int
+    title: str
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    entry_count: int
+    total_amount: float
+    created_by_name: Optional[str] = None
+    created_at: datetime
+
+
+# ==================== AI 分析 Endpoints ====================
+
+MIN_ENTRIES_THRESHOLD = 1   # 最小分析条目数
+MAX_ENTRIES_LIMIT = 2000    # 最大分析条目数
+
+
+@router.post("/ai/analyze", response_model=AIAnalyzeResponse)
+async def ai_analyze_accounting(
+    req: AIAnalyzeRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    AI 分析记账数据。
+    基于当前筛选范围生成消费分析报告，包含：
+    - 按人/承担人分摊分析
+    - 时间/周期趋势与短期预测
+    - 可执行建议与行动项
+    可选保存到历史记录。
+    """
+    if not ai_service.is_configured:
+        raise HTTPException(status_code=503, detail="AI 服务暂未配置，请联系管理员")
+
+    family, _ = await get_user_family(current_user, db)
+
+    # 构建查询条件
+    conditions = [AccountingEntry.family_id == family.id]
+    if req.start_date:
+        conditions.append(AccountingEntry.entry_date >= req.start_date)
+    if req.end_date:
+        conditions.append(AccountingEntry.entry_date <= req.end_date)
+    if req.consumer_id is not None:
+        if req.consumer_id == 0:
+            conditions.append(AccountingEntry.consumer_id.is_(None))
+        else:
+            conditions.append(AccountingEntry.consumer_id == req.consumer_id)
+    if req.category:
+        try:
+            cat_enum = AccountingCategory(req.category)
+            conditions.append(AccountingEntry.category == cat_enum)
+        except ValueError:
+            pass
+
+    # 获取条目
+    result = await db.execute(
+        select(AccountingEntry)
+        .where(and_(*conditions))
+        .order_by(AccountingEntry.entry_date)
+        .limit(MAX_ENTRIES_LIMIT)
+    )
+    entries = result.scalars().all()
+
+    if len(entries) < MIN_ENTRIES_THRESHOLD:
+        raise HTTPException(
+            status_code=400,
+            detail=f"数据不足（仅 {len(entries)} 条），建议扩大时间范围后再分析"
+        )
+
+    total_amount = sum(e.amount for e in entries)
+
+    # 收集用户信息
+    user_ids = set(e.user_id for e in entries) | set(e.consumer_id for e in entries if e.consumer_id)
+    users_result = await db.execute(select(User).where(User.id.in_(user_ids)))
+    users_map = {u.id: u.nickname for u in users_result.scalars().all()}
+
+    # 按消费人分组统计
+    person_stats: dict = {}
+    for e in entries:
+        key = e.consumer_id if e.consumer_id else 0   # 0 = 家庭共同
+        if key not in person_stats:
+            name = users_map.get(key, "家庭共同")
+            person_stats[key] = {"name": name, "user_id": key or None, "total": 0.0, "count": 0, "categories": {}}
+        person_stats[key]["total"] += e.amount
+        person_stats[key]["count"] += 1
+        cat = e.category.value
+        person_stats[key]["categories"][cat] = person_stats[key]["categories"].get(cat, 0) + e.amount
+
+    per_person_list = []
+    for ps in person_stats.values():
+        top_cats = sorted(ps["categories"].items(), key=lambda x: x[1], reverse=True)[:3]
+        per_person_list.append(PersonAnalysis(
+            name=ps["name"],
+            user_id=ps["user_id"],
+            total=round(ps["total"], 2),
+            percentage=round(ps["total"] / total_amount * 100, 1) if total_amount > 0 else 0,
+            count=ps["count"],
+            top_categories=[CATEGORY_NAMES.get(c, c) for c, _ in top_cats]
+        ))
+    per_person_list.sort(key=lambda x: x.total, reverse=True)
+
+    # 构建月度趋势数据
+    monthly: dict = {}
+    for e in entries:
+        ym = e.entry_date.strftime("%Y-%m")
+        monthly[ym] = monthly.get(ym, 0) + e.amount
+    monthly_sorted = sorted(monthly.items())
+    monthly_desc = "\n".join([f"  {ym}: ¥{amt:,.2f}" for ym, amt in monthly_sorted])
+
+    # 按分类统计
+    cat_stats: dict = {}
+    for e in entries:
+        cat = e.category.value
+        cat_stats[cat] = cat_stats.get(cat, 0) + e.amount
+    cat_desc = "\n".join([
+        f"  {CATEGORY_NAMES.get(c, c)}: ¥{amt:,.2f} ({amt/total_amount*100:.1f}%)"
+        for c, amt in sorted(cat_stats.items(), key=lambda x: x[1], reverse=True)
+    ]) if total_amount > 0 else "暂无数据"
+
+    # 按人摘要
+    person_desc = "\n".join([
+        f"  {p.name}: ¥{p.total:,.2f} ({p.percentage}%，{p.count}笔，主要: {', '.join(p.top_categories)})"
+        for p in per_person_list
+    ])
+
+    date_range_str = ""
+    if req.start_date and req.end_date:
+        date_range_str = f"{req.start_date.strftime('%Y-%m-%d')} 至 {req.end_date.strftime('%Y-%m-%d')}"
+    elif req.start_date:
+        date_range_str = f"{req.start_date.strftime('%Y-%m-%d')} 至今"
+    elif req.end_date:
+        date_range_str = f"截至 {req.end_date.strftime('%Y-%m-%d')}"
+    else:
+        date_range_str = "全部时间"
+
+    system_prompt = """你是一位专业的家庭财务分析师，擅长从消费数据中发现规律并提供可执行建议。
+
+请用中文输出严格的 JSON，格式如下：
+{
+  "overall_summary": "100-200字的总体消费分析摘要，包含主要发现",
+  "trends": "对月度趋势的文字描述（100字左右），说明消费走势、环比变化、异常月份等",
+  "prediction": "基于历史趋势对未来3个月消费的短期预测（80字左右），附带置信度说明",
+  "suggestions": [
+    {"title": "建议标题（10字以内）", "detail": "详细说明，包含原因、预期效果和推荐步骤（50-80字）"},
+    {"title": "建议标题", "detail": "详细说明"}
+  ]
+}
+
+要求：
+- suggestions 提供 2-4 条针对主要问题的可执行建议
+- 若数据跨度不足3个月，prediction 字段说明"数据跨度不足，无法给出可靠预测"
+- 若无法生成有意义建议，提供通用的家庭理财建议模板"""
+
+    user_prompt = f"""请分析以下家庭记账数据：
+
+【基本信息】
+- 分析范围：{date_range_str}
+- 总金额：¥{total_amount:,.2f}
+- 记录条数：{len(entries)} 笔
+
+【按消费人分布】
+{person_desc}
+
+【按分类分布】
+{cat_desc}
+
+【月度趋势】
+{monthly_desc if monthly_desc else "无月度数据"}
+
+请给出综合分析，重点关注消费结构、按人责任、趋势与未来预测，以及可执行建议。"""
+
+    try:
+        result_json = await ai_service.chat_json(
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            function_key="accounting_analyze",
+            prompt_vars={
+                "date_range": date_range_str,
+                "total_amount": f"{total_amount:,.2f}",
+                "entry_count": str(len(entries)),
+            },
+            max_tokens=2000,
+            temperature=0.5
+        )
+        if not result_json:
+            raise ValueError("AI 返回了无效的响应")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 分析失败: {str(e)}")
+
+    report_data = AIReportData(
+        overall_summary=result_json.get("overall_summary", "分析完成"),
+        per_person=per_person_list,
+        trends=result_json.get("trends", ""),
+        prediction=result_json.get("prediction", ""),
+        suggestions=[
+            {"title": s.get("title", ""), "detail": s.get("detail", "")}
+            for s in result_json.get("suggestions", [])
+            if isinstance(s, dict)
+        ]
+    )
+
+    now = datetime.utcnow()
+    report_id = None
+
+    if req.save_to_history:
+        report_obj = AccountingAIReport(
+            family_id=family.id,
+            created_by=current_user.id,
+            title=req.title,
+            date_from=req.start_date,
+            date_to=req.end_date,
+            member_filter=json.dumps([req.consumer_id]) if req.consumer_id is not None else None,
+            category_filter=req.category,
+            entry_count=len(entries),
+            total_amount=total_amount,
+            report_data=json.dumps(report_data.model_dump(), ensure_ascii=False),
+            created_at=now
+        )
+        db.add(report_obj)
+        await db.flush()
+        report_id = report_obj.id
+
+    return AIAnalyzeResponse(
+        report_id=report_id,
+        title=req.title,
+        date_from=req.start_date,
+        date_to=req.end_date,
+        entry_count=len(entries),
+        total_amount=total_amount,
+        report_data=report_data,
+        created_at=now
+    )
+
+
+@router.get("/ai/reports", response_model=List[AIReportSummary])
+async def list_ai_reports(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取家庭历史 AI 分析报告列表"""
+    family, _ = await get_user_family(current_user, db)
+
+    result = await db.execute(
+        select(AccountingAIReport)
+        .where(AccountingAIReport.family_id == family.id)
+        .order_by(desc(AccountingAIReport.created_at))
+    )
+    reports = result.scalars().all()
+
+    user_ids = [r.created_by for r in reports]
+    names_map = {}
+    if user_ids:
+        u_result = await db.execute(select(User).where(User.id.in_(user_ids)))
+        names_map = {u.id: u.nickname for u in u_result.scalars().all()}
+
+    return [
+        AIReportSummary(
+            id=r.id,
+            title=r.title,
+            date_from=r.date_from,
+            date_to=r.date_to,
+            entry_count=r.entry_count,
+            total_amount=r.total_amount,
+            created_by_name=names_map.get(r.created_by),
+            created_at=r.created_at
+        )
+        for r in reports
+    ]
+
+
+@router.get("/ai/reports/{report_id}", response_model=AIAnalyzeResponse)
+async def get_ai_report(
+    report_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取单份历史 AI 分析报告详情"""
+    family, _ = await get_user_family(current_user, db)
+
+    result = await db.execute(
+        select(AccountingAIReport).where(
+            and_(AccountingAIReport.id == report_id, AccountingAIReport.family_id == family.id)
+        )
+    )
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="报告不存在")
+
+    report_data_dict = json.loads(report.report_data)
+    report_data = AIReportData(**report_data_dict)
+
+    return AIAnalyzeResponse(
+        report_id=report.id,
+        title=report.title,
+        date_from=report.date_from,
+        date_to=report.date_to,
+        entry_count=report.entry_count,
+        total_amount=report.total_amount,
+        report_data=report_data,
+        created_at=report.created_at
+    )
+
+
+@router.delete("/ai/reports/{report_id}")
+async def delete_ai_report(
+    report_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """删除历史 AI 分析报告"""
+    family, _ = await get_user_family(current_user, db)
+
+    result = await db.execute(
+        select(AccountingAIReport).where(
+            and_(AccountingAIReport.id == report_id, AccountingAIReport.family_id == family.id)
+        )
+    )
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="报告不存在")
+
+    await db.delete(report)
+    return {"message": "报告已删除"}
