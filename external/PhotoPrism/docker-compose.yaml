@@ -176,8 +176,8 @@ services:
     profiles: ["all", "ollama", "vision"]
     ## Insecurely exposes the Ollama service on port 11434
     ## without authentication (for private networks only):
-    # ports:
-    #  - "11434:11434"
+    ports:
+     - "11434:11434"
     environment:
       ## Ollama Configuration Options:
       OLLAMA_HOST: "0.0.0.0:11434"
@@ -232,6 +232,8 @@ services:
       # HUGGING_FACE_HUB_TOKEN: ""      # see https://huggingface.co/docs/hub/en/security-tokens
     volumes:
       - "./open-webui:/app/backend/data"
+    networks:
+      - golden-nest-network
 
   ## Watchtower upgrades services automatically (optional)
   ## see https://docs.photoprism.app/getting-started/updates/#watchtower

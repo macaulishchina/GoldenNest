@@ -129,6 +129,17 @@
       background: rgba(239, 246, 255, .66);
       border: 1px solid #e2e8f0;
     }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .restart-pop {
+      animation: restart-pop .45s ease;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, .15), 0 10px 22px rgba(34, 197, 94, .2);
+    }
+    @keyframes restart-pop {
+      0% { transform: scale(1); }
+      45% { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
   </style>
 </head>
 <body>
@@ -150,12 +161,15 @@
             <span :class="['status-dot', status.running ? 'status-running' : 'status-stopped']"></span>
             <span>{{ status.running ? '运行中' : '已停止' }}</span>
           </div>
-          <button v-if="!status.running" @click="startFrpc" class="btn btn-success btn-sm" :disabled="!status.configExists">
+          <button v-if="!status.running" @click="startFrpc" class="btn btn-success btn-sm" :disabled="!status.configExists || frpcActionBusy">
             ▶ 启动
           </button>
           <template v-else>
-            <button @click="restartFrpc" class="btn btn-ghost btn-sm">↻ 重启</button>
-            <button @click="stopFrpc" class="btn btn-danger btn-sm">■ 停止</button>
+            <button @click="restartFrpc" :class="['btn', 'btn-ghost', 'btn-sm', restartPulse ? 'restart-pop' : '']" :disabled="frpcActionBusy">
+              <span :class="frpcActionBusy ? 'spin' : ''">↻</span>
+              {{ frpcActionBusy ? '重启中...' : '重启' }}
+            </button>
+            <button @click="stopFrpc" class="btn btn-danger btn-sm" :disabled="frpcActionBusy">■ 停止</button>
           </template>
         </div>
       </div>
@@ -300,9 +314,14 @@
     <div v-if="currentTab === 'proxies'" class="space-y-4">
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-800">代理列表</h2>
-        <button @click="openProxyEditor(null)" class="btn btn-primary">
-          <span class="mr-1">+</span> 添加代理
-        </button>
+        <div class="flex items-center space-x-2">
+          <button @click="probeAllProxies" class="btn btn-ghost" :disabled="batchProbing || proxies.length === 0">
+            {{ batchProbing ? '验证中...' : '一键验证' }}
+          </button>
+          <button @click="openProxyEditor(null)" class="btn btn-primary">
+            <span class="mr-1">+</span> 添加代理
+          </button>
+        </div>
       </div>
 
       <!-- 空状态 -->
@@ -319,8 +338,9 @@
 
       <!-- 代理列表 -->
       <div v-for="proxy in proxies" :key="proxy.name" class="card hover:shadow-md transition-shadow">
-        <div class="p-4 flex items-center justify-between">
-          <div class="flex-1 min-w-0">
+        <div class="p-4">
+          <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div class="flex-1 min-w-0">
             <div class="flex items-center space-x-2 mb-1">
               <h3 class="text-sm font-semibold text-gray-900 truncate">{{ proxy.name }}</h3>
               <span :class="['badge', 'badge-' + (proxy.type || 'tcp')]">{{ (proxy.type || 'tcp').toUpperCase() }}</span>
@@ -333,10 +353,42 @@
               <span v-if="proxy.customDomains">→ {{ Array.isArray(proxy.customDomains) ? proxy.customDomains.join(', ') : proxy.customDomains }}</span>
               <span v-if="proxy.subdomain">→ 子域名: {{ proxy.subdomain }}</span>
             </div>
+            </div>
+
+            <div class="hidden sm:flex flex-1 items-center justify-center px-4 min-w-0">
+              <a
+                v-if="proxy.customAccessLink"
+                :href="proxy.customAccessLink"
+                :title="proxy.customAccessLink"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-xs text-indigo-600 hover:text-indigo-800 underline max-w-md truncate"
+              >
+                快捷访问：{{ proxy.customAccessLink }}
+              </a>
+            </div>
+
+            <div class="sm:ml-4 shrink-0 flex flex-col sm:items-end gap-2">
+              <div class="flex items-center space-x-2">
+                <button @click="probeProxy(proxy)" class="btn btn-ghost btn-sm" :disabled="probeLoadingMap[proxy.name]">
+                  {{ probeLoadingMap[proxy.name] ? '检测中...' : '验证映射' }}
+                </button>
+                <button @click="openProxyEditor(proxy)" class="btn btn-ghost btn-sm">编辑</button>
+                <button @click="deleteProxy(proxy.name)" class="btn btn-danger btn-sm">删除</button>
+              </div>
+            </div>
           </div>
-          <div class="flex items-center space-x-2 ml-4">
-            <button @click="openProxyEditor(proxy)" class="btn btn-ghost btn-sm">编辑</button>
-            <button @click="deleteProxy(proxy.name)" class="btn btn-danger btn-sm">删除</button>
+          <div v-if="proxy.customAccessLink" class="sm:hidden mt-1 text-xs">
+            <a :href="proxy.customAccessLink" :title="proxy.customAccessLink" target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:text-indigo-800 underline break-all">
+              快捷访问：{{ proxy.customAccessLink }}
+            </a>
+          </div>
+          <div v-if="probeResultMap[proxy.name]" :class="['mt-2 text-xs rounded-md px-2 py-1 border', probeResultMap[proxy.name].ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200']">
+            <span>
+              {{ probeResultMap[proxy.name].ok ? '✅' : '❌' }}
+              {{ probeResultMap[proxy.name].message || (probeResultMap[proxy.name].ok ? '映射可用' : '映射不可用') }}
+            </span>
+            <span v-if="typeof probeResultMap[proxy.name].latency_ms === 'number'" class="ml-1">({{ probeResultMap[proxy.name].latency_ms }}ms)</span>
           </div>
         </div>
       </div>
@@ -404,6 +456,12 @@
                   <label class="block text-sm font-medium text-gray-600 mb-1">本地端口</label>
                   <input v-model.number="editingProxy.localPort" type="number" class="input" placeholder="22">
                 </div>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">快捷访问链接（可选）</label>
+                <input v-model="editingProxy.customAccessLink" class="input" placeholder="https://example.com 或 tcp://1.2.3.4:6000">
+                <p class="text-xs text-gray-400 mt-1">用于一键访问或映射探测，不会写入 frpc.toml。</p>
               </div>
 
               <!-- TCP/UDP 远端端口 -->
@@ -519,7 +577,7 @@
     <teleport to="body">
       <transition name="fade">
         <div v-if="toast.show" :class="[
-          'fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-sm font-medium',
+          'fixed top-20 right-4 z-[9999] px-4 py-3 rounded-lg shadow-lg text-sm font-medium',
           toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'
         ]">
           {{ toast.message }}
@@ -546,6 +604,9 @@ createApp({
     const showAdvanced = ref(false);
     const saving = ref(false);
     const checkingConnection = ref(false);
+    const frpcActionBusy = ref(false);
+    const batchProbing = ref(false);
+    const restartPulse = ref(false);
     const proxyEditorOpen = ref(false);
     const rawConfig = ref('');
     const loginFailExit = ref(true);
@@ -570,6 +631,8 @@ createApp({
       binExists: false,
       configExists: false,
     });
+    const probeResultMap = reactive({});
+    const probeLoadingMap = reactive({});
 
     const editingProxy = reactive({
       _isNew: true,
@@ -593,6 +656,7 @@ createApp({
       pluginName: '',
       useEncryption: false,
       useCompression: false,
+      customAccessLink: '',
     });
 
     const toast = reactive({ show: false, message: '', type: 'success' });
@@ -650,9 +714,30 @@ createApp({
           transportPoolCount.value = data.config.transport.poolCount || 1;
           tlsEnable.value = !!data.config.transport.tls?.enable;
         }
+
+        const currentNames = new Set((proxies.value || []).map(p => p.name));
+        for (const key of Object.keys(probeResultMap)) {
+          if (!currentNames.has(key)) delete probeResultMap[key];
+        }
+        for (const key of Object.keys(probeLoadingMap)) {
+          if (!currentNames.has(key)) delete probeLoadingMap[key];
+        }
       } catch (e) {
         showToast('加载配置失败: ' + e.message, 'error');
       }
+    }
+
+    function handleApplyResult(apply) {
+      if (!apply) return;
+      if (apply.action === 'skipped') {
+        showToast(apply.message || '配置已保存，frpc 未运行', 'success');
+        return;
+      }
+      if (apply.restart) {
+        Object.assign(status, apply.restart);
+      }
+      const ok = !!(apply.restart && apply.restart.running);
+      showToast(apply.message || (ok ? '配置已自动生效' : '自动生效失败'), ok ? 'success' : 'error');
     }
 
     async function saveServer() {
@@ -745,6 +830,7 @@ createApp({
           pluginName: proxy.plugin?.name || '',
           useEncryption: !!proxy.transport?.useEncryption,
           useCompression: !!proxy.transport?.useCompression,
+          customAccessLink: proxy.customAccessLink || '',
         });
       } else {
         // 新建模式
@@ -770,6 +856,7 @@ createApp({
           pluginName: '',
           useEncryption: false,
           useCompression: false,
+          customAccessLink: '',
         });
       }
       proxyEditorOpen.value = true;
@@ -808,6 +895,9 @@ createApp({
         if (editingProxy.useEncryption) p.transport.useEncryption = true;
         if (editingProxy.useCompression) p.transport.useCompression = true;
       }
+      if (editingProxy.customAccessLink && editingProxy.customAccessLink.trim()) {
+        p.customAccessLink = editingProxy.customAccessLink.trim();
+      }
 
       return p;
     }
@@ -823,9 +913,11 @@ createApp({
         if (editingProxy._isNew) {
           const data = await api('POST', '/api/proxies', payload);
           proxies.value = data.proxies;
+          handleApplyResult(data.apply);
         } else {
           const data = await api('PUT', '/api/proxies/' + encodeURIComponent(editingProxy._originalName), payload);
           proxies.value = data.proxies;
+          handleApplyResult(data.apply);
         }
         proxyEditorOpen.value = false;
         showToast(editingProxy._isNew ? '代理已添加' : '代理已更新');
@@ -841,9 +933,52 @@ createApp({
       try {
         const data = await api('DELETE', '/api/proxies/' + encodeURIComponent(name));
         proxies.value = data.proxies;
+        handleApplyResult(data.apply);
         showToast('代理已删除');
       } catch (e) {
         showToast(e.message, 'error');
+      }
+    }
+
+    async function probeProxy(proxy, options = {}) {
+      const silent = !!options.silent;
+      if (!proxy || !proxy.name) return;
+      probeLoadingMap[proxy.name] = true;
+      try {
+        const data = await api('POST', '/api/proxies/' + encodeURIComponent(proxy.name) + '/probe', {
+          link: (proxy.customAccessLink || '').trim() || undefined,
+        });
+        probeResultMap[proxy.name] = data;
+        if (!silent && !data.skipped) {
+          showToast(data.ok ? '映射验证通过' : (data.message || '映射验证失败'), data.ok ? 'success' : 'error');
+        }
+        return data;
+      } catch (e) {
+        const fail = { ok: false, skipped: false, message: e.message || '映射验证失败' };
+        probeResultMap[proxy.name] = fail;
+        if (!silent) {
+          showToast('映射验证失败: ' + e.message, 'error');
+        }
+        return fail;
+      } finally {
+        probeLoadingMap[proxy.name] = false;
+      }
+    }
+
+    async function probeAllProxies() {
+      if (batchProbing.value || proxies.value.length === 0) return;
+      batchProbing.value = true;
+      try {
+        const tasks = proxies.value.map((proxy) => probeProxy(proxy, { silent: true }));
+        const results = await Promise.all(tasks);
+        const success = results.filter(r => r && r.ok).length;
+        const skipped = results.filter(r => r && r.skipped).length;
+        const failed = results.length - success - skipped;
+        showToast(`验证完成：成功 ${success}，失败 ${failed}，跳过 ${skipped}`, failed > 0 ? 'error' : 'success');
+      } catch (e) {
+        showToast('一键验证失败: ' + e.message, 'error');
+      } finally {
+        batchProbing.value = false;
       }
     }
 
@@ -870,32 +1005,45 @@ createApp({
     }
 
     async function startFrpc() {
+      frpcActionBusy.value = true;
       try {
         const data = await api('POST', '/api/frpc/start');
         Object.assign(status, data);
         showToast(data.running ? 'frpc 已启动' : 'frpc 启动失败', data.running ? 'success' : 'error');
       } catch (e) {
         showToast(e.message, 'error');
+      } finally {
+        frpcActionBusy.value = false;
       }
     }
 
     async function stopFrpc() {
+      frpcActionBusy.value = true;
       try {
         const data = await api('POST', '/api/frpc/stop');
         Object.assign(status, data);
         showToast('frpc 已停止');
       } catch (e) {
         showToast(e.message, 'error');
+      } finally {
+        frpcActionBusy.value = false;
       }
     }
 
     async function restartFrpc() {
+      frpcActionBusy.value = true;
       try {
         const data = await api('POST', '/api/frpc/restart');
         Object.assign(status, data);
-        showToast(data.running ? 'frpc 已重启' : 'frpc 重启失败', data.running ? 'success' : 'error');
+        if (data.running && (data.restarted || data.pidChanged)) {
+          restartPulse.value = true;
+          setTimeout(() => restartPulse.value = false, 550);
+        }
+        showToast(data.message || (data.running ? 'frpc 已重启' : 'frpc 重启失败'), data.running ? 'success' : 'error');
       } catch (e) {
         showToast(e.message, 'error');
+      } finally {
+        frpcActionBusy.value = false;
       }
     }
 
@@ -918,9 +1066,12 @@ createApp({
       toast, rawConfig,
       loginFailExit, tlsEnable, logFile, logLevel,
       transportProtocol, transportPoolCount,
+      frpcActionBusy, batchProbing, restartPulse,
       checkingConnection, serverCheck,
+      probeResultMap, probeLoadingMap,
       saveServer, openProxyEditor, saveProxy, deleteProxy,
       checkServerConnection,
+      probeProxy, probeAllProxies,
       loadRaw, saveRaw,
       startFrpc, stopFrpc, restartFrpc,
     };

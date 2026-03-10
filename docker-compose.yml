@@ -212,6 +212,37 @@ services:
   # FRP Web 配置客户端 (Level 1 - 内网穿透管理)
   # 访问: /frpc/
   # ========================
+  # ========================
+  # Code Server (Level 1 - 在线 IDE)
+  # 访问: /code/
+  # ========================
+  code-server:
+    image: docker.1ms.run/codercom/code-server:latest
+    container_name: golden-nest-code-server
+    restart: unless-stopped
+    profiles: ["tools", "all"]
+    environment:
+      - PASSWORD=${CODE_SERVER_PASSWORD:-}
+    volumes:
+        - code-server-data:/home/coder/.local/share/code-server
+        - type: bind
+          source: ${CODE_SERVER_WORKSPACE:-/home/macaulish/workspace}
+          target: /home/macaulish/workspace
+    command:
+        [
+          "--bind-addr", "0.0.0.0:13337",
+          "--auth", "${CODE_SERVER_AUTH:-password}",
+          "--disable-telemetry",
+          "/home/macaulish/workspace",
+        ]
+    networks:
+      - golden-nest-network
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:13337/healthz"]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+
   frp-web:
     build: ./external/frp-web
     container_name: golden-nest-frp-web
@@ -233,3 +264,4 @@ volumes:
   openclaw-config:
   openclaw-workspace:
   homarr-data:
+  code-server-data:
