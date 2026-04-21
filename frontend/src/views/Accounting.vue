@@ -895,6 +895,7 @@ const currentImage = ref('')
 
 // 分类选项
 const categoryOptions = [
+  // 原有分类
   { label: '餐饮', value: 'food' },
   { label: '交通', value: 'transport' },
   { label: '购物', value: 'shopping' },
@@ -903,7 +904,28 @@ const categoryOptions = [
   { label: '教育', value: 'education' },
   { label: '住房', value: 'housing' },
   { label: '水电煤', value: 'utilities' },
-  { label: '其他', value: 'other' }
+  { label: '其他', value: 'other' },
+  // 新增分类
+  { label: '通讯', value: 'communication' },
+  { label: '服装鞋帽', value: 'clothing' },
+  { label: '美容美发', value: 'beauty' },
+  { label: '宠物', value: 'pet' },
+  { label: '保险', value: 'insurance' },
+  { label: '礼品红包', value: 'gift' },
+  { label: '旅行', value: 'travel' },
+  { label: '运动健身', value: 'fitness' },
+  { label: '家用电器', value: 'appliances' },
+  { label: '维修维护', value: 'maintenance' },
+  { label: '税费', value: 'tax' },
+  { label: '投资理财', value: 'investment' },
+  { label: '收入', value: 'income' },
+  { label: '工资', value: 'salary' },
+  { label: '报销', value: 'reimbursement' },
+  { label: '转账', value: 'transfer' },
+  { label: '退款', value: 'refund' },
+  { label: '补贴', value: 'subsidy' },
+  { label: '奖金', value: 'bonus' },
+  { label: '津贴', value: 'allowance' }
 ]
 
 const accountedOptions = [
@@ -963,6 +985,7 @@ function handleToggleSelectAll(checked: boolean) {
 // 辅助函数
 function getCategoryIcon(category: string): string {
   const icons: Record<string, string> = {
+    // 原有分类
     food: '🍽️',
     transport: '🚗',
     shopping: '🛍️',
@@ -971,7 +994,28 @@ function getCategoryIcon(category: string): string {
     education: '📚',
     housing: '🏠',
     utilities: '💡',
-    other: '📝'
+    other: '📝',
+    // 新增分类
+    communication: '📱',
+    clothing: '👕',
+    beauty: '💇',
+    pet: '🐕',
+    insurance: '🛡️',
+    gift: '🎁',
+    travel: '✈️',
+    fitness: '🏃',
+    appliances: '🔌',
+    maintenance: '🔧',
+    tax: '💰',
+    investment: '📈',
+    income: '💵',
+    salary: '💼',
+    reimbursement: '📋',
+    transfer: '↔️',
+    refund: '↩️',
+    subsidy: '🎯',
+    bonus: '🏆',
+    allowance: '💳'
   }
   return icons[category] || '📝'
 }

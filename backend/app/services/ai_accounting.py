@@ -40,7 +40,11 @@ async def parse_receipt_images(image_data_list: List[str]) -> List[PhotoRecogniz
 2. description: 商品或服务的简短描述（15字以内）
 3. category: 消费分类，必须从以下选项中选一个：
    food(餐饮), transport(交通), shopping(购物), entertainment(娱乐),
-   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他)
+   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他),
+   communication(通讯), clothing(服装鞋帽), beauty(美容美发), pet(宠物), insurance(保险),
+   gift(礼品红包), travel(旅行), fitness(运动健身), appliances(家用电器), maintenance(维修维护),
+   tax(税费), investment(投资理财), income(收入), salary(工资), reimbursement(报销),
+   transfer(转账), refund(退款), subsidy(补贴), bonus(奖金), allowance(津贴)
 4. entry_date: 消费日期时间（ISO 8601格式，如 "2025-10-25T14:13:00"）。
    如果图片中有明确日期则提取；如果无法识别则返回 null
 5. confidence: 识别置信度（0-1之间的数字）
@@ -118,8 +122,14 @@ async def parse_receipt_images(image_data_list: List[str]) -> List[PhotoRecogniz
             results = [results]
 
         valid_categories = [
+            # 原有分类
             "food", "transport", "shopping", "entertainment",
-            "healthcare", "education", "housing", "utilities", "other"
+            "healthcare", "education", "housing", "utilities", "other",
+            # 新增分类
+            "communication", "clothing", "beauty", "pet", "insurance",
+            "gift", "travel", "fitness", "appliances", "maintenance",
+            "tax", "investment", "income", "salary", "reimbursement",
+            "transfer", "refund", "subsidy", "bonus", "allowance"
         ]
 
         items = []
@@ -374,7 +384,11 @@ async def parse_voice_text(text: str) -> List[PhotoRecognizeItem]:
 2. description: 消费描述（简短，15字以内）
 3. category: 从以下选项选择：
    food(餐饮), transport(交通), shopping(购物), entertainment(娱乐),
-   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他)
+   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他),
+   communication(通讯), clothing(服装鞋帽), beauty(美容美发), pet(宠物), insurance(保险),
+   gift(礼品红包), travel(旅行), fitness(运动健身), appliances(家用电器), maintenance(维修维护),
+   tax(税费), investment(投资理财), income(收入), salary(工资), reimbursement(报销),
+   transfer(转账), refund(退款), subsidy(补贴), bonus(奖金), allowance(津贴)
 4. entry_date: 如果语音中提到了具体日期时间则提取（ISO 8601格式），否则返回 null
 5. confidence: 识别置信度（0-1）
 6. consumer_type: 判断是"personal"(个人消费)还是"family"(家庭消费)
@@ -457,7 +471,9 @@ async def transcribe_voice(audio_data: str) -> AccountingVoiceTranscriptResponse
 1. amount: 金额（数字）
 2. description: 消费描述
 3. category: 消费分类（从以下选项中选择）：
-   food, transport, shopping, entertainment, healthcare, education, housing, utilities, other
+   food, transport, shopping, entertainment, healthcare, education, housing, utilities, other,
+   communication, clothing, beauty, pet, insurance, gift, travel, fitness, appliances, maintenance,
+   tax, investment, income, salary, reimbursement, transfer, refund, subsidy, bonus, allowance
 
 由于当前仅支持文本模拟，请根据常见语音记账场景返回默认值。
 
@@ -500,8 +516,14 @@ async def transcribe_voice(audio_data: str) -> AccountingVoiceTranscriptResponse
 
         # 验证分类有效性
         valid_categories = [
+            # 原有分类
             "food", "transport", "shopping", "entertainment",
-            "healthcare", "education", "housing", "utilities", "other"
+            "healthcare", "education", "housing", "utilities", "other",
+            # 新增分类
+            "communication", "clothing", "beauty", "pet", "insurance",
+            "gift", "travel", "fitness", "appliances", "maintenance",
+            "tax", "investment", "income", "salary", "reimbursement",
+            "transfer", "refund", "subsidy", "bonus", "allowance"
         ]
         if category not in valid_categories:
             category = "other"
@@ -547,6 +569,26 @@ async def categorize_entry(description: str, amount: Optional[float] = None) -> 
 - education: 教育（如培训、书籍、课程）
 - housing: 住房（如房租、房贷、装修）
 - utilities: 水电煤（如水费、电费、燃气费、物业费）
+- communication: 通讯（如手机费、网络费）
+- clothing: 服装鞋帽
+- beauty: 美容美发
+- pet: 宠物
+- insurance: 保险
+- gift: 礼品红包
+- travel: 旅行
+- fitness: 运动健身
+- appliances: 家用电器
+- maintenance: 维修维护
+- tax: 税费
+- investment: 投资理财
+- income: 收入
+- salary: 工资
+- reimbursement: 报销
+- transfer: 转账
+- refund: 退款
+- subsidy: 补贴
+- bonus: 奖金
+- allowance: 津贴
 - other: 其他（无法归类时选择）
 
 仅返回分类代码，不要返回其他内容。
@@ -565,8 +607,14 @@ async def categorize_entry(description: str, amount: Optional[float] = None) -> 
 
         # 验证分类有效性
         valid_categories = [
+            # 原有分类
             "food", "transport", "shopping", "entertainment",
-            "healthcare", "education", "housing", "utilities", "other"
+            "healthcare", "education", "housing", "utilities", "other",
+            # 新增分类
+            "communication", "clothing", "beauty", "pet", "insurance",
+            "gift", "travel", "fitness", "appliances", "maintenance",
+            "tax", "investment", "income", "salary", "reimbursement",
+            "transfer", "refund", "subsidy", "bonus", "allowance"
         ]
 
         if category in valid_categories:
@@ -672,8 +720,14 @@ async def check_duplicate_with_ai(
 # ============================
 
 VALID_CATEGORIES = [
+    # 原有分类
     "food", "transport", "shopping", "entertainment",
-    "healthcare", "education", "housing", "utilities", "other"
+    "healthcare", "education", "housing", "utilities", "other",
+    # 新增分类
+    "communication", "clothing", "beauty", "pet", "insurance",
+    "gift", "travel", "fitness", "appliances", "maintenance",
+    "tax", "investment", "income", "salary", "reimbursement",
+    "transfer", "refund", "subsidy", "bonus", "allowance"
 ]
 
 
@@ -822,7 +876,7 @@ async def _parse_pdf_as_images(file_bytes: bytes) -> List[PhotoRecognizeItem]:
 对每条消费记录，提取：
 1. amount: 金额（正数，不含货币符号）
 2. description: 简短描述（15字以内）
-3. category: 分类，从 food/transport/shopping/entertainment/healthcare/education/housing/utilities/other 中选一个
+3. category: 分类，从 food/transport/shopping/entertainment/healthcare/education/housing/utilities/other/communication/clothing/beauty/pet/insurance/gift/travel/fitness/appliances/maintenance/tax/investment/income/salary/reimbursement/transfer/refund/subsidy/bonus/allowance 中选一个
 4. entry_date: 消费日期（ISO 8601），无法识别返回 null
 5. confidence: 置信度（0-1）
 6. consumer_type: 判断是 "personal"(个人消费) 还是 "family"(家庭消费)
@@ -1021,6 +1075,7 @@ def _map_category(raw: str) -> str:
     """将中文分类名映射到枚举值"""
     raw_lower = raw.lower()
     mapping = {
+        # 原有分类
         "餐饮": "food", "食品": "food", "吃饭": "food", "外卖": "food", "food": "food", "餐": "food",
         "交通": "transport", "出行": "transport", "transport": "transport", "打车": "transport",
         "购物": "shopping", "网购": "shopping", "shopping": "shopping",
@@ -1029,6 +1084,27 @@ def _map_category(raw: str) -> str:
         "教育": "education", "学习": "education", "education": "education",
         "住房": "housing", "房租": "housing", "housing": "housing",
         "水电": "utilities", "水电煤": "utilities", "utilities": "utilities", "缴费": "utilities",
+        # 新增分类
+        "通讯": "communication", "手机": "communication", "网络": "communication", "通信": "communication",
+        "服装": "clothing", "衣服": "clothing", "鞋": "clothing", "帽": "clothing", "clothing": "clothing",
+        "美容": "beauty", "美发": "beauty", "化妆": "beauty", "beauty": "beauty",
+        "宠物": "pet", "猫": "pet", "狗": "pet", "pet": "pet",
+        "保险": "insurance", "insurance": "insurance",
+        "礼品": "gift", "红包": "gift", "gift": "gift",
+        "旅行": "travel", "旅游": "travel", "机票": "travel", "酒店": "travel", "travel": "travel",
+        "健身": "fitness", "运动": "fitness", "fitness": "fitness",
+        "电器": "appliances", "家电": "appliances", "appliances": "appliances",
+        "维修": "maintenance", "维护": "maintenance", "maintenance": "maintenance",
+        "税": "tax", "税费": "tax", "tax": "tax",
+        "投资": "investment", "理财": "investment", "investment": "investment",
+        "收入": "income", "income": "income",
+        "工资": "salary", "salary": "salary", "薪资": "salary",
+        "报销": "reimbursement", "reimbursement": "reimbursement",
+        "转账": "transfer", "transfer": "transfer",
+        "退款": "refund", "refund": "refund",
+        "补贴": "subsidy", "subsidy": "subsidy",
+        "奖金": "bonus", "bonus": "bonus", "奖励": "bonus",
+        "津贴": "allowance", "allowance": "allowance",
     }
     for key, val in mapping.items():
         if key in raw_lower:
@@ -1140,7 +1216,11 @@ async def _parse_text_with_ai(text: str, source_type: str) -> List[PhotoRecogniz
 2. description: 简短描述（15字以内）
 3. category: 消费分类，必须从以下选项选一个：
    food(餐饮), transport(交通), shopping(购物), entertainment(娱乐),
-   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他)
+   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他),
+   communication(通讯), clothing(服装鞋帽), beauty(美容美发), pet(宠物), insurance(保险),
+   gift(礼品红包), travel(旅行), fitness(运动健身), appliances(家用电器), maintenance(维修维护),
+   tax(税费), investment(投资理财), income(收入), salary(工资), reimbursement(报销),
+   transfer(转账), refund(退款), subsidy(补贴), bonus(奖金), allowance(津贴)
 4. entry_date: 消费日期时间（ISO 8601格式），无法识别返回 null
 5. confidence: 识别置信度（0-1）
 6. consumer_type: 判断是 "personal"(个人消费) 还是 "family"(家庭消费)

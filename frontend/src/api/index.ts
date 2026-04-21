@@ -97,7 +97,8 @@ export const investmentApi = {
     end_date?: string
     note?: string
   }) => api.post('/investment/create', data),
-  list: (params?: { time_range?: string }) => api.get('/investment/list', { params }),
+  list: (params?: { time_range?: string }) =>
+    api.get('/investment/list', { params: { time_range: 'all', ...params } }),
   update: (id: number, data: {
     name?: string
     principal?: number

@@ -41,7 +41,11 @@ SKILLS = [
 2. description: 商品或服务的简短描述（15字以内）
 3. category: 消费分类，必须从以下选项中选一个：
    food(餐饮), transport(交通), shopping(购物), entertainment(娱乐),
-   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他)
+   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他),
+   communication(通讯), clothing(服装鞋帽), beauty(美容美发), pet(宠物), insurance(保险),
+   gift(礼品红包), travel(旅行), fitness(运动健身), appliances(家用电器), maintenance(维修维护),
+   tax(税费), investment(投资理财), income(收入), salary(工资), reimbursement(报销),
+   transfer(转账), refund(退款), subsidy(补贴), bonus(奖金), allowance(津贴)
 4. entry_date: 消费日期时间（ISO 8601格式，如 "2025-10-25T14:13:00"）。
    如果图片中有明确日期则提取；如果无法识别则返回 null
 5. confidence: 识别置信度（0-1之间的数字）
@@ -83,7 +87,11 @@ SKILLS = [
 2. description: 消费描述（简短，15字以内）
 3. category: 从以下选项选择：
    food(餐饮), transport(交通), shopping(购物), entertainment(娱乐),
-   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他)
+   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他),
+   communication(通讯), clothing(服装鞋帽), beauty(美容美发), pet(宠物), insurance(保险),
+   gift(礼品红包), travel(旅行), fitness(运动健身), appliances(家用电器), maintenance(维修维护),
+   tax(税费), investment(投资理财), income(收入), salary(工资), reimbursement(报销),
+   transfer(转账), refund(退款), subsidy(补贴), bonus(奖金), allowance(津贴)
 4. entry_date: 如果语音中提到了具体日期时间则提取（ISO 8601格式），否则返回 null
 5. confidence: 识别置信度（0-1）
 6. consumer_type: 判断是"personal"(个人消费)还是"family"(家庭消费)
@@ -179,7 +187,11 @@ $text
 2. description: 简短描述（15字以内）
 3. category: 消费分类，必须从以下选项选一个：
    food(餐饮), transport(交通), shopping(购物), entertainment(娱乐),
-   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他)
+   healthcare(医疗), education(教育), housing(住房), utilities(水电煤), other(其他),
+   communication(通讯), clothing(服装鞋帽), beauty(美容美发), pet(宠物), insurance(保险),
+   gift(礼品红包), travel(旅行), fitness(运动健身), appliances(家用电器), maintenance(维修维护),
+   tax(税费), investment(投资理财), income(收入), salary(工资), reimbursement(报销),
+   transfer(转账), refund(退款), subsidy(补贴), bonus(奖金), allowance(津贴)
 4. entry_date: 消费日期时间（ISO 8601格式），无法识别返回 null
 5. confidence: 识别置信度（0-1）
 6. consumer_type: 判断是 "personal"(个人消费) 还是 "family"(家庭消费)
@@ -213,7 +225,7 @@ $text
 对每条消费记录，提取：
 1. amount: 金额（正数，不含货币符号）
 2. description: 简短描述（15字以内）
-3. category: 分类，从 food/transport/shopping/entertainment/healthcare/education/housing/utilities/other 中选一个
+3. category: 分类，从 food/transport/shopping/entertainment/healthcare/education/housing/utilities/other/communication/clothing/beauty/pet/insurance/gift/travel/fitness/appliances/maintenance/tax/investment/income/salary/reimbursement/transfer/refund/subsidy/bonus/allowance 中选一个
 4. entry_date: 消费日期（ISO 8601），无法识别返回 null
 5. confidence: 置信度（0-1）
 6. consumer_type: 判断是 "personal"(个人消费) 还是 "family"(家庭消费)

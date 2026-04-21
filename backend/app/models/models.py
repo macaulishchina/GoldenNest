@@ -899,7 +899,8 @@ class BetOption(Base):
 # ==================== 记账系统 ====================
 
 class AccountingCategory(str, enum.Enum):
-    """记账分类"""
+    """记账分类 - 兼容历史数据，新增分类带后缀区分"""
+    # 原有分类（保留兼容）
     FOOD = "food"                      # 餐饮
     TRANSPORT = "transport"            # 交通
     SHOPPING = "shopping"              # 购物
@@ -909,6 +910,28 @@ class AccountingCategory(str, enum.Enum):
     HOUSING = "housing"                # 住房
     UTILITIES = "utilities"            # 水电煤
     OTHER = "other"                    # 其他
+
+    # 新增分类
+    COMMUNICATION = "communication"    # 通讯（手机费、网络费）
+    CLOTHING = "clothing"              # 服装鞋帽
+    BEAUTY = "beauty"                  # 美容美发
+    PET = "pet"                        # 宠物
+    INSURANCE = "insurance"            # 保险
+    GIFT = "gift"                      # 礼品红包
+    TRAVEL = "travel"                  # 旅行
+    FITNESS = "fitness"                # 运动健身
+    APPLIANCES = "appliances"          # 家用电器
+    MAINTENANCE = "maintenance"        # 维修维护
+    TAX = "tax"                        # 税费
+    INVESTMENT = "investment"          # 投资理财
+    INCOME = "income"                  # 收入
+    SALARY = "salary"                  # 工资
+    REIMBURSEMENT = "reimbursement"    # 报销
+    TRANSFER = "transfer"              # 转账
+    REFUND = "refund"                  # 退款
+    SUBSIDY = "subsidy"                # 补贴
+    BONUS = "bonus"                    # 奖金
+    ALLOWANCE = "allowance"            # 津贴
 
 
 class AccountingEntrySource(str, enum.Enum):

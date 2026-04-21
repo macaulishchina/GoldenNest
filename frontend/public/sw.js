@@ -3,7 +3,18 @@
  * 提供 PWA 安装能力、基本离线支持和连接恢复
  */
 
-const CACHE_NAME = 'golden-nest-v2'
+const CACHE_NAME = 'golden-nest-v3'
+
+// 不要拦截同域下的其它子应用，避免影响反向代理的多应用部署
+const EXCLUDED_PREFIXES = [
+  '/antigravity-manager/',
+  '/studio/',
+  '/jupyter/',
+  '/ollama-ui/',
+  '/proxy-ui/',
+  '/code/',
+  '/frpc/',
+]
 
 // 需要预缓存的关键资源
 const PRECACHE_URLS = [
@@ -126,6 +137,16 @@ self.addEventListener('fetch', (event) => {
   // 只处理 GET 请求
   if (event.request.method !== 'GET') return
 
+  const url = new URL(event.request.url)
+
+  // 同域其它子应用直接放行，交给浏览器和各自反向代理处理
+  if (
+    url.origin === self.location.origin &&
+    EXCLUDED_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))
+  ) {
+    return
+  }
+
   // API 请求直接走网络，不缓存
   if (event.request.url.includes('/api/')) return
 
@@ -171,7 +192,7 @@ self.addEventListener('fetch', (event) => {
       })
       .catch(() => {
         // 网络失败，尝试从缓存返回
-        return caches.match(event.request)
+        return caches.match(event.request).then((cached) => cached || Response.error())
       })
   )
 })

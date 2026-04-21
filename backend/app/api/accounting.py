@@ -32,6 +32,7 @@ router = APIRouter()
 
 # 分类名称映射
 CATEGORY_NAMES = {
+    # 原有分类
     "food": "餐饮",
     "transport": "交通",
     "shopping": "购物",
@@ -40,7 +41,28 @@ CATEGORY_NAMES = {
     "education": "教育",
     "housing": "住房",
     "utilities": "水电煤",
-    "other": "其他"
+    "other": "其他",
+    # 新增分类
+    "communication": "通讯",
+    "clothing": "服装鞋帽",
+    "beauty": "美容美发",
+    "pet": "宠物",
+    "insurance": "保险",
+    "gift": "礼品红包",
+    "travel": "旅行",
+    "fitness": "运动健身",
+    "appliances": "家用电器",
+    "maintenance": "维修维护",
+    "tax": "税费",
+    "investment": "投资理财",
+    "income": "收入",
+    "salary": "工资",
+    "reimbursement": "报销",
+    "transfer": "转账",
+    "refund": "退款",
+    "subsidy": "补贴",
+    "bonus": "奖金",
+    "allowance": "津贴"
 }
 
 

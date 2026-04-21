@@ -14,7 +14,7 @@
 
     <!-- 家庭自由资金卡片 -->
     <n-card class="card-hover" style="margin-bottom: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-      <n-statistic label="家庭自由资金" :value="currentBalance">
+      <n-statistic label="家庭自由资金" :value="formatMoney(currentBalance)">
         <template #prefix>¥</template>
       </n-statistic>
       <template #footer>

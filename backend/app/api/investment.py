@@ -54,12 +54,12 @@ async def create_investment(
 
 @router.get("/list", response_model=List[InvestmentResponse])
 async def list_investments(
-    time_range: TimeRange = Query(TimeRange.MONTH, description="时间范围：day/week/month/year/all"),
+    time_range: TimeRange = Query(TimeRange.ALL, description="时间范围：day/week/month/year/all"),
     include_deleted: bool = Query(False, description="是否包含已删除的投资"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """获取理财列表（支持时间范围筛选，默认最近一个月）"""
+    """获取理财列表（支持时间范围筛选，默认全部）"""
     import logging
     from app.models.models import CurrencyType
     from app.services.exchange_rate import exchange_rate_service
