@@ -12,7 +12,18 @@
       <div class="page-header">
         <div class="header-top">
           <h3 class="page-title">📒 家庭记账</h3>
-          <n-button type="primary" size="small" @click="openCreateModal">+ 新建记账</n-button>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <n-button
+              secondary
+              type="info"
+              size="small"
+              @click="openAIAnalysisModal"
+            >
+              <template #icon><span style="font-size:15px">🤖</span></template>
+              AI 分析
+            </n-button>
+            <n-button type="primary" size="small" @click="openCreateModal">+ 新建记账</n-button>
+          </div>
         </div>
         <div class="stats-box">
           <div class="stats-box-top">
@@ -728,6 +739,179 @@
         <n-button class="receipt-close" circle size="small" @click="showImageModal = false">✕</n-button>
       </div>
     </n-modal>
+
+    <!-- AI 分析设置弹窗 -->
+    <n-modal
+      v-model:show="showAISettingsModal"
+      preset="card"
+      title="🤖 AI 消费分析"
+      :style="{ width: isMobile ? '95%' : '500px' }"
+      :segmented="{ content: true, footer: true }"
+    >
+      <n-space vertical size="medium">
+        <div>
+          <n-text depth="3" style="font-size:13px">当前分析范围</n-text>
+          <n-descriptions :column="1" label-placement="left" size="small" style="margin-top:8px">
+            <n-descriptions-item label="时间范围">
+              <span v-if="aiForm.start_date && aiForm.end_date">
+                {{ dayjs(aiForm.start_date).format('YYYY-MM-DD') }} 至 {{ dayjs(aiForm.end_date).format('YYYY-MM-DD') }}
+              </span>
+              <span v-else>全部时间</span>
+            </n-descriptions-item>
+            <n-descriptions-item label="消费人">
+              {{ aiScopeConsumerName }}
+            </n-descriptions-item>
+            <n-descriptions-item label="分类">
+              {{ aiScopeCategoryName }}
+            </n-descriptions-item>
+          </n-descriptions>
+        </div>
+        <n-form-item label="报告标题">
+          <n-input v-model:value="aiForm.title" placeholder="家庭消费 AI 分析报告" />
+        </n-form-item>
+        <n-form-item label="保存到历史">
+          <n-switch v-model:value="aiForm.save_to_history" />
+          <n-text depth="3" style="margin-left:8px;font-size:12px">开启后可在历史记录中查看</n-text>
+        </n-form-item>
+      </n-space>
+      <template #footer>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <n-button text type="info" @click="openAIHistoryModal">📋 查看历史报告</n-button>
+          <div style="display:flex;gap:8px">
+            <n-button @click="showAISettingsModal = false">取消</n-button>
+            <n-button type="primary" :loading="aiAnalyzing" @click="runAIAnalysis">生成分析</n-button>
+          </div>
+        </div>
+      </template>
+    </n-modal>
+
+    <!-- AI 分析报告弹窗 -->
+    <n-modal
+      v-model:show="showAIReportModal"
+      :style="{ width: isMobile ? '98%' : '720px', maxWidth: '98vw' }"
+      :mask-closable="false"
+    >
+      <n-card
+        :title="aiReport ? aiReport.title : 'AI 分析报告'"
+        :segmented="{ content: true, footer: true }"
+        class="ai-report-card"
+        id="ai-report-printable"
+      >
+        <template #header-extra>
+          <n-button text @click="showAIReportModal = false">✕</n-button>
+        </template>
+
+        <template v-if="aiReport">
+          <!-- 元信息 -->
+          <div class="report-meta">
+            <n-text depth="3" style="font-size:12px">
+              📅 {{ aiReport.date_from ? dayjs(aiReport.date_from).format('YYYY-MM-DD') : '全部' }}
+              {{ aiReport.date_to ? ' 至 ' + dayjs(aiReport.date_to).format('YYYY-MM-DD') : '' }}
+              · {{ aiReport.entry_count }} 笔 · 总计 ¥{{ aiReport.total_amount.toFixed(2) }}
+              · 生成于 {{ dayjs(aiReport.created_at).format('YYYY-MM-DD HH:mm') }}
+            </n-text>
+          </div>
+
+          <!-- 总体摘要 -->
+          <div class="report-section">
+            <div class="report-section-title">📊 总体分析</div>
+            <div class="report-text">{{ aiReport.report_data.overall_summary }}</div>
+          </div>
+
+          <!-- 按人分析 -->
+          <div class="report-section" v-if="aiReport.report_data.per_person?.length > 0">
+            <div class="report-section-title">👥 按消费人分布</div>
+            <div class="person-list">
+              <div v-for="p in aiReport.report_data.per_person" :key="p.name" class="person-item">
+                <div class="person-header">
+                  <span class="person-name">{{ p.name }}</span>
+                  <span class="person-amount">¥{{ p.total.toFixed(2) }}</span>
+                  <span class="person-pct">{{ p.percentage }}%</span>
+                </div>
+                <n-progress
+                  type="line"
+                  :percentage="p.percentage"
+                  :show-indicator="false"
+                  :height="6"
+                  style="margin: 4px 0"
+                />
+                <div class="person-detail">
+                  <n-text depth="3" style="font-size:12px">{{ p.count }} 笔 · 主要：{{ p.top_categories.join('、') }}</n-text>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 趋势分析 -->
+          <div class="report-section" v-if="aiReport.report_data.trends">
+            <div class="report-section-title">📈 时间趋势</div>
+            <div class="report-text">{{ aiReport.report_data.trends }}</div>
+          </div>
+
+          <!-- 短期预测 -->
+          <div class="report-section" v-if="aiReport.report_data.prediction">
+            <div class="report-section-title">🔮 短期预测（未来 3 个月）</div>
+            <div class="report-text">{{ aiReport.report_data.prediction }}</div>
+          </div>
+
+          <!-- 建议 -->
+          <div class="report-section" v-if="aiReport.report_data.suggestions?.length > 0">
+            <div class="report-section-title">💡 建议与行动项</div>
+            <n-collapse>
+              <n-collapse-item
+                v-for="(s, i) in aiReport.report_data.suggestions"
+                :key="i"
+                :title="s.title"
+                :name="i"
+              >
+                <div class="report-text">{{ s.detail }}</div>
+              </n-collapse-item>
+            </n-collapse>
+          </div>
+        </template>
+
+        <template #footer>
+          <div style="display:flex;justify-content:flex-end;gap:8px">
+            <n-button @click="showAIReportModal = false">关闭</n-button>
+            <n-button type="primary" @click="printReport">📄 导出 PDF</n-button>
+          </div>
+        </template>
+      </n-card>
+    </n-modal>
+
+    <!-- AI 历史报告弹窗 -->
+    <n-modal
+      v-model:show="showAIHistoryModal"
+      preset="card"
+      title="📋 历史 AI 分析报告"
+      :style="{ width: isMobile ? '95%' : '600px' }"
+      :segmented="{ content: true }"
+    >
+      <n-spin :show="aiHistoryLoading">
+        <n-empty v-if="aiHistoryReports.length === 0 && !aiHistoryLoading" description="暂无历史报告" />
+        <n-list v-else>
+          <n-list-item v-for="r in aiHistoryReports" :key="r.id">
+            <n-thing>
+              <template #header>{{ r.title }}</template>
+              <template #description>
+                <n-text depth="3" style="font-size:12px">
+                  {{ r.date_from ? dayjs(r.date_from).format('YYYY-MM-DD') : '全部' }}
+                  {{ r.date_to ? ' 至 ' + dayjs(r.date_to).format('YYYY-MM-DD') : '' }}
+                  · {{ r.entry_count }} 笔 · ¥{{ r.total_amount.toFixed(2) }}
+                  · {{ r.created_by_name }} · {{ dayjs(r.created_at).format('MM-DD HH:mm') }}
+                </n-text>
+              </template>
+            </n-thing>
+            <template #suffix>
+              <n-space>
+                <n-button size="small" @click="viewHistoryReport(r.id)">查看</n-button>
+                <n-button size="small" type="error" @click="deleteHistoryReport(r.id)">删除</n-button>
+              </n-space>
+            </template>
+          </n-list-item>
+        </n-list>
+      </n-spin>
+    </n-modal>
   </div>
 </template>
 
@@ -735,7 +919,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import { useRoute, useRouter } from 'vue-router'
-import { api } from '@/api'
+import { api, accountingAiApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import dayjs from 'dayjs'
 
@@ -799,6 +983,23 @@ const showEditModal = ref(false)
 const showBatchExpenseModal = ref(false)
 const showImageModal = ref(false)
 const showDuplicateModal = ref(false)
+
+// AI 分析状态
+const showAISettingsModal = ref(false)
+const showAIReportModal = ref(false)
+const showAIHistoryModal = ref(false)
+const aiAnalyzing = ref(false)
+const aiHistoryLoading = ref(false)
+const aiReport = ref<any>(null)
+const aiHistoryReports = ref<any[]>([])
+const aiForm = ref({
+  title: '家庭消费 AI 分析报告',
+  start_date: null as string | null,
+  end_date: null as string | null,
+  consumer_id: null as number | null,
+  category: null as string | null,
+  save_to_history: true
+})
 
 // 重复检测相关
 const duplicateCheckResults = ref({
@@ -945,6 +1146,17 @@ const consumerOptionsWithFamily = computed(() => {
     { label: '家庭共同', value: 0 },
     ...consumerOptions.value
   ]
+})
+
+// AI 分析范围显示名称（计算属性，避免模板内重复计算）
+const aiScopeConsumerName = computed(() => {
+  if (aiForm.value.consumer_id === null) return '全部成员'
+  return familyMembers.value.find(m => m.user_id === aiForm.value.consumer_id)?.nickname || '家庭共同'
+})
+
+const aiScopeCategoryName = computed(() => {
+  if (!aiForm.value.category) return '全部分类'
+  return categoryOptions.find(c => c.value === aiForm.value.category)?.label || aiForm.value.category
 })
 
 const selectedTotalAmount = computed(() => {
@@ -1999,6 +2211,95 @@ watch(() => route.query.mode, (newMode) => {
   if (newMode) checkAutoOpenMode()
 })
 
+// ==================== AI 分析功能 ====================
+
+function openAIAnalysisModal() {
+  // 用当前筛选条件预填 AI 分析范围
+  if (filterDateRange.value) {
+    aiForm.value.start_date = dayjs(filterDateRange.value[0]).toISOString()
+    aiForm.value.end_date = dayjs(filterDateRange.value[1]).toISOString()
+  } else {
+    aiForm.value.start_date = null
+    aiForm.value.end_date = null
+  }
+  aiForm.value.consumer_id = filterConsumer.value
+  aiForm.value.category = filterCategory.value
+  aiForm.value.title = '家庭消费 AI 分析报告'
+  aiForm.value.save_to_history = true
+  showAISettingsModal.value = true
+}
+
+async function runAIAnalysis() {
+  aiAnalyzing.value = true
+  showAISettingsModal.value = false
+  try {
+    const { data } = await accountingAiApi.analyze({
+      title: aiForm.value.title || '家庭消费 AI 分析报告',
+      start_date: aiForm.value.start_date || undefined,
+      end_date: aiForm.value.end_date || undefined,
+      consumer_id: aiForm.value.consumer_id,
+      category: aiForm.value.category,
+      save_to_history: aiForm.value.save_to_history
+    })
+    aiReport.value = data
+    showAIReportModal.value = true
+    message.success('AI 分析完成')
+  } catch (error: any) {
+    message.error(error.response?.data?.detail || 'AI 分析失败，请稍后重试')
+    showAISettingsModal.value = true
+  } finally {
+    aiAnalyzing.value = false
+  }
+}
+
+async function openAIHistoryModal() {
+  showAISettingsModal.value = false
+  showAIHistoryModal.value = true
+  aiHistoryLoading.value = true
+  try {
+    const { data } = await accountingAiApi.listReports()
+    aiHistoryReports.value = data
+  } catch (error: any) {
+    message.error('获取历史报告失败')
+  } finally {
+    aiHistoryLoading.value = false
+  }
+}
+
+async function viewHistoryReport(id: number) {
+  showAIHistoryModal.value = false
+  try {
+    const { data } = await accountingAiApi.getReport(id)
+    aiReport.value = data
+    showAIReportModal.value = true
+  } catch (error: any) {
+    message.error('获取报告失败')
+    showAIHistoryModal.value = true
+  }
+}
+
+async function deleteHistoryReport(id: number) {
+  dialog.warning({
+    title: '确认删除',
+    content: '删除后无法恢复，确认删除该报告吗？',
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await accountingAiApi.deleteReport(id)
+        aiHistoryReports.value = aiHistoryReports.value.filter(r => r.id !== id)
+        message.success('报告已删除')
+      } catch (error: any) {
+        message.error('删除失败')
+      }
+    }
+  })
+}
+
+function printReport() {
+  window.print()
+}
+
 onMounted(() => {
   fetchFamilyMembers()
   fetchEntries()
@@ -2497,6 +2798,112 @@ onMounted(() => {
 
   .entry-row2 {
     white-space: normal;
+  }
+}
+
+/* ===== AI 分析报告样式 ===== */
+.report-meta {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--theme-border-light, #eee);
+}
+
+.report-section {
+  margin-bottom: 20px;
+}
+
+.report-section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--theme-text-primary);
+  margin-bottom: 10px;
+}
+
+.report-text {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--theme-text-secondary);
+  white-space: pre-wrap;
+}
+
+.person-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.person-item {
+  padding: 12px;
+  background: var(--theme-bg-secondary, #f8f9fa);
+  border-radius: 8px;
+}
+
+.person-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.person-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.person-amount {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--theme-warning, #f0a020);
+}
+
+.person-pct {
+  font-size: 13px;
+  color: var(--theme-text-secondary);
+  min-width: 40px;
+  text-align: right;
+}
+
+.person-detail {
+  margin-top: 4px;
+}
+
+.ai-report-card :deep(.n-card-header) {
+  padding: 14px 20px;
+  font-weight: 600;
+}
+
+.ai-report-card :deep(.n-card__content) {
+  padding: 16px 20px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* ===== PDF 打印样式 ===== */
+@media print {
+  /* 隐藏页面其他内容 */
+  body > * {
+    display: none !important;
+  }
+
+  /* 显示报告内容 */
+  #ai-report-printable {
+    display: block !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    max-height: none !important;
+  }
+
+  #ai-report-printable :deep(.n-card__content) {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  #ai-report-printable :deep(.n-card-footer),
+  #ai-report-printable :deep(.n-card-header .n-button) {
+    display: none !important;
   }
 }
 </style>

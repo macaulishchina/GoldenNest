@@ -379,6 +379,25 @@ export const transactionAiApi = {
     api.post('/transaction/ai/categorize', data)
 }
 
+// Accounting AI API - 记账智能分析
+export const accountingAiApi = {
+  // AI 分析记账数据，生成综合报告
+  analyze: (data: {
+    title?: string
+    start_date?: string
+    end_date?: string
+    consumer_id?: number | null
+    category?: string | null
+    save_to_history?: boolean
+  }) => api.post('/accounting/ai/analyze', data, { timeout: 120000 }),
+  // 获取历史 AI 分析报告列表
+  listReports: () => api.get('/accounting/ai/reports'),
+  // 获取单份历史报告详情
+  getReport: (id: number) => api.get(`/accounting/ai/reports/${id}`),
+  // 删除历史报告
+  deleteReport: (id: number) => api.delete(`/accounting/ai/reports/${id}`)
+}
+
 // Pet AI API - 宠物对话
 export const petAiApi = {
   // 与宠物对话
